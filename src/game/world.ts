@@ -1,17 +1,18 @@
 import { FIELD, GOAL, RULES, type Point, type TrapDefinition } from './stage.ts';
 import type { LevelDefinition } from './levels.ts';
+import { facingOf, type Facing } from './facing.ts';
 export type Input = { x: number; y: number; jump?: boolean };
 export type Trap = TrapDefinition & { state: 'intact' | 'shaking' | 'open'; elapsed: number };
 export type Event = { kind: 'jump' | 'land' | 'warning' | 'collapse' | 'poop' | 'fall' | 'clear'; x: number; y: number; id?: string };
 export type World = {
   level: LevelDefinition;
-  player: Point & { height: number; jumpTime: number; cooldown: number; facing: number; moving: boolean };
+  player: Point & { height: number; jumpTime: number; cooldown: number; facing: Facing; stride: number; moving: boolean };
   traps: Trap[]; time: number; jumps: number; outcome: 'playing' | 'poop' | 'fall' | 'clear';
   events: Event[]; furthest: number;
 };
 const clamp = (n: number, a: number, b: number) => Math.max(a, Math.min(b, n));
 export function createWorld(level: LevelDefinition): World {
-  return { level, player: { ...level.start, height: 0, jumpTime: -1, cooldown: 0, facing: 1, moving: false }, traps: level.traps.map(t => ({ ...t, state: 'intact', elapsed: 0 })), time: 0, jumps: 0, outcome: 'playing', events: [], furthest: level.start.y };
+  return { level, player: { ...level.start, height: 0, jumpTime: -1, cooldown: 0, facing: 'up', stride: 0, moving: false }, traps: level.traps.map(t => ({ ...t, state: 'intact', elapsed: 0 })), time: 0, jumps: 0, outcome: 'playing', events: [], furthest: level.start.y };
 }
 export function inHole(p: Point, t: TrapDefinition): boolean {
   // Test the foot/shadow centre against the inner edge; the sprite is not the collider.
@@ -33,9 +34,12 @@ export function step(w: World, input: Input, dt = RULES.step): void {
   const length = Math.hypot(input.x, input.y);
   const dx = input.x / Math.max(1, length), dy = input.y / Math.max(1, length);
   p.moving = length > .02;
+  const fromX = p.x, fromY = p.y;
   p.x = clamp(p.x + dx * RULES.speed * dt, FIELD.left, FIELD.right);
   p.y = clamp(p.y + dy * RULES.speed * dt, FIELD.top, FIELD.bottom);
-  if (Math.abs(dx) > .05) p.facing = dx < 0 ? -1 : 1;
+  // 向きは入力で、歩幅（足の出し入れ）は実際に進んだ距離で決める。壁に押しつけても足は動かない。
+  if (p.moving) p.facing = facingOf(dx, dy);
+  p.stride += Math.hypot(p.x - fromX, p.y - fromY);
   if (p.jumpTime >= 0) {
     p.jumpTime += dt;
     const t = p.jumpTime / RULES.jumpDuration;

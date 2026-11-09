@@ -106,3 +106,28 @@ test('level data is sound: unique ids, safe start, final chapter, hints for ever
   }
   assert.equal(STAGES[0].slots.length, 5);
 });
+
+// 向き（6領域）と歩幅
+import { facingOf } from "../src/game/facing.ts";
+test("input direction maps to six facings, sideways ties go to the near side", () => {
+  const deg = (d: number) => facingOf(Math.cos(d * Math.PI / 180), Math.sin(d * Math.PI / 180));
+  assert.equal(deg(90), "down"); assert.equal(deg(270), "up");
+  assert.equal(deg(30), "dr"); assert.equal(deg(150), "dl"); assert.equal(deg(210), "ul"); assert.equal(deg(330), "ur");
+  assert.equal(deg(0), "dr"); assert.equal(deg(180), "dl");
+  assert.equal(deg(59), "dr"); assert.equal(deg(61), "down"); assert.equal(deg(119), "down"); assert.equal(deg(121), "dl");
+  assert.equal(deg(239), "ul"); assert.equal(deg(241), "up"); assert.equal(deg(299), "up"); assert.equal(deg(301), "ur");
+});
+test("the player faces the goal at the start, turns with input, and keeps the last facing when stopped", () => {
+  const w = createWorld(LEVEL_1_1);
+  assert.equal(w.player.facing, "up");
+  run(w, { x: 1, y: 0 }, .1); assert.equal(w.player.facing, "dr");
+  run(w, { x: -1, y: -1 }, .1); assert.equal(w.player.facing, "ul");
+  run(w, { x: 0, y: 0 }, .1); assert.equal(w.player.facing, "ul");
+});
+test("stride grows with the distance actually walked, not while pushing against the edge or standing", () => {
+  const w = createWorld(LEVEL_1_1);
+  run(w, { x: 0, y: -1 }, 1); assert.ok(Math.abs(w.player.stride - RULES.speed) < 2);
+  const stood = w.player.stride; run(w, { x: 0, y: 0 }, 1); assert.equal(w.player.stride, stood);
+  const edge = createWorld(LEVEL_1_1); edge.player.x = 114;
+  run(edge, { x: -1, y: 0 }, 1); assert.equal(edge.player.stride, 0);
+});

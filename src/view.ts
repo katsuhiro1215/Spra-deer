@@ -3,7 +3,21 @@ import { GOAL, VIEW } from './game/stage.ts';
 import type { LevelDefinition } from './game/levels.ts';
 import type { World, Trap, Event } from './game/world.ts';
 
-const FONT = '"Yu Gothic", "Hiragino Kaku Gothic ProN", Meiryo, sans-serif';
+import walk from './game/spru-walk.json';
+import type { Facing } from './game/facing.ts';
+
+/** 歩行コマの表示倍率。斜めの「立ち」の高さがゲーム内で132pxになる大きさ。 */
+const WALK_SCALE = 132 / walk.referenceHeight;
+/** 足を1コマ進める歩幅（ゲーム座標のpx）。 */
+const STRIDE_PER_FRAME = 34;
+export const walkKey = (facing: Facing, index: number) => `walk-${facing}-${index}`;
+/** 歩いていれば歩幅に応じたコマ、止まっていれば立ちのコマ。 */
+function walkTexture(facing: Facing, stride: number, walking: boolean): string {
+  const set = walk[facing];
+  return walkKey(facing, walking ? set.cycle[Math.floor(stride / STRIDE_PER_FRAME) % set.cycle.length] : set.idle);
+}
+
+const FONT ='"Yu Gothic", "Hiragino Kaku Gothic ProN", Meiryo, sans-serif';
 const C = { grass: 0xc3d397, grassDark: 0xa9bd7f, path: 0xece6bd, edge: 0xd8d6a5, green: 0x355942, leaf: 0x86a260, pale: 0xfbf7df, brown: 0x7e6142 };
 type Particle = { shape: Phaser.GameObjects.Arc; vx: number; vy: number; born: number; duration: number; x: number; y: number };
 
@@ -194,13 +208,15 @@ export class ParkView {
     for (const trap of w.traps) this.drawTrap(trap, now);
     const falling = w.outcome === 'fall';
     const factor = falling ? Math.max(.02, 1 - lossAge * 1.5) : 1;
-    const bob = p.moving && p.jumpTime < 0 && w.outcome === 'playing' ? Math.sin(w.time * 16) * 3 : 0;
-    this.sprite.setTexture(w.outcome === 'clear' ? 'spru-clear' : w.outcome === 'poop' ? 'spru-oops' : 'spru');
-    const ratio = this.sprite.frame.width / this.sprite.frame.height;
-    this.sprite.setDisplaySize(this.playerHeight * ratio * factor, this.playerHeight * factor);
-    this.sprite.setPosition(p.x, p.y + 5 - p.height + bob + (falling ? lossAge * 30 : 0));
-    this.sprite.setDepth(p.y + 60 + p.height).setFlipX(p.facing < 0).setAlpha(falling ? Math.max(0, 1 - lossAge * 1.35) : 1);
-    this.sprite.setAngle(falling ? lossAge * 105 : p.moving && p.jumpTime < 0 ? Math.sin(w.time * 8) * 2 : 0);
+    // 歩き・ジャンプ・落下は6方向の歩行コマ、クリアと失敗は専用の1枚絵。
+    const walking = w.outcome === 'playing' || w.outcome === 'fall';
+    this.sprite.setTexture(walking ? walkTexture(p.facing, p.stride, p.moving && p.jumpTime < 0) : w.outcome === 'clear' ? 'spru-clear' : 'spru-oops');
+    const frame = this.sprite.frame;
+    const [baseWidth, baseHeight] = walking ? [frame.width * WALK_SCALE, frame.height * WALK_SCALE] : [this.playerHeight * frame.width / frame.height, this.playerHeight];
+    this.sprite.setDisplaySize(baseWidth * factor, baseHeight * factor);
+    this.sprite.setPosition(p.x, p.y + 5 - p.height + (falling ? lossAge * 30 : 0));
+    this.sprite.setDepth(p.y + 60 + p.height).setFlipX(false).setAlpha(falling ? Math.max(0, 1 - lossAge * 1.35) : 1);
+    this.sprite.setAngle(falling ? lossAge * 105 : 0);
     this.sprite.setVisible(showPlayer);
     this.shadow.setVisible(showPlayer);
     this.shadow.setPosition(p.x, p.y).setDepth(p.y - 1).setAlpha(falling ? 0 : .22 - p.height * .0013).setScale(1 - p.height / 260);

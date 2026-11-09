@@ -3,7 +3,9 @@ import { VIEW, GOAL, RULES } from './game/stage.ts';
 import { PLAYABLE, STAGES, levelById, type LevelDefinition } from './game/levels.ts';
 import { createWorld, step, type World, type Event } from './game/world.ts';
 import { Progress } from './progress.ts';
-import { ParkView } from './view.ts';
+import { ParkView, walkKey } from './view.ts';
+import walk from './game/spru-walk.json';
+import type { Facing } from './game/facing.ts';
 import { Controls } from './input.ts';
 import './styles.scss';
 
@@ -44,6 +46,7 @@ class Boot extends Phaser.Scene {
   constructor() { super('Boot'); }
   preload() {
     for (const name of ['spru', 'spru-clear', 'spru-oops', 'deer']) this.load.image(name, `assets/${name}.png`);
+    for (const facing of Object.keys(walk).filter(k => k !== 'referenceHeight') as Facing[]) walk[facing].frames.forEach((f, i) => this.load.image(walkKey(facing, i), `assets/spru-walk/${f.file}`));
     this.load.on('loaderror', () => { this.failed = true; el('fatal').hidden = false; });
   }
   create() {
