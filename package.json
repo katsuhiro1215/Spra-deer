@@ -9,6 +9,7 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host 127.0.0.1 --port 4180 --strictPort",
     "test": "node --experimental-strip-types --test tests/world.test.ts",
+    "test:solve": "node --experimental-strip-types --test tests/solvable.test.ts",
     "test:browser": "node scripts/browser-check.mjs"
   },
   "dependencies": { "phaser": "3.90.0" },

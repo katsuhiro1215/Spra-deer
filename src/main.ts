@@ -14,9 +14,29 @@ const el = <T extends HTMLElement = HTMLElement>(id: string) => document.getElem
 const progress = new Progress();
 const CAUGHT_HINT = '鹿が追いかけてきた…！\n止まると追いつかれる。\nジャンプで鹿を越えるのもアリ。';
 
+type Track = 'home' | 'play' | 'clear' | 'fail';
 class Sound {
   enabled = false;
   private context?: AudioContext;
+  // BGM（SpraTheme/assets/deer の書き出し）。ブラウザの制約で、音をONにするまで鳴らさない。
+  private tracks = new Map<Track, HTMLAudioElement>();
+  private want: Track | null = null;
+  private current: Track | null = null;
+  music(track: Track | null) { this.want = track; this.syncMusic(); }
+  syncMusic() {
+    const target = this.enabled ? this.want : null;
+    if (this.current && this.current !== target) this.tracks.get(this.current)?.pause();
+    if (target && this.current !== target) {
+      let audio = this.tracks.get(target);
+      if (!audio) {
+        audio = new Audio(`assets/audio/${target}.mp3`);
+        audio.loop = target === 'home' || target === 'play'; audio.volume = target === 'play' ? .55 : .7;
+        this.tracks.set(target, audio);
+      }
+      audio.currentTime = 0; void audio.play().catch(() => { /* 音は任意 */ });
+    }
+    this.current = target;
+  }
   unlock() {
     if (!this.enabled) return;
     try { this.context ??= new AudioContext(); void this.context.resume().catch(() => {}); } catch { /* Sound is optional. */ }
@@ -39,7 +59,7 @@ const soundButton = document.createElement('button');
 soundButton.id = 'sound'; soundButton.textContent = '音 OFF'; soundButton.setAttribute('aria-label', '効果音をオンにする'); soundButton.setAttribute('aria-pressed', 'false');
 el('game-wrap').append(soundButton);
 soundButton.addEventListener('click', () => {
-  sound.enabled = !sound.enabled; sound.unlock(); soundButton.textContent = sound.enabled ? '音 ON' : '音 OFF';
+  sound.enabled = !sound.enabled; sound.unlock(); sound.syncMusic(); soundButton.textContent = sound.enabled ? '音 ON' : '音 OFF';
   soundButton.setAttribute('aria-pressed', String(sound.enabled)); soundButton.setAttribute('aria-label', sound.enabled ? '効果音をオフにする' : '効果音をオンにする');
 });
 
@@ -48,6 +68,7 @@ class Boot extends Phaser.Scene {
   constructor() { super('Boot'); }
   preload() {
     for (const name of ['spru', 'spru-clear', 'spru-oops', 'deer']) this.load.image(name, `assets/${name}.png`);
+    for (const name of ['start', 'goal']) this.load.image(`gate-${name}`, `assets/gate/${name}.png`);
     for (const facing of Object.keys(walk).filter(k => k !== 'referenceHeight') as Facing[]) walk[facing].frames.forEach((f, i) => this.load.image(walkKey(facing, i), `assets/spru-walk/${f.file}`));
     for (const kind of Object.keys(deerWalk) as (keyof typeof deerWalk)[]) for (const side of ['r', 'l'] as const) deerWalk[kind][side].frames.forEach((f, i) => this.load.image(deerKey(kind, side, i), `assets/deer-walk/${f.file}`));
     this.load.on('loaderror', () => { this.failed = true; el('fatal').hidden = false; });
@@ -103,7 +124,7 @@ class Park extends Phaser.Scene {
     if (import.meta.env.DEV) Object.defineProperty(window, '__DEER__', { configurable: true, get: () => JSON.parse(JSON.stringify({ mode: this.mode, ...this.world, record: progress.get(this.level.id), canSave: progress.canSave })) });
   }
   private idle(mode: 'title' | 'select') {
-    this.mode = mode; this.controls.enable(false); this.world = createWorld(this.level); this.view.reset();
+    this.mode = mode; this.controls.enable(false); this.world = createWorld(this.level); this.view.reset(); sound.music('home');
     el('hud').hidden = el('controls').hidden = true; el('message').textContent = '';
   }
   private title() {
@@ -130,7 +151,7 @@ class Park extends Phaser.Scene {
   private begin(level: LevelDefinition) {
     this.level = level; this.view.setLevel(level);
     this.world = createWorld(level); this.view.reset(); this.accumulator = 0; this.visualTime = 0; this.lossAge = 0;
-    this.mode = 'playing'; this.controls.enable(true); progress.attempt(level.id); sound.unlock();
+    this.mode = 'playing'; this.controls.enable(true); progress.attempt(level.id); sound.unlock(); sound.music('play');
     el('hud-level').textContent = `面 ${level.id}`; el('hud-title').textContent = level.title;
     el('hud').hidden = el('controls').hidden = false; el('overlay').innerHTML = ''; this.lastChapter = '';
     this.message(level.intro, 4);
@@ -150,6 +171,7 @@ class Park extends Phaser.Scene {
   private finish() {
     this.mode = 'result'; const w = this.world, level = this.level, clear = w.outcome === 'clear';
     const newBest = clear && progress.clear(level.id, w.time);
+    sound.music(clear ? 'clear' : 'fail');
     const index = PLAYABLE.indexOf(level), next = clear ? PLAYABLE[index + 1] : undefined;
     const attempts = progress.get(level.id).attempts;
     const title = clear ? '無事に、おさんぽ。' : w.outcome === 'fall' ? '地面まで、いたずら。' : w.outcome === 'wall' ? 'ぐえっ、壁…！' : w.outcome === 'caught' ? 'つかまった！' : 'あっ、足元…！';

@@ -35,7 +35,7 @@ export class ParkView {
   private walkers = new Map<string, { image: Phaser.GameObjects.Image; shadow: Phaser.GameObjects.Ellipse }>();
   private dropped: Phaser.GameObjects.Graphics[] = [];
   private sliderShapes = new Map<string, Phaser.GameObjects.Graphics>();
-  private wallFx: Phaser.GameObjects.Graphics;
+  private wallShapes = new Map<string, Phaser.GameObjects.Graphics>();
   private rainGraphic?: Phaser.GameObjects.Graphics;
   private trapGraphics: Phaser.GameObjects.Graphics;
   private particles: Particle[] = [];
@@ -46,7 +46,7 @@ export class ParkView {
   private cameraY: number;
   private playerHeight = 132;
   private playerWidth = 90;
-  private goalFlag: Phaser.GameObjects.Graphics;
+  private goalGate: Phaser.GameObjects.Image;
 
   constructor(scene: Phaser.Scene, level: LevelDefinition) {
     this.scene = scene;
@@ -54,12 +54,12 @@ export class ParkView {
     this.cameraY = level.start.y - 800;
     this.drawLevel();
     this.trapGraphics = scene.add.graphics().setDepth(2);
-    this.goalFlag = scene.add.graphics().setDepth(303);
+    this.goalGate = scene.add.image(GOAL.x, GOAL.y + 62, 'gate-goal').setOrigin(.5, 1);
+    this.goalGate.setDisplaySize(310, 310 * this.goalGate.frame.height / this.goalGate.frame.width);
     const { x, y } = level.start;
     this.shadow = scene.add.ellipse(x, y, 60, 20, 0x415535, .23).setDepth(10);
     this.marker = scene.add.graphics();
     this.deerFx = scene.add.graphics().setDepth(9);
-    this.wallFx = scene.add.graphics().setDepth(7000);
     this.sprite = scene.add.image(x, y, 'spru').setOrigin(.5, 1);
     const frame = this.sprite.frame;
     this.playerWidth = this.playerHeight * frame.width / frame.height;
@@ -141,9 +141,9 @@ export class ParkView {
       this.deer.push({ image, y, phase: y / 150 });
     }
     for (const poop of this.level.poops) this.poopShape(poop);
-    const start = s.add.graphics().setDepth(1);
-    start.lineStyle(3, 0xa1ae72, .65);
-    for (let i = 0; i < 3; i++) start.beginPath().moveTo(start0.x - 15, start0.y - 110 - i * 32).lineTo(start0.x, start0.y - 123 - i * 32).lineTo(start0.x + 15, start0.y - 110 - i * 32).strokePath();
+    // スタートゲート。Spruはアーチの下に立つ（ゲートは、Spruより奥に描く）。
+    const gate = s.add.image(start0.x, start0.y + 26, 'gate-start').setOrigin(.5, 1).setDepth(start0.y - 5);
+    gate.setDisplaySize(380, 380 * gate.frame.height / gate.frame.width);
     this.label(start0.x, start0.y + 80, '奈良さんぽ、出発。', 26, '#839467').setDepth(1);
     // A small rest garden is visible beyond the actual goal, not a fake finish.
     ground.fillStyle(0xd4dcb0).fillEllipse(360, 305, 450, 210);
@@ -225,7 +225,9 @@ export class ParkView {
     this.particles = []; this.labels = [];
     for (const g of this.dropped) g.destroy();
     for (const g of this.sliderShapes.values()) g.destroy();
-    this.sliderShapes.clear(); this.wallFx.clear(); this.rainGraphic?.clear();
+    this.sliderShapes.clear(); this.rainGraphic?.clear();
+    for (const g of this.wallShapes.values()) g.destroy();
+    this.wallShapes.clear();
     for (const k of this.walkers.values()) { k.image.destroy(); k.shadow.destroy(); }
     this.dropped = []; this.walkers.clear();
     this.sprite.setTexture('spru').setAlpha(1).setAngle(0);
@@ -238,8 +240,11 @@ export class ParkView {
       if (!shape) { shape = this.poopShape({ x: s.cx, y: s.cy }); this.sliderShapes.set(s.id, shape); }
       shape.setPosition(s.cx, s.cy).setDepth(s.cy);
     }
-    const g = this.wallFx.clear();
     for (const wall of w.walls) {
+      // 壁ごとに描き、Spruと同じく y で前後を決める（跳び越えるとき、壁の裏に隠れないように）。
+      let g = this.wallShapes.get(wall.id);
+      if (!g) { g = this.scene.add.graphics(); this.wallShapes.set(wall.id, g); }
+      g.clear().setDepth(wall.y + 40);
       if (wall.progress <= 0) continue;
       const r = wallRect(wall);
       g.fillStyle(0x4d3a28, .25).fillRoundedRect(r.x + 6, r.y + 12, r.w, r.h, 18);
@@ -331,9 +336,7 @@ export class ParkView {
     }
     this.labels = this.labels.filter(l => now - l.born <= 1.2);
     // 旗はゴールの位置について行く（動くゴールがあるため）。基準は、中央ゴール (360,300) のときの形。
-    const gx = w.goal.x - 360, gy = w.goal.y - 300;
-    this.goalFlag.clear().setPosition(gx, gy).lineStyle(6, 0x8d8058).lineBetween(360, 304, 360, 204);
-    this.goalFlag.fillStyle(0xfdf8df).fillPoints([{ x: 364, y: 204 }, { x: 430, y: 211 + Math.sin(now * 3) * 3 }, { x: 410, y: 230 }, { x: 364, y: 236 }], true);
-    this.goalFlag.lineStyle(2, 0x76955a).lineBetween(375, 215, 395, 219).lineBetween(375, 221, 389, 224);
+    // ゴールゲートはゴールの位置について行く（動くゴールがあるため）。Spruはゲートの手前を通ってクリアする。
+    this.goalGate.setPosition(w.goal.x, w.goal.y + 62).setDepth(w.goal.y - 20);
   }
 }

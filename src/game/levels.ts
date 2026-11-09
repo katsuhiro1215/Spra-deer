@@ -189,9 +189,9 @@ export const LEVEL_1_4: LevelDefinition = {
   },
 };
 
-/** 1-5: ステージ1の総仕上げ。ふさぐうんこ→降ってくるうんこと壁→追いかける鹿とおとりの穴→逃げるゴール。 */
+/** 1-5: 全部入り。ふさぐうんこ→降ってくるうんこと壁→追いかける鹿とおとりの穴→逃げるゴール。 */
 export const LEVEL_1_5: LevelDefinition = {
-  id: '1-5', stage: 1, title: 'ステージ1の総仕上げ',
+  id: '1-5', stage: 1, title: '全部入り',
   intro: 'これまでの、全部入り。',
   start: { x: 360, y: 3400 },
   poops: [...row(3150, 512), ...block(3050), ...row(1850, 256), ...row(1350, 448)],
@@ -233,6 +233,241 @@ export const LEVEL_1_5: LevelDefinition = {
   },
 };
 
+/** 1-6: 前からも、後ろからも。鹿が正面から突っ込み、後ろからも追う。止まれない中で、壁と雨と穴。 */
+export const LEVEL_1_6: LevelDefinition = {
+  id: '1-6', stage: 1, title: '前からも、後ろからも',
+  intro: '鹿が、前から来る！？',
+  start: { x: 360, y: 3400 },
+  poops: [...row(3150, 256), ...row(2550, 512), ...row(2000, 256), ...block(1500), ...row(1000, 448)],
+  deers: [], sliders: [],
+  traps: [
+    { id: 'hole-1', x: 190, y: 3000, width: 130, height: 100, warning: .35, silent: true },
+    { id: 'hole-2', x: 440, y: 2420, width: 130, height: 100, warning: .35, silent: true },
+    { id: 'landing-hole', x: 150, y: 1280, width: 280, height: 120, warning: .05, trigger: 'land', landReach: 110, silent: true },
+    { id: 'goal-hole', x: 395, y: 250, width: 100, height: 160, warning: .3, trigger: 'goal', silent: true },
+    { id: 'near-hole', x: 330, y: 700, width: 100, height: 90, warning: .35, silent: true },
+  ],
+  walls: [{ id: 'wall-1', side: 'r', y: 1800, thickness: 80, triggerY: 2050, speed: 1100, hold: .5 }],
+  rain: [
+    { id: 'rain-1', triggerY: 1200, delay: .2, warn: .8, aim: 'player' },
+    { id: 'rain-2', triggerY: 1130, delay: .2, warn: .8, aim: 'player' },
+  ],
+  chasers: [
+    { id: 'stag', kind: 'stag', x: 360, y: 3750, triggerY: 3300, speed: 205 },
+    // 正面から、突っ込んでくる。
+    { id: 'doe', kind: 'doe', x: 360, y: 2300, triggerY: 2950, speed: 170 },
+  ],
+  goal: { x: 360, y: 300, moveTo: { x: 550, y: 300, within: 260, speed: 420 } },
+  chapters: [
+    { above: 3300, text: '後ろから、鹿が来る！' },
+    { above: 2950, text: '前からも、来た…！' },
+    { above: 2050, text: '止まれない。壁にも注意。' },
+    { above: 1550, text: 'ふさがれた道は、跳ぶしかない。' },
+    { above: 1200, text: '上からも、来る。' },
+    { above: 600, text: '…旗は、動かないよね？' },
+    { above: -Infinity, text: 'あと少し。旗のところへ！' },
+  ],
+  hints: {
+    poop: POOP_HINT,
+    fall: FALL_HINT,
+    wall: WALL_HINT,
+    caught: '鹿につかまった…！\n前から来る鹿は、ジャンプで越えよう。\n止まると、後ろの鹿に追いつかれる。',
+  },
+};
+
+/** 1-7: 雨の降る道。鹿は落とし、空からも降る。降る場所が、すきまをふさぐ。 */
+export const LEVEL_1_7: LevelDefinition = {
+  id: '1-7', stage: 1, title: '雨の降る道',
+  intro: '上から、降ってくる！',
+  start: { x: 360, y: 3400 },
+  poops: [...row(3150, 384), ...row(2600, 256), ...row(2050, 512), ...row(1500, 384), ...row(950, 256)],
+  sliders: [],
+  deers: [
+    { id: 'doe', kind: 'doe', y: 2850, x1: 150, x2: 570, startX: 170, startDir: 1, speed: 105, firstDrop: 1.2, dropEvery: 2.6, drops: 4, warning: .8 },
+    { id: 'stag', kind: 'stag', y: 1800, x1: 150, x2: 570, startX: 560, startDir: -1, speed: 95, firstDrop: 7, dropEvery: 2.8, drops: 4, warning: .8 },
+  ],
+  traps: [
+    { id: 'hole-1', x: 330, y: 2430, width: 130, height: 100, warning: .35, silent: true },
+    { id: 'hole-2', x: 440, y: 1330, width: 130, height: 100, warning: .35, silent: true },
+    { id: 'big-hole', x: 210, y: 400, width: 300, height: 120, warning: .5, silent: true, trigger: 'y', triggerY: 700 },
+  ],
+  walls: [], chasers: [],
+  // 降ってくる場所が、すきまの出口をふさぐ。連続で降る。
+  rain: [
+    { id: 'rain-a1', triggerY: 2700, delay: .2, warn: .7, aim: 'player' },
+    { id: 'rain-a2', triggerY: 2620, delay: .2, warn: .7, aim: 'player' },
+    { id: 'rain-a3', triggerY: 2540, delay: .2, warn: .7, aim: 'player' },
+    { id: 'rain-b1', triggerY: 2150, delay: .1, warn: .8, x: 256, y: 2000 },
+    { id: 'rain-b2', triggerY: 2150, delay: .1, warn: .8, x: 420, y: 2000 },
+    { id: 'rain-c1', triggerY: 1650, delay: .2, warn: .7, aim: 'player' },
+    { id: 'rain-c2', triggerY: 1570, delay: .2, warn: .7, aim: 'player' },
+    { id: 'rain-c3', triggerY: 1490, delay: .2, warn: .7, aim: 'player' },
+    { id: 'rain-d1', triggerY: 1000, delay: .2, warn: .6, aim: 'player' },
+    { id: 'rain-d2', triggerY: 930, delay: .2, warn: .6, aim: 'player' },
+    { id: 'rain-d3', triggerY: 860, delay: .2, warn: .6, aim: 'player' },
+    { id: 'rain-d4', triggerY: 790, delay: .2, warn: .6, aim: 'player' },
+  ],
+  chapters: [
+    { above: 3100, text: '上から、降ってくる！' },
+    { above: 2700, text: '止まらずに、動き続けて。' },
+    { above: 2150, text: '降る場所が、道をふさぐ。' },
+    { above: 1650, text: 'また、降ってきた…。' },
+    { above: 1000, text: 'まだまだ、降る。' },
+    { above: 700, text: 'もう、ゴールは目の前。' },
+    { above: -Infinity, text: 'あと少し。旗のところへ！' },
+  ],
+  hints: {
+    poop: 'うんこが、上から降ってきた…！\n影が出たら、すぐ動こう。\n止まると、足元に落ちる。',
+    fall: FALL_HINT,
+    wall: WALL_HINT,
+  },
+};
+
+/** 1-8: せまる壁。左右から閉じる壁、壁を跳んだ先のうんこ、追いかける鹿。 */
+export const LEVEL_1_8: LevelDefinition = {
+  id: '1-8', stage: 1, title: 'せまる壁',
+  intro: '壁は、毎回同じ場所に出る。',
+  start: { x: 360, y: 3400 },
+  poops: [...row(3150, 384), ...block(2300), ...row(1700, 256), ...block(1100)],
+  deers: [], rain: [],
+  traps: [
+    { id: 'landing-hole-1', x: 180, y: 2100, width: 280, height: 120, warning: .05, trigger: 'land', landReach: 110, silent: true },
+    { id: 'hole-1', x: 420, y: 1540, width: 130, height: 100, warning: .35, silent: true },
+    { id: 'goal-hole', x: 395, y: 250, width: 100, height: 160, warning: .3, trigger: 'goal', silent: true },
+    { id: 'near-hole', x: 330, y: 700, width: 100, height: 90, warning: .35, silent: true },
+  ],
+  walls: [
+    { id: 'wall-1', side: 'l', y: 2850, thickness: 80, triggerY: 3080, speed: 1100, hold: .5 },
+    { id: 'wall-2l', side: 'l', y: 2600, thickness: 80, triggerY: 2850, speed: 950, hold: .8, length: 330 },
+    { id: 'wall-2r', side: 'r', y: 2600, thickness: 80, triggerY: 2850, speed: 950, hold: .8, length: 330 },
+    { id: 'wall-3', side: 'r', y: 1950, thickness: 80, triggerY: 2200, speed: 1100, hold: .5 },
+    { id: 'wall-4l', side: 'l', y: 1350, thickness: 80, triggerY: 1620, speed: 950, hold: .8, length: 330 },
+    { id: 'wall-4r', side: 'r', y: 1350, thickness: 80, triggerY: 1620, speed: 950, hold: .8, length: 330 },
+    { id: 'wall-5l', side: 'l', y: 560, thickness: 80, triggerY: 820, speed: 900, hold: 1, length: 330 },
+    { id: 'wall-5r', side: 'r', y: 560, thickness: 80, triggerY: 820, speed: 900, hold: 1, length: 330 },
+  ],
+  sliders: [
+    { id: 'dash-a', x: 114, y: 1800, toX: 560, toY: 1800, within: 170, speed: 520, trigger: 'near' },
+    { id: 'dash-b', x: 600, y: 900, toX: 150, toY: 900, within: 170, speed: 520, trigger: 'near' },
+  ],
+  chasers: [{ id: 'stag', kind: 'stag', x: 360, y: 1900, triggerY: 1650, speed: 200 }],
+  goal: { x: 360, y: 300, moveTo: { x: 550, y: 300, within: 260, speed: 420 } },
+  chapters: [
+    { above: 3100, text: '壁は、毎回同じ場所に出る。' },
+    { above: 2850, text: '左右から、閉じてくる。' },
+    { above: 2300, text: '壁を跳んだ先も、あやしい。' },
+    { above: 1650, text: '後ろから、鹿も来る。' },
+    { above: 1100, text: '壁、壁、また壁。' },
+    { above: 600, text: '…旗は、動かないよね？' },
+    { above: -Infinity, text: 'あと少し。旗のところへ！' },
+  ],
+  hints: {
+    poop: 'うんこが走ってきた…！\n近づくと動くのがいる。\n動き出したら、すぐ避けよう。',
+    fall: FALL_HINT,
+    wall: WALL_HINT,
+    caught: '鹿に追いつかれた…！\n壁の前で止まりすぎると、追いつかれる。\n壁は、跳び越えられる。',
+  },
+};
+
+/** 1-9: 総力戦の手前。追いかける鹿が3頭、雨、走るうんこ、おとりの穴。立ち止まれない。 */
+export const LEVEL_1_9: LevelDefinition = {
+  id: '1-9', stage: 1, title: '立ち止まれない',
+  intro: '今度は、3頭。',
+  start: { x: 360, y: 3400 },
+  poops: [...row(3150, 256), ...row(2650, 512), ...row(2150, 256), ...row(1650, 448), ...row(1150, 256), ...row(800, 448)],
+  deers: [],
+  traps: [
+    { id: 'hole-1', x: 190, y: 3000, width: 130, height: 100, warning: .3, silent: true },
+    { id: 'hole-2', x: 440, y: 2500, width: 130, height: 100, warning: .3, silent: true },
+    { id: 'hole-3', x: 190, y: 2000, width: 130, height: 100, warning: .3, silent: true },
+    { id: 'hole-4', x: 380, y: 1500, width: 130, height: 100, warning: .3, silent: true },
+    { id: 'hole-5', x: 190, y: 1000, width: 130, height: 100, warning: .3, silent: true },
+    { id: 'goal-hole', x: 395, y: 250, width: 100, height: 160, warning: .3, trigger: 'goal', silent: true },
+  ],
+  walls: [{ id: 'wall-1', side: 'l', y: 1800, thickness: 80, triggerY: 2050, speed: 1100, hold: .5 }],
+  sliders: [
+    { id: 'dash-a', x: 600, y: 2350, toX: 150, toY: 2350, within: 170, speed: 560, trigger: 'near' },
+    { id: 'dash-b', x: 114, y: 1350, toX: 560, toY: 1350, within: 170, speed: 560, trigger: 'near' },
+  ],
+  rain: [
+    { id: 'rain-1', triggerY: 1250, delay: .2, warn: .7, aim: 'player' },
+    { id: 'rain-2', triggerY: 1180, delay: .2, warn: .7, aim: 'player' },
+    { id: 'rain-3', triggerY: 1110, delay: .2, warn: .7, aim: 'player' },
+  ],
+  chasers: [
+    { id: 'stag', kind: 'stag', x: 360, y: 3750, triggerY: 3300, speed: 215 },
+    { id: 'doe', kind: 'doe', x: 580, y: 3000, triggerY: 2650, speed: 210 },
+    { id: 'fawn', kind: 'fawn', x: 140, y: 2400, triggerY: 2050, speed: 210 },
+  ],
+  goal: { x: 360, y: 300, moveTo: { x: 550, y: 300, within: 260, speed: 420 } },
+  chapters: [
+    { above: 3300, text: '今度は、3頭。' },
+    { above: 2650, text: '1頭、増えた。' },
+    { above: 2050, text: 'もう1頭…！' },
+    { above: 1300, text: '止まったら、終わり。' },
+    { above: 600, text: '…旗は、動かないよね？' },
+    { above: -Infinity, text: 'あと少し。旗のところへ！' },
+  ],
+  hints: {
+    poop: POOP_HINT,
+    fall: FALL_HINT,
+    wall: WALL_HINT,
+    caught: '鹿に囲まれた…！\n止まらず、すきまの先は早めに横へ。\n降ってくるうんこも、動きながら避けよう。',
+  },
+};
+
+/** 1-10: ステージ1の最終関門。これまでのしかけが、全部。 */
+export const LEVEL_1_10: LevelDefinition = {
+  id: '1-10', stage: 1, title: '最終関門',
+  intro: 'ここまでの、全部。',
+  start: { x: 360, y: 3400 },
+  poops: [...row(3200, 512), ...block(3080), ...row(2500, 256), ...block(1950), ...row(1400, 448), ...row(900, 256)],
+  deers: [],
+  traps: [
+    { id: 'landing-hole', x: 180, y: 2900, width: 280, height: 130, warning: .05, trigger: 'land', landReach: 110, silent: true },
+    { id: 'hole-1', x: 190, y: 2350, width: 130, height: 100, warning: .3, silent: true },
+    { id: 'landing-hole-2', x: 160, y: 1730, width: 300, height: 120, warning: .05, trigger: 'land', landReach: 110, silent: true },
+    { id: 'hole-2', x: 400, y: 1250, width: 130, height: 100, warning: .3, silent: true },
+    { id: 'hole-3', x: 190, y: 760, width: 130, height: 100, warning: .3, silent: true },
+    { id: 'goal-hole', x: 395, y: 250, width: 100, height: 160, warning: .3, trigger: 'goal', silent: true },
+    { id: 'big-hole', x: 210, y: 420, width: 300, height: 110, warning: .5, silent: true, trigger: 'y', triggerY: 640 },
+  ],
+  walls: [
+    { id: 'wall-1', side: 'l', y: 2700, thickness: 80, triggerY: 2930, speed: 1100, hold: .5 },
+    { id: 'wall-2l', side: 'l', y: 2150, thickness: 80, triggerY: 2380, speed: 950, hold: .8, length: 330 },
+    { id: 'wall-2r', side: 'r', y: 2150, thickness: 80, triggerY: 2380, speed: 950, hold: .8, length: 330 },
+  ],
+  sliders: [
+    { id: 'slider', x: 570, y: 3010, toX: 500, toY: 3150, within: 420, speed: 560 },
+    { id: 'dash', x: 600, y: 1550, toX: 150, toY: 1550, within: 170, speed: 560, trigger: 'near' },
+  ],
+  rain: [
+    { id: 'rain-1', triggerY: 1150, delay: .2, warn: .7, aim: 'player' },
+    { id: 'rain-2', triggerY: 1080, delay: .2, warn: .7, aim: 'player' },
+    { id: 'rain-3', triggerY: 1010, delay: .2, warn: .7, aim: 'player' },
+  ],
+  chasers: [
+    { id: 'stag', kind: 'stag', x: 360, y: 2650, triggerY: 2200, speed: 210 },
+    { id: 'doe', kind: 'doe', x: 580, y: 1500, triggerY: 1300, speed: 215 },
+  ],
+  goal: { x: 360, y: 300, moveTo: { x: 550, y: 300, within: 260, speed: 420 } },
+  chapters: [
+    { above: 3150, text: 'ここまでの、全部。' },
+    { above: 2700, text: '壁も、来る。' },
+    { above: 2200, text: '鹿も、来る。' },
+    { above: 1750, text: 'ふさがれた道は、跳ぶしかない。' },
+    { above: 1200, text: '上からも、来る。' },
+    { above: 700, text: '…旗は、動かないよね？' },
+    { above: -Infinity, text: 'あと少し。旗のところへ！' },
+  ],
+  hints: {
+    poop: 'ここまでの全部が、お待ちかね。\nどこで何が来るかは、毎回同じ。\n一つずつ、覚えて越えよう。',
+    fall: '着地した場所や、すきまの先、\nゴールの前に、穴がある。\n一度見たら、次は避けられる。',
+    wall: WALL_HINT,
+    caught: '鹿に追いつかれた…！\n止まらず、壁は跳び越えよう。\n降ってくるうんこは、動きながら避ける。',
+  },
+};
+
 /** ステージ1の枠。 */
 export const STAGE_1: LevelSlot[] = [
   { id: '1-1', title: LEVEL_1_1.title, summary: '安全そうな道を、よく見よう', level: LEVEL_1_1 },
@@ -240,6 +475,11 @@ export const STAGE_1: LevelSlot[] = [
   { id: '1-3', title: LEVEL_1_3.title, summary: '横から、壁が出てくる', level: LEVEL_1_3 },
   { id: '1-4', title: LEVEL_1_4.title, summary: '鹿が、追いかけてくる', level: LEVEL_1_4 },
   { id: '1-5', title: LEVEL_1_5.title, summary: '全部まとめて挑戦', level: LEVEL_1_5 },
+  { id: '1-6', title: LEVEL_1_6.title, summary: '正面からも、鹿が来る', level: LEVEL_1_6 },
+  { id: '1-7', title: LEVEL_1_7.title, summary: '空から、降ってくる', level: LEVEL_1_7 },
+  { id: '1-8', title: LEVEL_1_8.title, summary: '壁が、せまってくる', level: LEVEL_1_8 },
+  { id: '1-9', title: LEVEL_1_9.title, summary: '3頭の鹿から逃げる', level: LEVEL_1_9 },
+  { id: '1-10', title: LEVEL_1_10.title, summary: 'ステージ1の最終関門', level: LEVEL_1_10 },
 ];
 
 export const STAGES: { stage: number; title: string; slots: LevelSlot[] }[] = [

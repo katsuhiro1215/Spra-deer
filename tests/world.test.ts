@@ -308,7 +308,7 @@ test('1-5: block, falling poop, wall, chasing deer, bait holes, and a goal that 
 test('level data is sound: unique ids, safe start, final chapter, reachable gaps', () => {
   const ids = PLAYABLE.map(l => l.id);
   assert.equal(new Set(ids).size, ids.length);
-  assert.deepEqual(ids, ['1-1', '1-2', '1-3', '1-4', '1-5']);
+  assert.deepEqual(ids.slice(0, 10), ['1-1', '1-2', '1-3', '1-4', '1-5', '1-6', '1-7', '1-8', '1-9', '1-10']);
   for (const level of PLAYABLE) {
     assert.ok(level.poops.every(p => Math.hypot(p.x - level.start.x, p.y - level.start.y) > 150), `${level.id}: poop near start`);
     assert.ok(level.start.y > GOAL.y + 800, `${level.id}: start too close to goal`);
@@ -316,7 +316,7 @@ test('level data is sound: unique ids, safe start, final chapter, reachable gaps
     assert.ok(level.hints.poop && level.hints.wall && level.hints.fall);
     for (const wall of level.walls) assert.ok(wall.triggerY < level.start.y && wall.triggerY > wall.y + wall.thickness / 2, `${level.id}: ${wall.id} must trigger before the wall`);
     for (const s of level.sliders) assert.ok(Math.hypot(s.x - level.start.x, s.y - level.start.y) > 150);
-    for (const c of level.chasers) assert.ok(c.y > level.start.y - 1200 && c.triggerY < level.start.y, `${level.id}: chaser ${c.id} must start after the player moves`);
+    for (const c of level.chasers) assert.ok(c.triggerY <= level.start.y - 100, `${level.id}: chaser ${c.id} must start after the player moves`);
   }
-  assert.equal(STAGES[0].slots.length, 5);
+  assert.equal(STAGES[0].slots.length, 10);
 });

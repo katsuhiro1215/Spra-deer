@@ -1,0 +1,65 @@
+import { createWorld, step, type World, type Input } from '../src/game/world.ts';
+import type { LevelDefinition } from '../src/game/levels.ts';
+
+/**
+ * 面がクリアできることを、シミュレーションで確かめる探索ボット。
+ * 一定の時間（macro 秒）ごとに「8方向 / 止まる / ジャンプ付き」を選び、同じ場所（bucket）の状態をまとめて、
+ * 先頭から band 以上遅れた状態は捨てる。見つかれば、実際に再生できる入力列を返す（＝クリア可能の証明）。
+ * 見つからないのは「無理」ではなく「ボットが見つけられなかった」の意味。
+ */
+export type Action = { x: number; y: number; jump: boolean };
+export type SolveResult = { ok: true; actions: Action[]; time: number; jumps: number } | { ok: false; reason: string; best: number };
+
+const DIRS: [number, number][] = [[0, 0], [0, -1], [1, -1], [-1, -1], [1, 0], [-1, 0], [1, 1], [-1, 1], [0, 1]];
+const S2 = Math.SQRT1_2;
+const norm = ([x, y]: [number, number]): [number, number] => (x && y ? [x * S2, y * S2] : [x, y]);
+const ACTIONS: Action[] = [
+  ...DIRS.map(d => { const [x, y] = norm(d); return { x, y, jump: false }; }),
+  ...DIRS.slice(1).map(d => { const [x, y] = norm(d); return { x, y, jump: true }; }),
+];
+
+type Node = { w: World; parent: Node | null; action: Action | null };
+
+export function solve(level: LevelDefinition, opts: { macro?: number; bucket?: number; band?: number; maxTime?: number; maxLayer?: number } = {}): SolveResult {
+  const macro = opts.macro ?? .25, bucket = opts.bucket ?? 40, band = opts.band ?? 300, maxTime = opts.maxTime ?? 60, maxLayer = opts.maxLayer ?? 700;
+  const steps = Math.round(macro / (1 / 120));
+  let layer: Node[] = [{ w: createWorld(level), parent: null, action: null }];
+  let best = level.start.y;
+  for (let t = 0; t < maxTime / macro && layer.length; t++) {
+    const next = new Map<string, Node>();
+    for (const node of layer) {
+      for (const a of ACTIONS) {
+        const p = node.w.player;
+        if (a.jump && (p.height > 0 || p.jumpTime >= 0 || p.cooldown > 0)) continue;
+        const w = structuredClone(node.w);
+        for (let i = 0; i < steps && w.outcome === 'playing'; i++) step(w, { x: a.x, y: a.y, jump: a.jump && i === 0 } as Input);
+        if (w.outcome === 'clear') return { ok: true, actions: unwind({ w, parent: node, action: a }), time: w.time, jumps: w.jumps };
+        if (w.outcome !== 'playing') continue;
+        const q = w.player;
+        const key = `${Math.round(q.x / bucket)},${Math.round(q.y / bucket)},${q.height > 0 ? 1 : 0},${w.walls.map(x => x.state[0]).join('')}${w.traps.map(x => x.state[0]).join('')}${w.chasers.map(x => Math.round(x.x / 90) + ':' + Math.round(x.y / 90)).join('')}${w.sliders.map(x => x.state[0]).join('')}`;
+        if (!next.has(key)) next.set(key, { w, parent: node, action: a });
+      }
+    }
+    let nodes = [...next.values()];
+    if (!nodes.length) return { ok: false, reason: 'no live states', best };
+    const top = Math.min(...nodes.map(n => n.w.player.y));
+    best = Math.min(best, top);
+    nodes = nodes.filter(n => n.w.player.y <= top + band);
+    if (nodes.length > maxLayer) { nodes.sort((a, b) => a.w.player.y - b.w.player.y); nodes = nodes.slice(0, maxLayer); }
+    layer = nodes;
+  }
+  return { ok: false, reason: 'time limit', best };
+}
+
+function unwind(node: Node): Action[] {
+  const out: Action[] = [];
+  for (let n: Node | null = node; n && n.action; n = n.parent) out.push(n.action);
+  return out.reverse();
+}
+
+/** solve が返した入力列を再生して、本当にクリアすることを確かめる。 */
+export function replay(level: LevelDefinition, actions: Action[], macro = .25): World {
+  const w = createWorld(level), steps = Math.round(macro / (1 / 120));
+  for (const a of actions) for (let i = 0; i < steps && w.outcome === 'playing'; i++) step(w, { x: a.x, y: a.y, jump: a.jump && i === 0 } as Input);
+  return w;
+}
