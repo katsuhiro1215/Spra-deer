@@ -111,7 +111,7 @@ try {
   await page.keyboard.down('ArrowRight');
   await page.waitForFunction(() => window.__DEER__.player.x >= 470);
   await page.keyboard.up('ArrowRight'); await page.keyboard.down('ArrowUp');
-  await page.waitForFunction(() => window.__DEER__.player.y <= 2092);
+  await page.waitForFunction(() => window.__DEER__.player.y <= 3130);
   await page.keyboard.press('Space');
   await page.waitForFunction(() => window.__DEER__.jumps === 1 && window.__DEER__.player.height > 30);
   await snap(page, '07-1-2-jumping');

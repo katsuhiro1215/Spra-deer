@@ -314,7 +314,9 @@ export class ParkView {
       if (age > 1.2) l.text.destroy();
     }
     this.labels = this.labels.filter(l => now - l.born <= 1.2);
-    this.goalFlag.clear().lineStyle(6, 0x8d8058).lineBetween(360, 304, 360, 204);
+    // 旗はゴールの位置について行く（動くゴールがあるため）。基準は、中央ゴール (360,300) のときの形。
+    const gx = w.goal.x - 360, gy = w.goal.y - 300;
+    this.goalFlag.clear().setPosition(gx, gy).lineStyle(6, 0x8d8058).lineBetween(360, 304, 360, 204);
     this.goalFlag.fillStyle(0xfdf8df).fillPoints([{ x: 364, y: 204 }, { x: 430, y: 211 + Math.sin(now * 3) * 3 }, { x: 410, y: 230 }, { x: 364, y: 236 }], true);
     this.goalFlag.lineStyle(2, 0x76955a).lineBetween(375, 215, 395, 219).lineBetween(375, 221, 389, 224);
   }

@@ -1,4 +1,4 @@
-import type { Point, SliderDefinition, TrapDefinition, WallDefinition } from './stage.ts';
+import type { GoalDefinition, Point, SliderDefinition, TrapDefinition, WallDefinition } from './stage.ts';
 
 /** 画面上の位置（Y）がこの値より下にいる間、text を案内として表示する。上から順に判定する。 */
 export type Chapter = { above: number; text: string };
@@ -31,6 +31,7 @@ export type LevelDefinition = {
   traps: TrapDefinition[];
   walls: WallDefinition[];
   sliders: SliderDefinition[];
+  goal?: GoalDefinition; // 省略するとゴールは中央（GOAL）
   chapters: Chapter[];
   /** 失敗の原因と、次の攻略方法（失敗の種類ごと）。 */
   hints: { poop: string; fall: string; wall: string };
@@ -64,6 +65,8 @@ export const LEVEL_1_1: LevelDefinition = {
   traps: [
     { id: 'gap-trap', x: 360, y: 2280, width: 176, height: 130, warning: .65, silent: true },
     { id: 'landing-trap', x: 168, y: 1530, width: 176, height: 140, warning: .76, silent: true },
+    // 安心してゴールへ向かうと、真ん中に大きな穴が開く。左右のはしは通れる。
+    { id: 'big-hole', x: 210, y: 400, width: 300, height: 120, warning: .5, silent: true, trigger: 'y', triggerY: 700 },
   ],
   walls: [], sliders: [],
   chapters: [
@@ -71,59 +74,83 @@ export const LEVEL_1_1: LevelDefinition = {
     { above: 2400, text: '鹿が止まったら、うんこの合図。' },
     { above: 1850, text: '空いている道。…あれ？' },
     { above: 1100, text: 'うんこの場所は、さっきと違うかも。' },
-    { above: -Infinity, text: 'あと少し。旗のところへ！' },
+    { above: 700, text: 'あと少し。旗のところへ！' },
+    { above: -Infinity, text: 'もう、ゴールは目の前。' },
   ],
   hints: { poop: POOP_HINT, fall: FALL_HINT, wall: WALL_HINT },
 };
 
-/** 1-2: 道を完全にふさぐうんこ。跳んで越えると、着地点に穴があく。2つ目は、着地点へ動いてくるうんこ。 */
+/** 1-2: 道を完全にふさぐうんこ。越えた先の穴、着地点へ動くうんこ、走るうんこ。最後は、ゴールが逃げて穴に落とす。 */
 export const LEVEL_1_2: LevelDefinition = {
   id: '1-2', stage: 1, title: '越えた先が、あやしい',
   intro: '道がふさがれてる。跳ぶしかない。',
-  start: { x: 360, y: 2300 },
-  poops: [...block(1950), ...row(1500, 512), ...block(1250), ...row(850, 256)],
+  start: { x: 360, y: 3400 },
+  poops: [...row(3150, 512), ...block(3050), ...row(2600, 512), ...block(2350), ...row(1950, 256), ...row(1500, 448), ...row(1050, 384)],
   deers: [],
   traps: [
     // 1つ目のうんこを越えて着地したところが、いきなり穴になる。横にずらして着地すれば無事。
-    { id: 'landing-hole', x: 180, y: 1780, width: 260, height: 130, warning: .05, trigger: 'land', landReach: 110, silent: true },
+    { id: 'landing-hole', x: 180, y: 2880, width: 260, height: 130, warning: .05, trigger: 'land', landReach: 110, silent: true },
+    // ゴールが逃げるとき、道の途中にも穴が開く。右のはしから回れば無事。
+    { id: 'goal-hole', x: 395, y: 250, width: 100, height: 160, warning: .3, trigger: 'goal', silent: true },
+    { id: 'near-hole', x: 330, y: 700, width: 100, height: 90, warning: .35, silent: true },
   ],
   walls: [],
   sliders: [
     // 2つ目のうんこを跳ぶと、右のすみのうんこが、着地点へ動いてくる。
-    { id: 'slider', x: 570, y: 1010, toX: 500, toY: 1190, within: 420, speed: 560 },
+    { id: 'slider', x: 570, y: 2110, toX: 500, toY: 2290, within: 420, speed: 560 },
+    // 近づくだけで、横から走ってくるうんこ。
+    { id: 'dash', x: 600, y: 1750, toX: 256, toY: 1750, within: 420, speed: 650, trigger: 'near' },
   ],
+  // ゴールに近づくと、右へ逃げる。
+  goal: { x: 360, y: 300, moveTo: { x: 550, y: 300, within: 260, speed: 420 } },
   chapters: [
-    { above: 2100, text: '道がふさがれてる。跳ぶしかない。' },
-    { above: 1450, text: '越えたら、すぐ次へ。' },
-    { above: 800, text: 'もう一度、ふさがれてる…。' },
-    { above: -Infinity, text: 'あと少し。旗のところへ！' },
+    { above: 3100, text: '道がふさがれてる。跳ぶしかない。' },
+    { above: 2550, text: '越えたら、すぐ次へ。' },
+    { above: 1900, text: 'もう一度、ふさがれてる…。' },
+    { above: 1100, text: 'うんこは、動くこともある。' },
+    { above: 600, text: 'あと少し。旗のところへ！' },
+    { above: -Infinity, text: '…旗は、動かないよね？' },
   ],
   hints: {
-    poop: 'うんこが…動いてきた！？\n跳ぶと、着地点へ向かってくるみたい。\n着地する場所を、横にずらしてみよう。',
-    fall: '着地した場所に、穴が…！\n越えたあとが、いちばん危ない。\n着地点を、横にずらしてみよう。',
+    poop: 'うんこが…動いてきた！？\n跳ぶと、着地点へ向かってくるみたい。\n近づくと走ってくるのもいる。',
+    fall: '着地した場所に、穴が…！\n越えたあとと、ゴールの前が危ない。\n着地点や、進む道をずらしてみよう。',
     wall: WALL_HINT,
   },
 };
 
-/** 1-3: 突然、横から壁が出てくる。出てくる場所と時間は毎回同じ。 */
+/** 1-3: 突然、横から壁が出てくる。うんこも走る。最後は、ゴールの前で左右から壁が閉じる。出る場所と時間は毎回同じ。 */
 export const LEVEL_1_3: LevelDefinition = {
   id: '1-3', stage: 1, title: 'とつぜんの壁',
   intro: 'まっすぐ進めば、すぐゴール。…本当に？',
-  start: { x: 360, y: 2300 },
-  poops: [...row(1560, 384), ...row(1000, 256)],
-  deers: [], traps: [], sliders: [],
+  start: { x: 360, y: 3400 },
+  poops: [...row(3150, 384), ...row(1800, 256), ...row(1000, 448)],
+  deers: [], traps: [],
   walls: [
-    { id: 'wall-1', side: 'l', y: 1900, thickness: 80, triggerY: 2110, speed: 950, hold: .8 },
-    { id: 'wall-2', side: 'r', y: 1300, thickness: 80, triggerY: 1420, speed: 1100, hold: .8 },
-    { id: 'wall-3', side: 'l', y: 700, thickness: 80, triggerY: 1100, speed: 1100, hold: .8 },
+    { id: 'wall-1', side: 'l', y: 2650, thickness: 80, triggerY: 2900, speed: 950, hold: .5 },
+    { id: 'wall-2', side: 'r', y: 2050, thickness: 80, triggerY: 2300, speed: 1100, hold: .5 },
+    { id: 'wall-3', side: 'l', y: 1350, thickness: 80, triggerY: 1580, speed: 1100, hold: .5 },
+    // ゴールの前で、左右から壁が来て、真ん中で閉じる。
+    { id: 'wall-4', side: 'l', y: 520, thickness: 80, triggerY: 780, speed: 900, hold: 1, length: 330 },
+    { id: 'wall-5', side: 'r', y: 520, thickness: 80, triggerY: 780, speed: 900, hold: 1, length: 330 },
+  ],
+  sliders: [
+    // 近づくと、横から走ってくるうんこ。歩き続けると当たる。
+    { id: 'dash-a', x: 114, y: 1700, toX: 560, toY: 1700, within: 165, speed: 500, trigger: 'near' },
+    { id: 'dash-b', x: 600, y: 800, toX: 150, toY: 800, within: 170, speed: 500, trigger: 'near' },
   ],
   chapters: [
-    { above: 2150, text: 'まっすぐ進めば、すぐゴール。' },
-    { above: 1450, text: 'うんこの先も、気をつけて。' },
-    { above: 1000, text: '壁は、毎回同じ場所に出る。' },
+    { above: 3100, text: 'まっすぐ進めば、すぐゴール。' },
+    { above: 2450, text: '壁は、毎回同じ場所に出る。' },
+    { above: 1750, text: 'うんこも、走ることがある。' },
+    { above: 900, text: 'うんこの先も、気をつけて。' },
+    { above: 600, text: 'もう、ゴールは目の前。' },
     { above: -Infinity, text: 'あと少し。旗のところへ！' },
   ],
-  hints: { poop: POOP_HINT, fall: FALL_HINT, wall: WALL_HINT },
+  hints: {
+    poop: 'うんこが走ってきた…！\n近づくと動くのがいるみたい。\n動き出したら、いったん止まってみよう。',
+    fall: FALL_HINT,
+    wall: WALL_HINT,
+  },
 };
 
 /** ステージ1の枠。 */

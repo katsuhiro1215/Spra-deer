@@ -178,35 +178,89 @@ test('deer stop to warn, then drop a poop at a fixed spot and time', () => {
   assert.equal(w.poops.length, LEVEL_1_1.poops.length + w.deers.reduce((n, d) => n + d.dropped, 0));
 });
 
+// ---- 新しい仕掛け（動くゴール、位置で開く穴、左右から閉じる壁、走るうんこ） ----
+test('a goal that runs away moves when you get close, and a goal-triggered hole opens', () => {
+  const w = make({
+    start: { x: 360, y: 700 }, goal: { x: 360, y: 300, moveTo: { x: 550, y: 300, within: 260, speed: 420 } },
+    traps: [{ id: 'g', x: 395, y: 250, width: 100, height: 160, warning: .3, trigger: 'goal', silent: true }],
+  });
+  run(w, { x: 0, y: -1 }, 1); // y≈465 → 距離165 で逃げ出す
+  assert.notEqual(w.goal.state, 'idle'); run(w, { x: 0, y: 0 }, 1);
+  assert.deepEqual([w.goal.x, w.goal.y, w.goal.state], [550, 300, 'done']);
+  assert.equal(w.traps[0].state, 'open');
+  walk(w, 360, 300); // 元の場所に立っても、クリアにならない
+  assert.equal(w.outcome, 'playing');
+});
+test('a y-triggered hole opens once you pass the line, and a side lane stays safe', () => {
+  const lv = { start: { x: 360, y: 900 }, traps: [{ id: 'b', x: 210, y: 400, width: 300, height: 120, warning: .5, trigger: 'y' as const, triggerY: 700, silent: true }] };
+  const straight = make(lv);
+  for (let i = 0; i < 600 && straight.outcome === 'playing'; i++) step(straight, { x: 0, y: -1 });
+  assert.equal(straight.outcome, 'fall');
+  const side = make(lv);
+  walk(side, 150, 780); walk(side, 150, 380); walk(side, 360, 300);
+  assert.equal(side.outcome, 'clear');
+});
+test('walls from both sides close the middle, and one short wall leaves a gap', () => {
+  const both = [
+    { id: 'a', side: 'l' as const, y: 1200, thickness: 80, triggerY: 1400, speed: 900, hold: 1, length: 330 },
+    { id: 'b', side: 'r' as const, y: 1200, thickness: 80, triggerY: 1400, speed: 900, hold: 1, length: 330 },
+  ];
+  const w = make({ walls: both, start: { x: 448, y: 1500 } });
+  walk(w, 448, 1390); run(w, { x: 0, y: 0 }, 1);
+  const l = wallRect(w.walls[0]), r = wallRect(w.walls[1]);
+  assert.ok(l.x + l.w >= r.x, 'the two walls meet in the middle');
+  const w2 = make({ walls: [both[0]], start: { x: 540, y: 1500 } });
+  run(w2, { x: 0, y: -1 }, 3);
+  assert.equal(w2.outcome, 'playing', 'a short wall from the left does not reach the right side');
+});
+test('a running poop starts when you come near, and only catches someone who keeps walking', () => {
+  const lv = { start: { x: 256, y: 2100 }, sliders: [{ id: 'd', x: 114, y: 1700, toX: 560, toY: 1700, within: 165, speed: 500, trigger: 'near' as const }] };
+  const runner = make(lv);
+  for (let i = 0; i < 480 && runner.outcome === 'playing'; i++) step(runner, { x: 0, y: -1 });
+  assert.equal(runner.outcome, 'poop');
+  const waiter = make(lv);
+  for (let i = 0; i < 720 && waiter.outcome === 'playing'; i++) step(waiter, { x: 0, y: waiter.sliders[0].state === 'moving' ? 0 : -1 });
+  assert.equal(waiter.outcome, 'playing');
+});
+
 // ---- 面ごとの攻略経路（予兆がなくても、2回目には抜けられる） ----
-const ROUTE_1_1: Move[] = [[384,3240],[384,3060],[384,2700],[448,2600],[448,2460],[300,2460],[300,2200],[300,1900],[256,1800],[256,1710],[400,1710],[400,1480],[384,1140],[384,960],[GOAL.x,GOAL.y]];
-test('1-1 is completable by reading the bait gaps, and walking into either gap drops you in the hole', () => {
+const R11: Move[] = [[384,3240],[384,3060],[384,2700],[448,2600],[448,2460],[300,2460],[300,2200],[300,1900],[256,1800],[256,1710],[400,1710],[400,1480],[384,1140],[384,960]];
+test('1-1 is completable by reading the bait gaps and the last big hole, and each trap catches a straight walk', () => {
   const w = createWorld(LEVEL_1_1);
-  follow(w, ROUTE_1_1);
+  follow(w, [...R11, [150,780], [150,380], [GOAL.x, GOAL.y]]);
   assert.equal(w.outcome, 'clear');
   assert.ok(w.traps.every(t => t.state === 'open'));
   assert.ok(w.poops.length > LEVEL_1_1.poops.length);
   failsWith(LEVEL_1_1, [[384,3240],[384,3060],[384,2700],[448,2600],[448,2300]], 'fall');
-  failsWith(LEVEL_1_1, ROUTE_1_1.slice(0, 8).concat([[256,1800],[256,1500]]), 'fall');
+  failsWith(LEVEL_1_1, R11.slice(0, 8).concat([[256,1800],[256,1500]]), 'fall');
+  failsWith(LEVEL_1_1, [...R11, [GOAL.x, GOAL.y]], 'fall'); // 安心してゴールへ向かうと、真ん中の大穴
 });
-const ROUTE_1_2: Move[] = [[470,2090],['j',0,-1],[500,1500],[360,1400],[360,1385],['j',0,-1],[256,1000],[256,760],[GOAL.x,GOAL.y]];
-test('1-2: block, then a hole where you land, then a slider that chases your landing', () => {
+const A12: Move[] = [[500,3220],[500,3130],['j',0,-1],[500,2650],[500,2560],[360,2470],[360,2450],['j',0,-1],[256,2050],[256,1960],[256,1900],[350,1790],[350,1650],[420,1560],[420,1420],[400,1140],[440,1000]];
+test('1-2: block, landing hole, sliding poop, running poop, and a goal that runs into a hole', () => {
   const w = createWorld(LEVEL_1_2);
-  follow(w, ROUTE_1_2);
+  follow(w, [...A12, [520,900], [520,600], [540,420], [550,330]]);
   assert.equal(w.outcome, 'clear'); assert.equal(w.jumps, 2);
-  // 道は完全にふさがれていて、歩いては通れない。
-  failsWith(LEVEL_1_2, [[360,1800]], 'poop');
-  // 着地点を穴にずらさないと落ちる。
-  failsWith(LEVEL_1_2, [[360,2090],['j',0,-1],['w',.5]], 'fall');
-  // 2つ目は、まっすぐ跳ぶと動くうんこに当たる。
-  failsWith(LEVEL_1_2, [[470,2090],['j',0,-1],[500,1500],[500,1380],['j',0,-1]], 'poop');
+  failsWith(LEVEL_1_2, [[360,3000]], 'poop'); // 道は完全にふさがれていて、歩いては通れない
+  failsWith(LEVEL_1_2, [[500,3220],[500,3110],[360,3105],['j',0,-1],['w',.5]], 'fall'); // 着地点を穴にずらさないと落ちる
+  failsWith(LEVEL_1_2, [[500,3220],[500,3130],['j',0,-1],[500,2650],[500,2560],[500,2380],['j',0,-1]], 'poop'); // まっすぐ跳ぶと、動くうんこに当たる
+  failsWith(LEVEL_1_2, [[500,3220],[500,3130],['j',0,-1],[500,2650],[500,2560],[360,2470],[360,2450],['j',0,-1],[256,2050],[256,1960],[256,1700]], 'poop'); // 走るうんこ
+  failsWith(LEVEL_1_2, [...A12, [400,900], [400,700]], 'fall'); // 近づくと開く穴
+  // 旗を追いかけて、まっすぐ右へ走ると、道の途中の穴に落ちる
+  const chase = createWorld(LEVEL_1_2);
+  try { follow(chase, [...A12, [520,900], [520,600], [360,420], [360,300], [550,300]]); } catch { /* 落ちる */ }
+  assert.equal(chase.outcome, 'fall');
 });
-const ROUTE_1_3: Move[] = [[360,2105],['w',4],[384,1640],[384,1470],[384,1415],['w',4],[256,1090],['w',4],[256,900],[256,760],[GOAL.x,GOAL.y]];
-test('1-3: walls come out at fixed places; walking straight is crushed, waiting gets through', () => {
+const A13: Move[] = [[384,3230],[384,3080],[360,2895],['w',3],[384,2400],[384,2295],['w',3],[256,1960],[256,1850],[256,1780],['w',1.2],[256,1650],[400,1600],[400,1575],['w',3],[448,1100],[448,1020],[448,900],[448,871],['w',1.2]];
+test('1-3: walls at fixed places, running poop, and walls closing in from both sides before the goal', () => {
   const w = createWorld(LEVEL_1_3);
-  follow(w, ROUTE_1_3);
+  follow(w, [...A13, [448,776], ['w',3], [GOAL.x, GOAL.y]]);
   assert.equal(w.outcome, 'clear'); assert.ok(w.walls.every(x => x.state === 'done'));
+  const jumper = createWorld(LEVEL_1_3); // 閉じた壁を、ジャンプで越えてもよい
+  follow(jumper, [...A13, [448,776], ['w',1.4], ['j',0,-1], [GOAL.x, GOAL.y]]);
+  assert.equal(jumper.outcome, 'clear');
   failsWith(LEVEL_1_3, [[GOAL.x, GOAL.y]], 'wall');
+  failsWith(LEVEL_1_3, [...A13, [GOAL.x, GOAL.y]], 'wall'); // ゴール前で待たないと、左右から閉じる壁
+  failsWith(LEVEL_1_3, [[384,3230],[384,3080],[360,2895],['w',3],[384,2400],[384,2295],['w',3],[256,1960],[256,1500]], 'poop'); // 走るうんこ
 });
 
 // ---- 面データ ----

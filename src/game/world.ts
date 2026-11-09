@@ -1,10 +1,10 @@
-import { FIELD, GOAL, RULES, type Point, type TrapDefinition, type WallDefinition, type SliderDefinition } from './stage.ts';
+import { FIELD, GOAL, RULES, type GoalDefinition, type Point, type TrapDefinition, type WallDefinition, type SliderDefinition } from './stage.ts';
 import type { DeerDefinition, LevelDefinition } from './levels.ts';
 import { facingOf, type Facing } from './facing.ts';
 export type Input = { x: number; y: number; jump?: boolean };
 export type Trap = TrapDefinition & { state: 'intact' | 'shaking' | 'open'; elapsed: number };
 export type Event = {
-  kind: 'jump' | 'land' | 'warning' | 'collapse' | 'poop' | 'fall' | 'clear' | 'dropWarning' | 'drop' | 'wall' | 'slide' | 'crush';
+  kind: 'jump' | 'land' | 'warning' | 'collapse' | 'poop' | 'fall' | 'clear' | 'dropWarning' | 'drop' | 'wall' | 'slide' | 'crush' | 'goalMove';
   x: number; y: number; id?: string;
 };
 /** 歩く鹿。walk=歩く, warn=止まって予告中。 */
@@ -13,32 +13,37 @@ export type Deer = {
   state: 'walk' | 'warn'; timer: number; dropped: number; nextDrop: number; walked: number;
 };
 /** 横から出てくる壁。progress 0=隠れている, 1=道をふさいでいる。 */
-export type Wall = WallDefinition & { state: 'idle' | 'in' | 'hold' | 'out' | 'done'; progress: number; timer: number };
+export type Wall = WallDefinition & { length: number; state: 'idle' | 'in' | 'hold' | 'out' | 'done'; progress: number; timer: number };
+/** 今のゴール。動くゴールなら、位置が変わる。 */
+export type Goal = Point & { state: 'idle' | 'moving' | 'done' };
 /** ジャンプで動き出すうんこ。cx, cy が今の位置。 */
 export type Slider = SliderDefinition & { cx: number; cy: number; state: 'idle' | 'moving' | 'done' };
 export type Outcome = 'playing' | 'poop' | 'fall' | 'wall' | 'clear';
 export type World = {
   level: LevelDefinition;
   player: Point & { height: number; jumpTime: number; cooldown: number; facing: Facing; stride: number; moving: boolean };
-  traps: Trap[]; deers: Deer[]; walls: Wall[]; sliders: Slider[];
+  traps: Trap[]; deers: Deer[]; walls: Wall[]; sliders: Slider[]; goal: Goal;
   /** 面に置かれたうんこ＋鹿が落としたうんこ。当たり判定はこれと sliders を使う。 */
   poops: Point[];
   time: number; jumps: number; outcome: Outcome;
   events: Event[]; furthest: number;
 };
 const clamp = (n: number, a: number, b: number) => Math.max(a, Math.min(b, n));
-/** 壁の大きさ。道（FIELD）の幅をまたいで覆い、隠れているときは画面の外にいる。 */
-export const WALL = { length: 560, hide: 740, cover: FIELD.left - 34 };
-export function wallRect(wall: Pick<Wall, 'side' | 'progress' | 'y' | 'thickness'>) {
-  const dir = wall.side === 'l' ? -1 : 1;
-  return { x: WALL.cover + dir * (1 - wall.progress) * WALL.hide, y: wall.y - wall.thickness / 2, w: WALL.length, h: wall.thickness };
+/** 壁の大きさ。道（FIELD）の幅をまたいで覆い、隠れているときは画面の外にいる。左の壁は左端から、右の壁は右端から出てくる。 */
+export const WALL = { length: 560, left: FIELD.left - 34, right: FIELD.right + 34, margin: 160 };
+export const wallHide = (length: number) => length + WALL.margin;
+export function wallRect(wall: Pick<Wall, 'side' | 'progress' | 'y' | 'thickness'> & { length?: number }) {
+  const length = wall.length ?? WALL.length, hide = wallHide(length), away = (1 - wall.progress) * hide;
+  const x = wall.side === 'l' ? WALL.left - away : WALL.right - length + away;
+  return { x, y: wall.y - wall.thickness / 2, w: length, h: wall.thickness };
 }
 export function createWorld(level: LevelDefinition): World {
   return {
     level, player: { ...level.start, height: 0, jumpTime: -1, cooldown: 0, facing: 'up', stride: 0, moving: false },
     traps: level.traps.map(t => ({ ...t, state: 'intact', elapsed: 0 })),
     deers: level.deers.map(d => ({ id: d.id, kind: d.kind, x: d.startX, y: d.y, dir: d.startDir, state: 'walk', timer: 0, dropped: 0, nextDrop: d.firstDrop, walked: 0 })),
-    walls: level.walls.map(wall => ({ ...wall, state: 'idle', progress: 0, timer: 0 })),
+    walls: level.walls.map(wall => ({ ...wall, length: wall.length ?? WALL.length, state: 'idle', progress: 0, timer: 0 })),
+    goal: { x: (level.goal ?? GOAL).x, y: (level.goal ?? GOAL).y, state: 'idle' },
     sliders: level.sliders.map(s => ({ ...s, cx: s.x, cy: s.y, state: 'idle' })),
     poops: level.poops.map(p => ({ ...p })),
     time: 0, jumps: 0, outcome: 'playing', events: [], furthest: level.start.y,
@@ -70,7 +75,7 @@ function stepDeers(w: World, dt: number) {
 function stepWalls(w: World, dt: number) {
   const p = w.player;
   for (const wall of w.walls) {
-    const rate = wall.speed / WALL.hide;
+    const rate = wall.speed / wallHide(wall.length);
     if (wall.state === 'idle' && p.y <= wall.triggerY) {
       wall.state = 'in'; w.events.push({ kind: 'wall', x: p.x, y: wall.y, id: wall.id });
     }
@@ -81,7 +86,7 @@ function stepWalls(w: World, dt: number) {
       wall.timer += dt;
       if (wall.timer >= wall.hold) wall.state = 'out';
     } else if (wall.state === 'out') {
-      wall.progress = Math.max(0, wall.progress - rate * .5 * dt);
+      wall.progress = Math.max(0, wall.progress - rate * dt);
       if (wall.progress <= 0) wall.state = 'done';
     }
   }
@@ -95,7 +100,7 @@ function hitsWall(p: Point, wall: Wall): boolean {
 function stepSliders(w: World, dt: number, jumped: boolean) {
   const p = w.player;
   for (const s of w.sliders) {
-    if (s.state === 'idle' && jumped && Math.hypot(p.x - s.x, p.y - s.y) < s.within) {
+    if (s.state === 'idle' && ((s.trigger ?? 'jump') === 'jump' ? jumped : true) && Math.hypot(p.x - s.x, p.y - s.y) < s.within) {
       s.state = 'moving'; w.events.push({ kind: 'slide', x: s.cx, y: s.cy, id: s.id });
     }
     if (s.state === 'moving') {
@@ -103,6 +108,16 @@ function stepSliders(w: World, dt: number, jumped: boolean) {
       if (move >= d) { s.cx = s.toX; s.cy = s.toY; s.state = 'done'; }
       else { s.cx += dx / d * move; s.cy += dy / d * move; }
     }
+  }
+}
+function stepGoal(w: World, dt: number) {
+  const move = (w.level.goal ?? GOAL as GoalDefinition).moveTo;
+  const g = w.goal, p = w.player;
+  if (!move) return;
+  if (g.state === 'idle' && Math.hypot(p.x - g.x, p.y - g.y) < move.within) { g.state = 'moving'; w.events.push({ kind: 'goalMove', x: g.x, y: g.y }); }
+  if (g.state === 'moving') {
+    const dx = move.x - g.x, dy = move.y - g.y, d = Math.hypot(dx, dy), step = move.speed * dt;
+    if (step >= d) { g.x = move.x; g.y = move.y; g.state = 'done'; } else { g.x += dx / d * step; g.y += dy / d * step; }
   }
 }
 export function inHole(p: Point, t: TrapDefinition): boolean {
@@ -145,9 +160,14 @@ export function step(w: World, input: Input, dt = RULES.step): void {
   stepDeers(w, dt);
   stepWalls(w, dt);
   stepSliders(w, dt, jumped);
+  stepGoal(w, dt);
   for (const trap of w.traps) {
     if (trap.state === 'intact') {
-      const hit = (trap.trigger ?? 'near') === 'land' ? landed && near(p, trap, trap.landReach ?? 90) : near(p, trap, 68);
+      const kind = trap.trigger ?? 'near';
+      const hit = kind === 'land' ? landed && near(p, trap, trap.landReach ?? 90)
+        : kind === 'y' ? p.y <= (trap.triggerY ?? -Infinity)
+        : kind === 'goal' ? w.goal.state !== 'idle'
+        : near(p, trap, 68);
       if (hit) {
         trap.state = 'shaking'; trap.elapsed = 0;
         if (!trap.silent) w.events.push({ kind: 'warning', x: trap.x + trap.width / 2, y: trap.y + trap.height / 2, id: trap.id });
@@ -168,7 +188,7 @@ export function step(w: World, input: Input, dt = RULES.step): void {
     w.outcome = 'wall'; w.events.push({ kind: 'crush', x: p.x, y: p.y });
   } else if (p.jumpTime < 0 && w.traps.some(t => t.state === 'open' && inHole(p, t))) {
     w.outcome = 'fall'; w.events.push({ kind: 'fall', x: p.x, y: p.y });
-  } else if (p.jumpTime < 0 && Math.hypot(p.x - GOAL.x, p.y - GOAL.y) < GOAL.radius) {
+  } else if (p.jumpTime < 0 && Math.hypot(p.x - w.goal.x, p.y - w.goal.y) < GOAL.radius) {
     w.outcome = 'clear'; w.events.push({ kind: 'clear', x: p.x, y: p.y });
   }
   w.furthest = Math.min(w.furthest, p.y);
