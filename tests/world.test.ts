@@ -3,11 +3,11 @@ import assert from 'node:assert/strict';
 import { createWorld, step, wallRect, type World, type Input } from '../src/game/world.ts';
 import { RULES, GOAL } from '../src/game/stage.ts';
 import { facingOf } from '../src/game/facing.ts';
-import { LEVEL_1_1, LEVEL_1_2, LEVEL_1_3, PLAYABLE, STAGES, type LevelDefinition } from '../src/game/levels.ts';
+import { LEVEL_1_1, LEVEL_1_2, LEVEL_1_3, LEVEL_1_4, LEVEL_1_5, PLAYABLE, STAGES, type LevelDefinition } from '../src/game/levels.ts';
 
 // ---- 道具 ----
 const empty: LevelDefinition = {
-  id: 't', stage: 1, title: 't', intro: '', start: { x: 360, y: 1500 }, poops: [], deers: [], traps: [], walls: [], sliders: [], chapters: [],
+  id: 't', stage: 1, title: 't', intro: '', start: { x: 360, y: 1500 }, poops: [], deers: [], traps: [], walls: [], sliders: [], chasers: [], rain: [], chapters: [],
   hints: { poop: 'p', fall: 'f', wall: 'w' },
 };
 const make = (patch: Partial<LevelDefinition>): World => createWorld({ ...empty, ...patch });
@@ -263,11 +263,52 @@ test('1-3: walls at fixed places, running poop, and walls closing in from both s
   failsWith(LEVEL_1_3, [[384,3230],[384,3080],[360,2895],['w',3],[384,2400],[384,2295],['w',3],[256,1960],[256,1500]], 'poop'); // 走るうんこ
 });
 
+// ---- 追いかける鹿・降ってくるうんこ ----
+test('a chaser starts when you pass its line, catches a walker who stops, and can be jumped over', () => {
+  const lv = { start: { x: 360, y: 1500 }, chasers: [{ id: 'c', kind: 'stag' as const, x: 360, y: 1900, triggerY: 1450, speed: 150 }] };
+  const w = make(lv);
+  run(w, { x: 0, y: -1 }, .3); assert.equal(w.chasers[0].state, 'chase');
+  run(w, { x: 0, y: 0 }, 4); assert.equal(w.outcome, 'caught');
+  const runner = make(lv); run(runner, { x: 0, y: -1 }, 3); assert.equal(runner.outcome, 'playing', 'a faster walker is never caught');
+  const jumper = make({ ...lv, chasers: [{ ...lv.chasers[0], y: 1560, speed: 80 }] });
+  run(jumper, { x: 0, y: -1 }, .3); run(jumper, { x: 0, y: 1, jump: true }, .1); // 追いつかれる前に跳ぶ
+  assert.equal(jumper.outcome, 'playing');
+});
+test('aimed rain lands where you stood when the shadow appeared, so a moving player is safe and a standing player is hit', () => {
+  const lv = { start: { x: 360, y: 1500 }, rain: [{ id: 'r', triggerY: 1450, delay: .2, warn: .8, aim: 'player' as const }] };
+  const moving = make(lv);
+  for (let i = 0; i < 360; i++) step(moving, { x: 0, y: -1 });
+  assert.equal(moving.outcome, 'playing'); assert.equal(moving.poops.length, 1);
+  const standing = make(lv);
+  walk(standing, 360, 1440); run(standing, { x: 0, y: 0 }, 2);
+  assert.equal(standing.outcome, 'poop');
+});
+
+// ---- 1-4 / 1-5 ----
+const R14: Move[] = [[448,2740],[448,2625],[350,2580],[350,2300],[256,2180],[256,2070],[400,2030],[400,1700],[384,1620],[384,1520],[300,1480],[300,1250],[480,1120],[500,1090],[500,975],[400,930],[400,700],[GOAL.x,GOAL.y]];
+test('1-4: reading the bait gaps while a deer chases; stopping gets you caught', () => {
+  const w = createWorld(LEVEL_1_4);
+  follow(w, [[256,3240],[256,3060],[256,2800], ...R14]);
+  assert.equal(w.outcome, 'clear'); assert.ok(w.traps.every(t => t.state === 'open'));
+  failsWith(LEVEL_1_4, [[256,3240],[256,3060],[256,2800],[448,2740],[448,2400]], 'fall');
+  failsWith(LEVEL_1_4, [[256,3240],[256,3060],[256,2800],['w',3.5], ...R14], 'caught');
+});
+const A15: Move[] = [[500,3220],[500,3130],['j',0,-1],[500,2800],[430,2500],[360,2328],['w',.8],[430,2328],['w',2.6]];
+const B15: Move[] = [[256,1960],[256,1900],[256,1790],[400,1740],[400,1560],[420,1450],[448,1380],[350,1300],[350,1100],[440,1000],[520,900],[520,600],[540,420],[550,330]];
+test('1-5: block, falling poop, wall, chasing deer, bait holes, and a goal that runs away', () => {
+  const w = createWorld(LEVEL_1_5);
+  follow(w, [...A15, ...B15]);
+  assert.equal(w.outcome, 'clear'); assert.equal(w.jumps, 1);
+  // 壁を待つあいだ、足元に降ってくるうんこを避けないと当たる。
+  failsWith(LEVEL_1_5, [[500,3220],[500,3130],['j',0,-1],[500,2800],[430,2500],[360,2328],['w',3.4]], 'poop');
+  failsWith(LEVEL_1_5, [[360,3000]], 'poop'); // ふさがれた道
+});
+
 // ---- 面データ ----
 test('level data is sound: unique ids, safe start, final chapter, reachable gaps', () => {
   const ids = PLAYABLE.map(l => l.id);
   assert.equal(new Set(ids).size, ids.length);
-  assert.deepEqual(ids.slice(0, 3), ['1-1', '1-2', '1-3']);
+  assert.deepEqual(ids, ['1-1', '1-2', '1-3', '1-4', '1-5']);
   for (const level of PLAYABLE) {
     assert.ok(level.poops.every(p => Math.hypot(p.x - level.start.x, p.y - level.start.y) > 150), `${level.id}: poop near start`);
     assert.ok(level.start.y > GOAL.y + 800, `${level.id}: start too close to goal`);
@@ -275,6 +316,7 @@ test('level data is sound: unique ids, safe start, final chapter, reachable gaps
     assert.ok(level.hints.poop && level.hints.wall && level.hints.fall);
     for (const wall of level.walls) assert.ok(wall.triggerY < level.start.y && wall.triggerY > wall.y + wall.thickness / 2, `${level.id}: ${wall.id} must trigger before the wall`);
     for (const s of level.sliders) assert.ok(Math.hypot(s.x - level.start.x, s.y - level.start.y) > 150);
+    for (const c of level.chasers) assert.ok(c.y > level.start.y - 1200 && c.triggerY < level.start.y, `${level.id}: chaser ${c.id} must start after the player moves`);
   }
   assert.equal(STAGES[0].slots.length, 5);
 });

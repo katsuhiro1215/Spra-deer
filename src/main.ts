@@ -12,6 +12,7 @@ import './styles.scss';
 
 const el = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const progress = new Progress();
+const CAUGHT_HINT = '鹿が追いかけてきた…！\n止まると追いつかれる。\nジャンプで鹿を越えるのもアリ。';
 
 class Sound {
   enabled = false;
@@ -22,7 +23,7 @@ class Sound {
   }
   play(kind: Event['kind']) {
     if (!this.enabled || this.context?.state !== 'running') return;
-    const notes: Partial<Record<Event['kind'], [number, number, number]>> = { jump: [390, 730, .13], warning: [160, 110, .17], collapse: [110, 38, .28], poop: [180, 75, .22], fall: [390, 85, .4], clear: [540, 1080, .42], wall: [120, 45, .3], slide: [320, 190, .12], crush: [150, 40, .35] };
+    const notes: Partial<Record<Event['kind'], [number, number, number]>> = { jump: [390, 730, .13], warning: [160, 110, .17], collapse: [110, 38, .28], poop: [180, 75, .22], fall: [390, 85, .4], clear: [540, 1080, .42], wall: [120, 45, .3], slide: [320, 190, .12], crush: [150, 40, .35], chase: [200, 330, .2], caught: [260, 90, .3], drop: [240, 120, .14] };
     const data = notes[kind]; if (!data) return;
     const [start, end, duration] = data, ctx = this.context;
     const oscillator = ctx.createOscillator(), gain = ctx.createGain();
@@ -151,8 +152,8 @@ class Park extends Phaser.Scene {
     const newBest = clear && progress.clear(level.id, w.time);
     const index = PLAYABLE.indexOf(level), next = clear ? PLAYABLE[index + 1] : undefined;
     const attempts = progress.get(level.id).attempts;
-    const title = clear ? '無事に、おさんぽ。' : w.outcome === 'fall' ? '地面まで、いたずら。' : w.outcome === 'wall' ? 'ぐえっ、壁…！' : 'あっ、足元…！';
-    const copy = clear ? '数々のしかけを、見事に突破。\n鹿は、何も知らない顔。' : w.outcome === 'fall' ? level.hints.fall : w.outcome === 'wall' ? level.hints.wall : level.hints.poop;
+    const title = clear ? '無事に、おさんぽ。' : w.outcome === 'fall' ? '地面まで、いたずら。' : w.outcome === 'wall' ? 'ぐえっ、壁…！' : w.outcome === 'caught' ? 'つかまった！' : 'あっ、足元…！';
+    const copy = clear ? '数々のしかけを、見事に突破。\n鹿は、何も知らない顔。' : w.outcome === 'fall' ? level.hints.fall : w.outcome === 'wall' ? level.hints.wall : w.outcome === 'caught' ? (level.hints.caught ?? CAUGHT_HINT) : level.hints.poop;
     const primary = next ? `<button class="primary" data-action="next" data-level="${next.id}">次の面へ（${next.id}） <span>▶</span></button>` : `<button class="primary" data-action="retry">${clear ? 'もう一度あそぶ' : 'すぐに、もう一回'} <span>▶</span></button>`;
     const secondary = `<div class="secondary-row">${next ? '<button class="secondary" data-action="retry">もう一度あそぶ</button>' : ''}<button class="secondary" data-action="select">面選択へ</button></div>`;
     el('overlay').innerHTML = `<div class="screen modal-screen result-screen"><div class="modal-card"><span class="eyebrow">${clear ? newBest ? '自己ベスト更新！' : `${level.id} クリア` : `${attempts}回目の挑戦`}</span><img class="result-spru" src="assets/${clear ? 'spru-clear' : 'spru-oops'}.png" alt="${clear ? '喜ぶSpru' : '困ったSpru'}"><h2>${title}</h2><p class="result-copy">${copy.replaceAll('\n', '<br>')}</p><div class="result-stats"><div><span>${clear ? 'クリアタイム' : 'ここまでの時間'}</span><strong>${w.time.toFixed(1)}<small>秒</small></strong></div><div><span>${clear ? 'ジャンプ' : 'ゴールへの進み具合'}</span><strong>${clear ? w.jumps : this.progress()}<small>${clear ? '回' : '%'}</small></strong></div></div>${primary}${secondary}<p class="save-note">${clear ? progress.canSave ? '自己ベストはこのブラウザに保存されます。' : 'この環境では記録を保存できません。' : 'Rキーでも再挑戦。しかけの場所は同じです。'}</p></div></div>`;

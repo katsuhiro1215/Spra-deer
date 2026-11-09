@@ -36,6 +36,7 @@ export class ParkView {
   private dropped: Phaser.GameObjects.Graphics[] = [];
   private sliderShapes = new Map<string, Phaser.GameObjects.Graphics>();
   private wallFx: Phaser.GameObjects.Graphics;
+  private rainGraphic?: Phaser.GameObjects.Graphics;
   private trapGraphics: Phaser.GameObjects.Graphics;
   private particles: Particle[] = [];
   private labels: { text: Phaser.GameObjects.Text; born: number; y: number }[] = [];
@@ -131,7 +132,9 @@ export class ParkView {
       }
     }
     // The deer watch from the verge; they do not obstruct the safe detours.
-    for (const [x, y, flip] of [[53, 3190, 0], [671, 2680, 1], [53, 1840, 0], [674, 930, 1]]) {
+    // 道ばたの飾りの鹿。動く鹿（歩く鹿・追いかける鹿）がいる面では、紛らわしいので出さない。
+    const decorations: number[][] = this.level.deers.length || this.level.chasers.length ? [] : [[53, 3190, 0], [671, 2680, 1], [53, 1840, 0], [674, 930, 1]];
+    for (const [x, y, flip] of decorations) {
       s.add.ellipse(x, y, 83, 24, 0x54713b, .15).setDepth(y - 1);
       const image = s.add.image(x, y, 'deer').setOrigin(.5, 1).setDepth(y).setFlipX(!!flip);
       image.setDisplaySize(128 * image.frame.width / image.frame.height, 128);
@@ -222,7 +225,7 @@ export class ParkView {
     this.particles = []; this.labels = [];
     for (const g of this.dropped) g.destroy();
     for (const g of this.sliderShapes.values()) g.destroy();
-    this.sliderShapes.clear(); this.wallFx.clear();
+    this.sliderShapes.clear(); this.wallFx.clear(); this.rainGraphic?.clear();
     for (const k of this.walkers.values()) { k.image.destroy(); k.shadow.destroy(); }
     this.dropped = []; this.walkers.clear();
     this.sprite.setTexture('spru').setAlpha(1).setAngle(0);
@@ -250,26 +253,39 @@ export class ParkView {
 
   /** 歩く鹿。歩いた距離でコマを進め、予告中はその場で足踏みし、落とす場所に輪を出す。 */
   private renderDeers(w: World) {
-    this.deerFx.clear();
-    for (const d of w.deers) {
-      let walker = this.walkers.get(d.id);
+    this.deerFx.clear(); this.rainGraphic?.clear();
+    const place = (id: string, kind: keyof typeof DEER_HEIGHT, x: number, y: number, dir: 1 | -1, moving: boolean, walked: number, wobble = 0) => {
+      let walker = this.walkers.get(id);
       if (!walker) {
-        walker = { image: this.scene.add.image(d.x, d.y, deerKey(d.kind, 'r', 0)).setOrigin(.5, 1), shadow: this.scene.add.ellipse(d.x, d.y, 90, 24, 0x54713b, .2) };
-        this.walkers.set(d.id, walker);
+        walker = { image: this.scene.add.image(x, y, deerKey(kind, 'r', 0)).setOrigin(.5, 1), shadow: this.scene.add.ellipse(x, y, 90, 24, 0x54713b, .2) };
+        this.walkers.set(id, walker);
       }
-      const side = d.dir > 0 ? 'r' : 'l', set = deerWalk[d.kind][side];
-      const index = d.state === 'walk' ? Math.floor(d.walked / DEER_STRIDE) % set.frames.length : 1;
-      walker.image.setTexture(deerKey(d.kind, side, index));
-      const scale = DEER_HEIGHT[d.kind] / set.refHeight, frame = walker.image.frame;
-      const wobble = d.state === 'warn' ? Math.sin(d.timer * 60) * 2 : 0;
-      walker.image.setDisplaySize(frame.width * scale, frame.height * scale).setPosition(d.x + wobble, d.y + 6).setDepth(d.y + 10);
-      walker.shadow.setPosition(d.x, d.y + 2).setDepth(d.y);
+      const side = dir > 0 ? 'r' : 'l', set = deerWalk[kind][side];
+      const index = moving ? Math.floor(walked / DEER_STRIDE) % set.frames.length : 1;
+      walker.image.setTexture(deerKey(kind, side, index));
+      const scale = DEER_HEIGHT[kind] / set.refHeight, frame = walker.image.frame;
+      walker.image.setDisplaySize(frame.width * scale, frame.height * scale).setPosition(x + wobble, y + 6).setDepth(y + 10);
+      walker.shadow.setPosition(x, y + 2).setDepth(y);
+    };
+    for (const d of w.deers) {
+      place(d.id, d.kind, d.x, d.y, d.dir, d.state === 'walk', d.walked, d.state === 'warn' ? Math.sin(d.timer * 60) * 2 : 0);
       if (d.state === 'warn') {
         // 落とす場所の予告。輪が少しずつ濃くなる。
         const def = w.level.deers.find(x => x.id === d.id)!, spot = dropSpot(d), t = Math.min(1, d.timer / def.warning);
         this.deerFx.lineStyle(4, 0x8a5a36, .35 + t * .5).strokeEllipse(spot.x, spot.y + 4, 62, 30);
         this.deerFx.fillStyle(0x8a5a36, .1 + t * .2).fillEllipse(spot.x, spot.y + 4, 62, 30);
       }
+    }
+    // 追いかけてくる鹿
+    for (const c of w.chasers) place(c.id, c.kind, c.x, c.y, c.dir, c.state === 'chase', c.walked);
+    // 降ってくるうんこ: 影が濃くなり、うんこが落ちてくる
+    for (const r of w.rain) {
+      if (r.state !== 'warn') continue;
+      const def = w.level.rain.find(x => x.id === r.id)!, t = Math.min(1, r.timer / def.warn);
+      this.deerFx.fillStyle(0x3d3a24, .12 + t * .3).fillEllipse(r.tx, r.ty + 6, 30 + t * 36, 14 + t * 16);
+      const fall = (1 - t) * (1 - t) * 720;
+      const g = this.rainGraphic ?? (this.rainGraphic = this.scene.add.graphics().setDepth(9500));
+      g.fillStyle(0x78553b).fillCircle(r.tx, r.ty - fall - 14, 15).fillStyle(0xaa8460).fillEllipse(r.tx - 3, r.ty - fall - 19, 14, 8);
     }
   }
 

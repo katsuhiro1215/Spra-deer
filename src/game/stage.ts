@@ -25,6 +25,20 @@ export type WallDefinition = {
   speed: number; hold: number; // 出てくる速さ(px/s)と、閉じたまま止まる時間(秒)
   length?: number; // 壁の長さ（既定は道をふさぐ560）。左右から来て、真ん中で合わさる壁は短くする
 };
+/** 追いかけてくる鹿。player が triggerY より奥へ来ると走り出し、触れるとつかまる（ジャンプ中は越えられる）。 */
+export type ChaserDefinition = {
+  id: string; kind: 'stag' | 'doe' | 'fawn';
+  x: number; y: number; // 最初にいる場所（画面の下のほう）
+  triggerY: number; speed: number;
+};
+/**
+ * 上から降ってくるうんこ。player が triggerY より奥へ来て delay 秒後に、落ちる場所へ影が出て、warn 秒後に落ちる。
+ * aim: 'player' なら、影が出た瞬間のプレイヤーの位置に落ちる（動き続ければ当たらない）。
+ */
+export type RainDefinition = {
+  id: string; triggerY: number; delay: number; warn: number;
+  x?: number; y?: number; aim?: 'player';
+};
 /** ジャンプすると、着地点へ向かって動いてくるうんこ。 */
 export type SliderDefinition = {
   id: string; x: number; y: number; toX: number; toY: number;
