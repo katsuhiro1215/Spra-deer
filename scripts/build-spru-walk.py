@@ -13,7 +13,7 @@
 """
 import json, os, sys
 from PIL import Image
-from spritetools import remove_specks, split_strip, union_crop, visible_bbox
+from spritetools import remove_specks, save_hero, split_strip, union_crop, visible_bbox
 
 SRC = sys.argv[1] if len(sys.argv) > 1 else '/mnt/c/Users/katsu/SmartSprouts/rooms/Spra/Mascot/01_Spru/walk'
 OUT = os.path.join(os.path.dirname(__file__), '..', 'public', 'assets', 'spru-walk')
@@ -59,6 +59,8 @@ def main():
         cropped = union_crop(frames)
         scaled = [f.resize((round(f.width * scale), round(f.height * scale)), Image.LANCZOS) for f in cropped]
         save(key, scaled, cycle, idle, manifest)
+        if key == 'down':
+            save_hero(cropped[idle], 'spru.png')  # トップ画面用（縮小前の原寸から）
         print(f'{key}: scale {scale:.3f}')
     manifest['referenceHeight'] = ref_height
     with open(MANIFEST, 'w', encoding='utf-8') as fh:

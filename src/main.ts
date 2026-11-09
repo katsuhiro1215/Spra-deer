@@ -107,7 +107,8 @@ class Park extends Phaser.Scene {
   }
   private title() {
     this.idle('title');
-    el('overlay').innerHTML = `<div class="screen title-screen"><span class="eyebrow">奈良の、小さなしかけ話。</span><h2>Spruと鹿。</h2><p class="subtitle">足元には、ご用心。</p><div class="title-art"><img class="title-spru" src="assets/spru.png" alt="Spru"><img class="title-deer" src="assets/deer.png" alt="鹿"><span class="speech">こっち、空いてるよ。</span></div><div class="intro-card"><p>うんこをよけて、ゴールへ。<br>…その道、ほんとうに安全？</p><button class="primary" data-action="select">あそぶ <span>▶</span></button><div class="howto"><span>ドラッグ / 方向キーで移動</span><span>ジャンプボタン / Spaceで跳ぶ</span></div></div><p class="screen-foot">鹿に、悪気はありません。たぶん。</p></div>`;
+    // 構成は tane.spra.jp に合わせる（空→丘、キャラ3体、極太の丸ゴシックのロゴ、丘の上の大きなボタン）。
+    el('overlay').innerHTML = `<div class="screen title-screen"><div class="title-head"><p class="brand-line"><b>S</b>spra</p><h2 class="wordmark" aria-label="Spruと鹿。"><span class="w-spru">Spru</span><span class="w-to">と</span><span class="w-deer">鹿</span><span class="w-dot">。</span></h2><p class="subtitle">足元には、ご用心。</p></div><div class="hero"><img class="hero-fawn" src="assets/hero/fawn.png" alt="子鹿"><img class="hero-spru" src="assets/hero/spru.png" alt="Spru"><img class="hero-stag" src="assets/hero/stag.png" alt="雄鹿"><span class="speech">こっち、空いてるよ。</span></div><div class="hill"><button class="play" data-action="select">あそぶ</button><p class="howto">ドラッグで移動、ボタンでジャンプ。<br>鹿に、悪気はありません。たぶん。</p></div></div>`;
   }
   private select() {
     this.idle('select');

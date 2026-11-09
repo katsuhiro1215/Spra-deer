@@ -2,7 +2,7 @@ $ink: #30513f;
 $paper: #faf5dd;
 $gold: #deb067;
 * { box-sizing: border-box; }
-:root { font-family: 'Yu Gothic UI', Meiryo, 'Hiragino Kaku Gothic ProN', sans-serif; color: $ink; background: #244b3b; font-synthesis: none; }
+:root { font-family: 'Zen Maru Gothic', 'Yu Gothic UI', Meiryo, 'Hiragino Kaku Gothic ProN', sans-serif; color: $ink; background: #244b3b; font-synthesis: none; }
 body { margin: 0; }
 button { font: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; color: inherit; touch-action: manipulation; }
 button:focus-visible, #game:focus-visible { outline: 3px solid #e7b755; outline-offset: 3px; }
@@ -32,12 +32,7 @@ button:focus-visible, #game:focus-visible { outline: 3px solid #e7b755; outline-
 #overlay { position: absolute; inset: 0; pointer-events: none; }
 .screen { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; padding: 7cqw; pointer-events: auto; .eyebrow { font-size: 3.1cqw; font-weight: 700; letter-spacing: .12em; color: #768454; } h2 { font-size: 11.5cqw; line-height: 1.25; letter-spacing: -.055em; margin: 2.5cqw 0; font-weight: 800; } }
 .loading { justify-content: center; background: #eef0cf; font-size: 16px; }
-.title-screen { padding-top: 13cqw; background: linear-gradient(#ecf0d5e8 0%, #ecf0d58c 55%, #e8ecc9ed 100%); .subtitle { font-size: 4.3cqw; font-weight: bold; margin: 1cqw 0; } }
-.title-art { position: relative; width: 100%; flex: 1; min-height: 36cqw; max-height: 58cqw; margin: 1cqw 0 4cqw; img { position: absolute; object-fit: contain; } .title-spru { height: 105%; width: 80%; left: -5%; bottom: -3%; } .title-deer { height: 65%; width: 68%; right: -7%; bottom: 0; } .speech { position: absolute; right: -2cqw; top: 4cqw; font-size: 3.1cqw; background: #fffae5; border-radius: 18px 18px 18px 2px; padding: 2cqw 3cqw; transform: rotate(4deg); color: #78844d; } }
-.intro-card { width: 100%; background: #fffbe8e8; border: 1px solid #fffced; padding: 5cqw; border-radius: 5cqw; box-shadow: 0 6px 0 #8b9a5b14; > p { text-align: center; font-size: 4cqw; line-height: 1.85; margin: 0 0 4cqw; } }
 .primary { display: flex; align-items: center; justify-content: center; gap: 3cqw; width: 100%; min-height: 48px; border: 0; border-radius: 3cqw; padding: 3.8cqw 2cqw; background: #345e45; color: #fff9e0; font-size: 4.1cqw; font-weight: 750; box-shadow: 0 4px 0 #204630; > span { font-size: 2.7cqw; } &:hover { background: #416e51; } &:active { transform: translateY(2px); box-shadow: 0 2px 0 #204630; } }
-.howto { display: grid; text-align: center; gap: 1.5cqw; margin: 4cqw 0 0; font-size: 3.1cqw; color: #74835b; }
-.screen-foot { font-size: 2.8cqw; color: #6a7d51; margin: 4cqw 0 0; }
 .modal-screen { justify-content: center; background: #e7edcead; backdrop-filter: blur(4px); }
 .modal-card { width: 100%; text-align: center; border-radius: 5cqw; padding: 6cqw; border: 1px solid #fff; background: #fffbe7f5; box-shadow: 0 14px 45px #4d67342b; h2 { font-size: 6.3cqw; letter-spacing: -.04em; margin: 3cqw 0; } > p { font-size: 3.7cqw; line-height: 1.9; } .primary { margin-top: 5cqw; } }
 .secondary { border: 0; background: transparent; padding: 3cqw; text-decoration: underline; color: #6c7d54; font-size: 3.5cqw; margin-top: 3cqw; min-height: 40px; }
@@ -50,10 +45,10 @@ button:focus-visible, #game:focus-visible { outline: 3px solid #e7b755; outline-
 .side-note > p { font-size: 16px; }
 .chapter-note > span { font-size: 12px; }
 .hud-heading .eyebrow, .stat-label, .screen .eyebrow, .title-art .speech,
-.screen-foot, .control-note, #jump > span, .result-stats span, .modal-card .save-note,
+.control-note, #jump > span, .result-stats span, .modal-card .save-note,
 .hud-stats b small, .result-stats strong small, .primary > span { font-size: max(12px, 2.9cqw); }
-.howto, .move-control > span, .secondary { font-size: max(14px, 3.1cqw); }
-.intro-card > p, .primary, .modal-card > p, #jump strong { font-size: max(16px, 4cqw); }
+.move-control > span, .secondary { font-size: max(14px, 3.1cqw); }
+.primary, .modal-card > p, #jump strong { font-size: max(16px, 4cqw); }
 #hud { top: 3cqw; left: 3cqw; right: 3cqw; padding: 3cqw; border-radius: 4cqw; background: #fbf8e4f2; box-shadow: 0 3px 14px #405d2812; }
 .round-button { min-width: 44px; min-height: 44px; }
 #message { top: 42cqw; font-size: max(14px, 3.4cqw); }
@@ -79,3 +74,26 @@ button:focus-visible, #game:focus-visible { outline: 3px solid #e7b755; outline-
 }
 .soon-note { margin: 0; padding: 3cqw; font-size: max(14px, 3.3cqw); color: #6c7d54; border: 1px dashed #b6c29a; border-radius: 3.5cqw; text-align: center; }
 .secondary-row { display: flex; justify-content: center; gap: 4cqw; flex-wrap: wrap; .secondary { margin-top: 2cqw; } }
+
+// トップ画面（tane.spra.jp と同じ構成: 空→丘、キャラ3体、極太の丸ゴシックのロゴ、丘の上の大きなボタン）
+$rounded: 'M PLUS Rounded 1c', 'Zen Maru Gothic', 'Hiragino Maru Gothic ProN', 'Yu Gothic UI', sans-serif;
+.title-screen { padding: 0; background: linear-gradient(#bfe7f7 0%, #def4fb 52%, #cdeeb0 100%); overflow: hidden; align-items: stretch; }
+.title-head { text-align: center; padding-top: 9cqw; position: relative; z-index: 2; }
+.brand-line { margin: 0; font-family: $rounded; font-weight: 800; font-size: max(14px, 4cqw); letter-spacing: .04em; color: #3b7f26; b { font-family: Georgia, serif; font-style: italic; font-size: 1.5em; margin-right: .15em; color: #2f6a1e; } }
+.wordmark { margin: 2cqw 0 0; font-family: $rounded; font-weight: 900; font-size: 21cqw; line-height: 1.1; letter-spacing: -.03em; color: #3b7f26; text-shadow: 0 .6cqw 0 #ffffffb0, 0 1.2cqw 2.4cqw #3b7f2630;
+  .w-to { color: #f28a12; font-size: .68em; margin: 0 .04em; } .w-deer { color: #8a5a36; } .w-dot { color: #f28a12; }
+}
+.title-screen .subtitle { margin: 2cqw 0 0; font-family: $rounded; font-weight: 800; font-size: max(16px, 4.6cqw); color: #35452c; }
+.hero { position: absolute; left: 0; right: 0; top: 44cqw; height: 66cqw; display: flex; align-items: flex-end; justify-content: center; gap: 0; z-index: 2;
+  img { display: block; width: auto; object-fit: contain; filter: drop-shadow(0 1.4cqw 1.2cqw #3d5d2a33); }
+  .hero-spru { height: 64cqw; position: relative; z-index: 2; margin: 0 -1cqw; }
+  .hero-stag { height: 46cqw; margin-right: -4cqw; }
+  .hero-fawn { height: 34cqw; margin-left: -4cqw; }
+  .speech { position: absolute; right: 3cqw; top: -1cqw; font-family: $rounded; font-weight: 800; font-size: max(14px, 3.4cqw); background: #fffdf0; border: .5cqw solid #f28a12; border-radius: 4cqw 4cqw 4cqw .8cqw; padding: 1.6cqw 3cqw; transform: rotate(4deg); color: #6a4a2b; z-index: 3; }
+}
+.hill { position: absolute; left: -24%; right: -24%; bottom: 0; height: 62cqw; border-radius: 50% 50% 0 0 / 26% 26% 0 0; background: linear-gradient(#8bd567 0%, #5db443 55%, #4aa036 100%); box-shadow: inset 0 1cqw 0 #b4ec8f; display: flex; flex-direction: column; align-items: center; padding-top: 11cqw; z-index: 1; }
+.play { width: 46%; min-height: 56px; border: 0; border-radius: 999px; padding: 3.6cqw 2cqw; font-family: $rounded; font-weight: 900; font-size: max(22px, 7.4cqw); letter-spacing: .12em; color: #fff; text-shadow: 0 .5cqw 0 #c45f06; background: linear-gradient(#ffb93e, #f28a12); box-shadow: 0 1.4cqw 0 #cf6f08, 0 2.6cqw 3cqw #2f5a1e40; &:hover { filter: brightness(1.05); } &:active { transform: translateY(.8cqw); box-shadow: 0 .6cqw 0 #cf6f08; } }
+.title-screen .howto { margin: 4cqw 0 0; text-align: center; font-family: $rounded; font-weight: 700; font-size: max(14px, 3.1cqw); line-height: 1.7; color: #fffff0; text-shadow: 0 .3cqw .8cqw #2f5a1e80; }
+// 面選択も同じ空の色に合わせる
+.select-screen { background: linear-gradient(#cdeaf7 0%, #e6f5e4 55%, #d0ecb8 100%) !important; }
+.select-head h2, .stage-group header h3 { font-family: $rounded; font-weight: 900; }

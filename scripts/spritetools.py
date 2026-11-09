@@ -1,4 +1,5 @@
 """スプライト切り出しの共通部品（Pillowのみ）。"""
+import os
 from PIL import Image, ImageChops, ImageFilter
 
 ALPHA_MIN = 24  # これ以下の薄い画素は、大きさの測定に使わない
@@ -37,6 +38,19 @@ def remove_specks(im, min_area=600, grow=3):
     out = im.copy()
     out.putalpha(ImageChops.darker(alpha, keep_img))
     return out
+
+
+HERO_HEIGHT = 560  # トップ画面用。表示は300px前後（2倍の密度で足りる大きさ）
+
+
+def save_hero(frame, name):
+    """トップ画面に大きく出す1枚。原寸のコマを、高さ HERO_HEIGHT に縮めて保存する。"""
+    out = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'public', 'assets', 'hero')
+    os.makedirs(out, exist_ok=True)
+    box = frame.getchannel('A').point(lambda v: 255 if v > 24 else 0).getbbox()
+    frame = frame.crop(box)
+    scale = HERO_HEIGHT / frame.height
+    frame.resize((round(frame.width * scale), HERO_HEIGHT), Image.LANCZOS).save(os.path.join(out, name), optimize=True)
 
 
 def union_crop(frames, pad=2):

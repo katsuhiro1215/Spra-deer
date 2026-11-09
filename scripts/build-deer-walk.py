@@ -8,7 +8,7 @@
 """
 import json, os, sys
 from PIL import Image
-from spritetools import remove_specks, split_strip, union_crop, visible_bbox
+from spritetools import remove_specks, save_hero, split_strip, union_crop, visible_bbox
 
 SRC = sys.argv[1] if len(sys.argv) > 1 else '/mnt/c/Users/katsu/SmartSprouts/rooms/Spra/assets/deer'
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -35,6 +35,9 @@ def main():
                 f.save(os.path.join(OUT, name), optimize=True)
                 entries.append({'file': name, 'w': f.width, 'h': f.height})
             manifest[kind][side] = {'frames': entries, 'refHeight': ref[3] - ref[1]}
+            # トップ画面用: 雄鹿は左向き、子鹿は右向き（Spruのほうを向く）
+            if (kind, side) in (('stag', 'l'), ('fawn', 'r')):
+                save_hero(cropped[0], f'{kind}.png')
             print(kind, side, entries[0]['w'], 'x', entries[0]['h'])
     with open(MANIFEST, 'w', encoding='utf-8') as fh:
         json.dump(manifest, fh, ensure_ascii=False, indent=1)
