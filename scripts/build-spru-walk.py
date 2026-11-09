@@ -13,6 +13,7 @@
 """
 import json, os, sys
 from PIL import Image
+from spritetools import remove_specks, split_strip, union_crop, visible_bbox
 
 SRC = sys.argv[1] if len(sys.argv) > 1 else '/mnt/c/Users/katsu/SmartSprouts/rooms/Spra/Mascot/01_Spru/walk'
 OUT = os.path.join(os.path.dirname(__file__), '..', 'public', 'assets', 'spru-walk')
@@ -25,26 +26,10 @@ SHEETS = {
     'up': ('歩く緑の芽っ子バックビュー4コマ.png', [1, 2, 3, 2], 0, 2),
 }
 DIAGONALS = {'dr': 'lower_right', 'dl': 'lower_left', 'ur': 'upper_right', 'ul': 'upper_left'}
-ALPHA_MIN = 24  # これ以下の薄い縁は、大きさの測定に使わない
-PAD = 2
-
-
-def visible_bbox(im):
-    return im.getchannel('A').point(lambda v: 255 if v > ALPHA_MIN else 0).getbbox()
-
-
-def union_crop(frames):
-    """各コマの不透明部分の和集合の枠で切り出す。下端は足元なので余白を足さない。"""
-    boxes = [visible_bbox(f) for f in frames]
-    left, top = min(b[0] for b in boxes) - PAD, min(b[1] for b in boxes) - PAD
-    right, bottom = max(b[2] for b in boxes) + PAD, max(b[3] for b in boxes)
-    return [f.crop((max(0, left), max(0, top), min(f.width, right), min(f.height, bottom))) for f in frames]
 
 
 def split_sheet(path):
-    im = Image.open(path).convert('RGBA')
-    cell = im.width // 4
-    return [im.crop((i * cell, 0, (i + 1) * cell, im.height)) for i in range(4)]
+    return [remove_specks(f) for f in split_strip(Image.open(path).convert('RGBA'))]
 
 
 def save(direction, frames, cycle, idle, manifest):
@@ -61,7 +46,7 @@ def main():
     manifest = {}
     reference = None
     for key, base in DIAGONALS.items():
-        frames = [Image.open(os.path.join(SRC, f'{base}_{n}.png')).convert('RGBA') for n in ('passing', 'step_l', 'step_r')]
+        frames = [remove_specks(Image.open(os.path.join(SRC, f'{base}_{n}.png')).convert('RGBA')) for n in ('passing', 'step_l', 'step_r')]
         if key == 'dr':
             reference = visible_bbox(frames[0])
         # 0=passing（立ち）, 1=step_l, 2=step_r。歩きは 左→立ち→右→立ち。

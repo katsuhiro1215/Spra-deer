@@ -10,7 +10,7 @@ const cached = `${homedir()}/.cache/ms-playwright/chromium-1248/chrome-linux-arm
 const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || (existsSync(cached) ? cached : undefined);
 const browser = await chromium.launch({ executablePath, headless: true, args: ['--no-sandbox', '--enable-unsafe-swiftshader'] });
 const context = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1, hasTouch: true });
-const unlockAll = { levels: { '1-1': { best: 20, attempts: 1, clears: 1 }, '1-2': { best: 25, attempts: 1, clears: 1 } } };
+const unlockAll = { levels: { '1-1': { best: 20, attempts: 1, clears: 1 }, '1-2': { best: 25, attempts: 1, clears: 1 }, '1-3': { best: 30, attempts: 1, clears: 1 } } };
 await context.addInitScript(data => { if (!localStorage.getItem('spra-deer:progress:v1')) localStorage.setItem('spra-deer:progress:v1', JSON.stringify(data)); }, unlockAll);
 const page = await context.newPage();
 const errors = [];
@@ -26,7 +26,7 @@ try {
   await page.waitForFunction(() => window.__DEER__?.mode === 'select');
   await snap('01b-select-mobile');
   assert.equal(await page.locator('[data-level="1-4"]').isDisabled(), false, '1-4 is unlocked by the saved progress');
-  assert.equal(await page.locator('.level-card.soon').count(), 2, '1-3 and 1-5 are shown as coming soon');
+  assert.equal(await page.locator('.level-card.soon').count(), 1, '1-5 is shown as coming soon');
   await page.locator('[data-level="1-4"]').click();
   await page.waitForFunction(() => window.__DEER__?.mode === 'playing' && window.__DEER__.level.id === '1-4');
   await snap('02-start-mobile');
@@ -130,6 +130,7 @@ try {
     await page2.locator('[data-action="select"]').click();
     assert.equal(await page2.locator('[data-level="1-1"]').isDisabled(), false);
     assert.equal(await page2.locator('[data-level="1-2"]').isDisabled(), true);
+    assert.equal(await page2.locator('[data-level="1-3"]').isDisabled(), true);
     assert.equal(await page2.locator('[data-level="1-4"]').isDisabled(), true);
     await page2.screenshot({ path: `${output}/13-fresh-select.png` });
     await fresh.close();

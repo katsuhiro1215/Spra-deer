@@ -3,6 +3,23 @@ import type { Point, TrapDefinition } from './stage.ts';
 /** 画面上の位置（Y）がこの値より下にいる間、text を案内として表示する。上から順に判定する。 */
 export type Chapter = { above: number; text: string };
 
+/**
+ * 道の上を行き来して、決まった間隔でうんこを落とす鹿。動きは時間だけで決まるので、毎回同じになる。
+ * 落とす前に、その場で止まって予告する（warning 秒）。
+ */
+export type DeerDefinition = {
+  id: string;
+  kind: 'stag' | 'doe' | 'fawn';
+  y: number; // 歩く道の高さ
+  x1: number; x2: number; // 行き来する範囲
+  startX: number; startDir: 1 | -1;
+  speed: number;
+  firstDrop: number; // 最初に落とす時刻（面の開始から、秒）
+  dropEvery: number; // 次に落とすまでの間隔（秒。予告の時間を含む）
+  drops: number; // 落とす回数
+  warning: number; // 予告の時間（秒）
+};
+
 export type LevelDefinition = {
   id: string; // '1-4' のような表記
   stage: number;
@@ -10,6 +27,7 @@ export type LevelDefinition = {
   intro: string; // 開始時に出す一言
   start: Point;
   poops: Point[];
+  deers: DeerDefinition[];
   traps: TrapDefinition[];
   chapters: Chapter[];
   /** 失敗の原因と、次の攻略方法 */
@@ -32,6 +50,7 @@ export const LEVEL_1_1: LevelDefinition = {
   intro: 'うんこをよけて、上のゴールへ。',
   start: { x: 360, y: 1700 },
   poops: [...row(1450, 384), ...row(1050, 256), ...row(650, 448)],
+  deers: [],
   traps: [],
   chapters: [
     { above: 1250, text: 'うんこをよけて、上のゴールへ。' },
@@ -51,6 +70,7 @@ export const LEVEL_1_2: LevelDefinition = {
     { x: 518, y: 1830 }, { x: 551, y: 1800 },
     ...row(1650, 320), ...row(1330, 448), ...row(1010, 256), ...row(700, 384),
   ],
+  deers: [],
   traps: [],
   chapters: [
     { above: 2000, text: 'すきまは、毎回ちがう場所。' },
@@ -59,6 +79,26 @@ export const LEVEL_1_2: LevelDefinition = {
     { above: -Infinity, text: 'あと少し。旗のところへ！' },
   ],
   hints: { poop: POOP_HINT, fall: NO_FALL },
+};
+
+/** 1-3: 歩く鹿が、止まって、進路上へ新しいうんこを落とす。動く相手と、変化する道を読む。 */
+export const LEVEL_1_3: LevelDefinition = {
+  id: '1-3', stage: 1, title: '歩く鹿のおくりもの',
+  intro: '鹿が止まったら、うんこの合図。',
+  start: { x: 360, y: 2500 },
+  poops: [...row(2250, 384), ...row(1500, 256), ...row(1000, 448)],
+  deers: [
+    { id: 'doe', kind: 'doe', y: 1880, x1: 150, x2: 570, startX: 170, startDir: 1, speed: 85, firstDrop: 1.4, dropEvery: 3, drops: 3, warning: .9 },
+    { id: 'fawn', kind: 'fawn', y: 1250, x1: 150, x2: 570, startX: 550, startDir: -1, speed: 105, firstDrop: 3, dropEvery: 3.2, drops: 3, warning: .9 },
+  ],
+  traps: [],
+  chapters: [
+    { above: 2150, text: '鹿が止まったら、うんこの合図。' },
+    { above: 1500, text: '鹿は、道の上にも落としていくよ。' },
+    { above: 800, text: 'うんこの場所は、さっきと違うかも。' },
+    { above: -Infinity, text: 'あと少し。旗のところへ！' },
+  ],
+  hints: { poop: '鹿が止まって、しっぽを上げたら合図。\n落ちる場所を見て、少し待つか\n反対側から回ろう。', fall: NO_FALL },
 };
 
 /** 1-4: 安全そうなすきまの床が揺れ、崩れる。試作 deersample2 の内容。 */
@@ -74,6 +114,7 @@ export const LEVEL_1_4: LevelDefinition = {
     ...row(1670, 448), ...row(1280, 384),
     ...row(700, 256),
   ],
+  deers: [],
   // 固定配置なので、驚きも覚えて攻略できる。うんこのすきまごとに、安全な迂回路がある。
   traps: [
     { id: 'first-surprise', x: 360, y: 2780, width: 176, height: 130, warning: .65 },
@@ -93,11 +134,11 @@ export const LEVEL_1_4: LevelDefinition = {
   },
 };
 
-/** ステージ1の5枠。1-3 と 1-5 は動く鹿の実装後に追加する。 */
+/** ステージ1の5枠。1-5（総仕上げ）は、ほかの面が固まってから追加する。 */
 export const STAGE_1: LevelSlot[] = [
   { id: '1-1', title: LEVEL_1_1.title, summary: '少しのうんこをよけよう', level: LEVEL_1_1 },
   { id: '1-2', title: LEVEL_1_2.title, summary: 'うんこの列を抜けよう', level: LEVEL_1_2 },
-  { id: '1-3', title: '歩く鹿', summary: '鹿が新しいうんこを落とす' },
+  { id: '1-3', title: LEVEL_1_3.title, summary: '鹿が、道にうんこを落とす', level: LEVEL_1_3 },
   { id: '1-4', title: LEVEL_1_4.title, summary: '安全そうな床に、ご用心', level: LEVEL_1_4 },
   { id: '1-5', title: 'ステージ1の総仕上げ', summary: '全部まとめて挑戦' },
 ];

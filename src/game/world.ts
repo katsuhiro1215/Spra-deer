@@ -1,18 +1,55 @@
 import { FIELD, GOAL, RULES, type Point, type TrapDefinition } from './stage.ts';
-import type { LevelDefinition } from './levels.ts';
+import type { DeerDefinition, LevelDefinition } from './levels.ts';
 import { facingOf, type Facing } from './facing.ts';
 export type Input = { x: number; y: number; jump?: boolean };
 export type Trap = TrapDefinition & { state: 'intact' | 'shaking' | 'open'; elapsed: number };
-export type Event = { kind: 'jump' | 'land' | 'warning' | 'collapse' | 'poop' | 'fall' | 'clear'; x: number; y: number; id?: string };
+export type Event = { kind: 'jump' | 'land' | 'warning' | 'collapse' | 'poop' | 'fall' | 'clear' | 'dropWarning' | 'drop'; x: number; y: number; id?: string };
+/** 歩く鹿。walk=歩く, warn=止まって予告中。 */
+export type Deer = {
+  id: string; kind: DeerDefinition['kind']; x: number; y: number; dir: 1 | -1;
+  state: 'walk' | 'warn'; timer: number; dropped: number; nextDrop: number; walked: number;
+};
 export type World = {
   level: LevelDefinition;
   player: Point & { height: number; jumpTime: number; cooldown: number; facing: Facing; stride: number; moving: boolean };
-  traps: Trap[]; time: number; jumps: number; outcome: 'playing' | 'poop' | 'fall' | 'clear';
+  traps: Trap[]; deers: Deer[];
+  /** 面に置かれたうんこ＋鹿が落としたうんこ。当たり判定はこれを使う。 */
+  poops: Point[];
+  time: number; jumps: number; outcome: 'playing' | 'poop' | 'fall' | 'clear';
   events: Event[]; furthest: number;
 };
 const clamp = (n: number, a: number, b: number) => Math.max(a, Math.min(b, n));
 export function createWorld(level: LevelDefinition): World {
-  return { level, player: { ...level.start, height: 0, jumpTime: -1, cooldown: 0, facing: 'up', stride: 0, moving: false }, traps: level.traps.map(t => ({ ...t, state: 'intact', elapsed: 0 })), time: 0, jumps: 0, outcome: 'playing', events: [], furthest: level.start.y };
+  return {
+    level, player: { ...level.start, height: 0, jumpTime: -1, cooldown: 0, facing: 'up', stride: 0, moving: false },
+    traps: level.traps.map(t => ({ ...t, state: 'intact', elapsed: 0 })),
+    deers: level.deers.map(d => ({ id: d.id, kind: d.kind, x: d.startX, y: d.y, dir: d.startDir, state: 'walk', timer: 0, dropped: 0, nextDrop: d.firstDrop, walked: 0 })),
+    poops: level.poops.map(p => ({ ...p })),
+    time: 0, jumps: 0, outcome: 'playing', events: [], furthest: level.start.y,
+  };
+}
+/** 鹿が落とすうんこの位置（体の後ろ側）。 */
+export const dropSpot = (d: Pick<Deer, 'x' | 'y' | 'dir'>): Point => ({ x: d.x - d.dir * 34, y: d.y });
+function stepDeers(w: World, dt: number) {
+  w.level.deers.forEach((def, i) => {
+    const d = w.deers[i];
+    if (d.state === 'walk') {
+      const move = def.speed * dt;
+      d.x += d.dir * move; d.walked += move;
+      if (d.x >= def.x2) { d.x = def.x2; d.dir = -1; } else if (d.x <= def.x1) { d.x = def.x1; d.dir = 1; }
+      if (d.dropped < def.drops && w.time >= d.nextDrop) {
+        d.state = 'warn'; d.timer = 0;
+        const s = dropSpot(d); w.events.push({ kind: 'dropWarning', x: s.x, y: s.y, id: d.id });
+      }
+    } else {
+      d.timer += dt;
+      if (d.timer >= def.warning) {
+        const s = dropSpot(d);
+        w.poops.push(s); d.dropped++; d.state = 'walk'; d.nextDrop = w.time + def.dropEvery - def.warning;
+        w.events.push({ kind: 'drop', x: s.x, y: s.y, id: d.id });
+      }
+    }
+  });
 }
 export function inHole(p: Point, t: TrapDefinition): boolean {
   // Test the foot/shadow centre against the inner edge; the sprite is not the collider.
@@ -49,6 +86,7 @@ export function step(w: World, input: Input, dt = RULES.step): void {
       w.events.push({ kind: 'land', x: p.x, y: p.y });
     }
   }
+  stepDeers(w, dt);
   for (const trap of w.traps) {
     if (trap.state === 'intact' && near(p, trap)) {
       trap.state = 'shaking'; trap.elapsed = 0;
@@ -62,7 +100,7 @@ export function step(w: World, input: Input, dt = RULES.step): void {
       }
     }
   }
-  if (p.height < 22 && w.level.poops.some(o => Math.hypot(o.x - p.x, o.y - p.y) < RULES.radius + RULES.poopRadius)) {
+  if (p.height < 22 && w.poops.some(o => Math.hypot(o.x - p.x, o.y - p.y) < RULES.radius + RULES.poopRadius)) {
     w.outcome = 'poop'; w.events.push({ kind: 'poop', x: p.x, y: p.y });
   } else if (p.jumpTime < 0 && w.traps.some(t => t.state === 'open' && inHole(p, t))) {
     w.outcome = 'fall'; w.events.push({ kind: 'fall', x: p.x, y: p.y });

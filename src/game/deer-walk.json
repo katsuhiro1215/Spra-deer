@@ -1,0 +1,158 @@
+{
+ "stag": {
+  "r": {
+   "frames": [
+    {
+     "file": "stag_r_0.png",
+     "w": 542,
+     "h": 677
+    },
+    {
+     "file": "stag_r_1.png",
+     "w": 542,
+     "h": 677
+    },
+    {
+     "file": "stag_r_2.png",
+     "w": 542,
+     "h": 677
+    },
+    {
+     "file": "stag_r_3.png",
+     "w": 542,
+     "h": 677
+    }
+   ],
+   "refHeight": 672
+  },
+  "l": {
+   "frames": [
+    {
+     "file": "stag_l_0.png",
+     "w": 536,
+     "h": 688
+    },
+    {
+     "file": "stag_l_1.png",
+     "w": 536,
+     "h": 688
+    },
+    {
+     "file": "stag_l_2.png",
+     "w": 536,
+     "h": 688
+    },
+    {
+     "file": "stag_l_3.png",
+     "w": 536,
+     "h": 688
+    }
+   ],
+   "refHeight": 673
+  }
+ },
+ "doe": {
+  "r": {
+   "frames": [
+    {
+     "file": "doe_r_0.png",
+     "w": 539,
+     "h": 625
+    },
+    {
+     "file": "doe_r_1.png",
+     "w": 539,
+     "h": 625
+    },
+    {
+     "file": "doe_r_2.png",
+     "w": 539,
+     "h": 625
+    },
+    {
+     "file": "doe_r_3.png",
+     "w": 539,
+     "h": 625
+    }
+   ],
+   "refHeight": 621
+  },
+  "l": {
+   "frames": [
+    {
+     "file": "doe_l_0.png",
+     "w": 530,
+     "h": 628
+    },
+    {
+     "file": "doe_l_1.png",
+     "w": 530,
+     "h": 628
+    },
+    {
+     "file": "doe_l_2.png",
+     "w": 530,
+     "h": 628
+    },
+    {
+     "file": "doe_l_3.png",
+     "w": 530,
+     "h": 628
+    }
+   ],
+   "refHeight": 623
+  }
+ },
+ "fawn": {
+  "r": {
+   "frames": [
+    {
+     "file": "fawn_r_0.png",
+     "w": 529,
+     "h": 633
+    },
+    {
+     "file": "fawn_r_1.png",
+     "w": 529,
+     "h": 633
+    },
+    {
+     "file": "fawn_r_2.png",
+     "w": 529,
+     "h": 633
+    },
+    {
+     "file": "fawn_r_3.png",
+     "w": 529,
+     "h": 633
+    }
+   ],
+   "refHeight": 630
+  },
+  "l": {
+   "frames": [
+    {
+     "file": "fawn_l_0.png",
+     "w": 496,
+     "h": 612
+    },
+    {
+     "file": "fawn_l_1.png",
+     "w": 496,
+     "h": 612
+    },
+    {
+     "file": "fawn_l_2.png",
+     "w": 496,
+     "h": 612
+    },
+    {
+     "file": "fawn_l_3.png",
+     "w": 496,
+     "h": 612
+    }
+   ],
+   "refHeight": 599
+  }
+ }
+}

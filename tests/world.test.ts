@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createWorld, step, type World, type Input } from '../src/game/world.ts';
 import { RULES, GOAL } from '../src/game/stage.ts';
-import { LEVEL_1_1, LEVEL_1_2, LEVEL_1_4, PLAYABLE, STAGES } from '../src/game/levels.ts';
+import { LEVEL_1_1, LEVEL_1_2, LEVEL_1_3, LEVEL_1_4, PLAYABLE, STAGES } from '../src/game/levels.ts';
 
 const create = () => createWorld(LEVEL_1_4);
 function run(w: World, input: Input, seconds: number) {
@@ -96,7 +96,7 @@ test('1-2 is completable through the gaps, including the poop pair', () => {
 test('level data is sound: unique ids, safe start, final chapter, hints for every failure', () => {
   const ids = PLAYABLE.map(l => l.id);
   assert.equal(new Set(ids).size, ids.length);
-  assert.deepEqual(ids, ['1-1', '1-2', '1-4']);
+  assert.deepEqual(ids, ['1-1', '1-2', '1-3', '1-4']);
   for (const level of PLAYABLE) {
     assert.ok(level.poops.every(p => Math.hypot(p.x - level.start.x, p.y - level.start.y) > 150), `${level.id}: poop near start`);
     assert.ok(level.start.y > GOAL.y + 800, `${level.id}: start too close to goal`);
@@ -130,4 +130,33 @@ test("stride grows with the distance actually walked, not while pushing against 
   const stood = w.player.stride; run(w, { x: 0, y: 0 }, 1); assert.equal(w.player.stride, stood);
   const edge = createWorld(LEVEL_1_1); edge.player.x = 114;
   run(edge, { x: -1, y: 0 }, 1); assert.equal(edge.player.stride, 0);
+});
+
+// 1-3: 歩く鹿
+test("1-3: deer stop to warn, then drop a poop at a fixed spot and time", () => {
+  const w = createWorld(LEVEL_1_3);
+  const log: string[] = [];
+  for (let i = 0; i < 120 * 4; i++) { step(w, { x: 0, y: 0 }); for (const e of w.events) if (e.kind === "dropWarning" || e.kind === "drop") log.push(w.time.toFixed(2) + " " + e.kind + " " + e.id); }
+  assert.ok(log.some(l => l.endsWith("dropWarning doe")) && log.some(l => l.endsWith("drop doe")));
+  assert.ok(log.indexOf(log.find(l => l.endsWith("dropWarning doe"))!) < log.indexOf(log.find(l => l.endsWith("drop doe"))!));
+  const again = createWorld(LEVEL_1_3); for (let i = 0; i < 120 * 4; i++) step(again, { x: 0, y: 0 });
+  assert.deepEqual(again.poops, w.poops); // 毎回同じ
+  assert.equal(w.poops.length, LEVEL_1_3.poops.length + w.deers.reduce((n, d) => n + d.dropped, 0));
+});
+test("1-3: a standing deer does not walk while warning, and touching a deer is harmless", () => {
+  const w = createWorld(LEVEL_1_3);
+  while (w.deers[0].state === "walk") step(w, { x: 0, y: 0 });
+  const x = w.deers[0].x; run(w, { x: 0, y: 0 }, .5); assert.equal(w.deers[0].x, x);
+  const w2 = createWorld(LEVEL_1_3); w2.player.x = 200; w2.player.y = 1960; // 鹿の道のすぐ手前
+  walk(w2, 200, 1860); assert.equal(w2.outcome, "playing");
+});
+test("1-3 is completable by reading where the deer drop, and walking the old gap column fails", () => {
+  const route: [number, number][] = [[384,2340],[384,2160],[360,1960],[360,1790],[256,1590],[256,1410],[400,1330],[400,1170],[448,1090],[448,910],[GOAL.x,GOAL.y]];
+  const w = createWorld(LEVEL_1_3);
+  for (const [x, y] of route) walk(w, x, y);
+  assert.equal(w.outcome, "clear"); assert.ok(w.poops.length > LEVEL_1_3.poops.length);
+  const naive = createWorld(LEVEL_1_3);
+  const old: [number, number][] = [[384,2340],[384,2160],[360,1960],[360,1790],[256,1590],[256,1410],[256,1100]];
+  assert.throws(() => { for (const [x, y] of old) walk(naive, x, y); }, /route failed/);
+  assert.equal(naive.outcome, "poop");
 });
