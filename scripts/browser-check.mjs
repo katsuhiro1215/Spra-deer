@@ -19,14 +19,15 @@ page.on('console', message => { if (message.type() === 'error') errors.push(mess
 const state = () => page.evaluate(() => window.__DEER__);
 const snap = name => page.screenshot({ path: `${output}/${name}.png` });
 try {
-  await page.goto(process.env.GAME_URL || 'http://127.0.0.1:5178/');
+  await page.goto(process.env.GAME_URL || 'http://127.0.0.1:5180/');
   await page.waitForFunction(() => window.__DEER__?.mode === 'title');
   await snap('01-title-mobile');
   await page.locator('[data-action="select"]').click();
   await page.waitForFunction(() => window.__DEER__?.mode === 'select');
   await snap('01b-select-mobile');
   assert.equal(await page.locator('[data-level="1-4"]').isDisabled(), false, '1-4 is unlocked by the saved progress');
-  assert.equal(await page.locator('.level-card.soon').count(), 1, '1-5 is shown as coming soon');
+  assert.equal(await page.locator('.level-card.soon').count(), 0, 'all five stage 1 slots are playable');
+  assert.equal(await page.locator('.soon-note').count(), 2, 'stages 2 and 3 are shown as coming soon');
   await page.locator('[data-level="1-4"]').click();
   await page.waitForFunction(() => window.__DEER__?.mode === 'playing' && window.__DEER__.level.id === '1-4');
   await snap('02-start-mobile');
@@ -125,7 +126,7 @@ try {
     // A fresh visitor can choose only 1-1.
     const fresh = await browser.newContext({ viewport: { width: 390, height: 844 } });
     const page2 = await fresh.newPage();
-    await page2.goto(process.env.GAME_URL || 'http://127.0.0.1:5178/');
+    await page2.goto(process.env.GAME_URL || 'http://127.0.0.1:5180/');
     await page2.waitForFunction(() => window.__DEER__?.mode === 'title');
     await page2.locator('[data-action="select"]').click();
     assert.equal(await page2.locator('[data-level="1-1"]').isDisabled(), false);

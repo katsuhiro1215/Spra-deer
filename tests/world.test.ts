@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createWorld, step, type World, type Input } from '../src/game/world.ts';
 import { RULES, GOAL } from '../src/game/stage.ts';
-import { LEVEL_1_1, LEVEL_1_2, LEVEL_1_3, LEVEL_1_4, PLAYABLE, STAGES } from '../src/game/levels.ts';
+import { LEVEL_1_1, LEVEL_1_2, LEVEL_1_3, LEVEL_1_4, LEVEL_1_5, PLAYABLE, STAGES } from '../src/game/levels.ts';
 
 const create = () => createWorld(LEVEL_1_4);
 function run(w: World, input: Input, seconds: number) {
@@ -96,7 +96,7 @@ test('1-2 is completable through the gaps, including the poop pair', () => {
 test('level data is sound: unique ids, safe start, final chapter, hints for every failure', () => {
   const ids = PLAYABLE.map(l => l.id);
   assert.equal(new Set(ids).size, ids.length);
-  assert.deepEqual(ids, ['1-1', '1-2', '1-3', '1-4']);
+  assert.deepEqual(ids, ['1-1', '1-2', '1-3', '1-4', '1-5']);
   for (const level of PLAYABLE) {
     assert.ok(level.poops.every(p => Math.hypot(p.x - level.start.x, p.y - level.start.y) > 150), `${level.id}: poop near start`);
     assert.ok(level.start.y > GOAL.y + 800, `${level.id}: start too close to goal`);
@@ -159,4 +159,22 @@ test("1-3 is completable by reading where the deer drop, and walking the old gap
   const old: [number, number][] = [[384,2340],[384,2160],[360,1960],[360,1790],[256,1590],[256,1410],[256,1100]];
   assert.throws(() => { for (const [x, y] of old) walk(naive, x, y); }, /route failed/);
   assert.equal(naive.outcome, "poop");
+});
+
+// 1-5: 総仕上げ（うんこの列・歩く鹿・崩れる床）
+const ROUTE_1_5: [number, number][] = [[384,3240],[384,3060],[384,2700],[448,2600],[448,2460],[300,2460],[300,2200],[300,1900],[256,1800],[256,1710],[400,1710],[400,1480],[384,1140],[384,960],[GOAL.x,GOAL.y]];
+test("1-5 is completable by combining all the lessons, and uses every mechanic", () => {
+  const w = createWorld(LEVEL_1_5);
+  for (const [x, y] of ROUTE_1_5) walk(w, x, y);
+  assert.equal(w.outcome, "clear");
+  assert.ok(w.traps.every(t => t.state === "open"), "both traps were triggered and passed safely");
+  assert.ok(w.poops.length > LEVEL_1_5.poops.length, "deer dropped new poop along the way");
+});
+test("1-5: both bait gaps drop a straight walk into the hole", () => {
+  const first = createWorld(LEVEL_1_5);
+  assert.throws(() => { for (const [x, y] of [[384,3240],[384,3060],[384,2700],[448,2600],[448,2300]] as [number, number][]) walk(first, x, y); }, /route failed/);
+  assert.equal(first.outcome, "fall");
+  const second = createWorld(LEVEL_1_5);
+  assert.throws(() => { for (const [x, y] of ROUTE_1_5.slice(0, 8).concat([[256,1800],[256,1500]]) as [number, number][]) walk(second, x, y); }, /route failed/);
+  assert.equal(second.outcome, "fall");
 });

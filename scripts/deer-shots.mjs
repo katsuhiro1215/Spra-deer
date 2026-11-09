@@ -14,7 +14,7 @@ await context.addInitScript(data => { if (!localStorage.getItem('spra-deer:progr
 const page = await context.newPage();
 const errors = [];
 page.on('pageerror', e => errors.push(String(e)));
-await page.goto(process.env.GAME_URL || 'http://127.0.0.1:5178/');
+await page.goto(process.env.GAME_URL || 'http://127.0.0.1:5180/');
 await page.waitForFunction(() => window.__DEER__?.mode === 'title');
 await page.locator('[data-action="select"]').click();
 await page.locator('[data-level="1-3"]').click();

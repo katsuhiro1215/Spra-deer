@@ -9,7 +9,7 @@ const cached = `${homedir()}/.cache/ms-playwright/chromium-1248/chrome-linux-arm
 const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || (existsSync(cached) ? cached : undefined);
 const browser = await chromium.launch({ executablePath, headless: true, args: ['--no-sandbox', '--enable-unsafe-swiftshader'] });
 const page = await (await browser.newContext({ viewport: { width: 390, height: 844 } })).newPage();
-await page.goto(process.env.GAME_URL || 'http://127.0.0.1:5178/');
+await page.goto(process.env.GAME_URL || 'http://127.0.0.1:5180/');
 await page.waitForFunction(() => window.__DEER__?.mode === 'title');
 await page.locator('[data-action="select"]').click();
 await page.locator('[data-level="1-1"]').click();

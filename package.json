@@ -4,10 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite --host 127.0.0.1 --port 5178 --strictPort",
-    "dev:mobile": "vite --host 0.0.0.0 --port 5178 --strictPort",
+    "dev": "vite --host 127.0.0.1 --port 5180 --strictPort",
+    "dev:mobile": "vite --host 0.0.0.0 --port 5180 --strictPort",
     "build": "tsc --noEmit && vite build",
-    "preview": "vite preview --host 127.0.0.1 --port 4178 --strictPort",
+    "preview": "vite preview --host 127.0.0.1 --port 4180 --strictPort",
     "test": "node --experimental-strip-types --test tests/world.test.ts",
     "test:browser": "node scripts/browser-check.mjs"
   },

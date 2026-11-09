@@ -134,13 +134,41 @@ export const LEVEL_1_4: LevelDefinition = {
   },
 };
 
-/** ステージ1の5枠。1-5（総仕上げ）は、ほかの面が固まってから追加する。 */
+/** 1-5: ステージ1の総仕上げ。うんこの列、歩く鹿の落とし物、崩れる床を組み合わせる。新しい仕掛けはない。 */
+export const LEVEL_1_5: LevelDefinition = {
+  id: '1-5', stage: 1, title: 'ステージ1の総仕上げ',
+  intro: 'これまでの、全部入り。',
+  start: { x: 360, y: 3400 },
+  poops: [...row(3150, 384), ...row(2500, 448), ...row(1750, 256), ...row(1050, 384)],
+  deers: [
+    { id: 'doe', kind: 'doe', y: 2850, x1: 150, x2: 570, startX: 170, startDir: 1, speed: 85, firstDrop: 1.5, dropEvery: 3, drops: 3, warning: .9 },
+    { id: 'fawn', kind: 'fawn', y: 2000, x1: 150, x2: 570, startX: 550, startDir: -1, speed: 105, firstDrop: 5, dropEvery: 3.2, drops: 3, warning: .9 },
+    { id: 'stag', kind: 'stag', y: 1300, x1: 150, x2: 570, startX: 300, startDir: 1, speed: 75, firstDrop: 9, dropEvery: 3.4, drops: 3, warning: 1 },
+  ],
+  traps: [
+    { id: 'gap-trap', x: 360, y: 2280, width: 176, height: 130, warning: .65 },
+    { id: 'landing-trap', x: 168, y: 1530, width: 176, height: 140, warning: .76 },
+  ],
+  chapters: [
+    { above: 3000, text: 'これまでの、全部入り。' },
+    { above: 2400, text: '鹿が止まったら、うんこの合図。' },
+    { above: 1850, text: '空いている道。…あれ？' },
+    { above: 1100, text: 'うんこの場所は、さっきと違うかも。' },
+    { above: -Infinity, text: 'あと少し。旗のところへ！' },
+  ],
+  hints: {
+    poop: '鹿が止まって、しっぽを上げたら合図。\n落ちる場所を見て、少し待つか\n反対側から回ろう。',
+    fall: 'うんこは避けたのに…！\nひびのある床は、横へ回ろう。\n跳ぶときは、着地点も見てね。',
+  },
+};
+
+/** ステージ1の5枠。 */
 export const STAGE_1: LevelSlot[] = [
   { id: '1-1', title: LEVEL_1_1.title, summary: '少しのうんこをよけよう', level: LEVEL_1_1 },
   { id: '1-2', title: LEVEL_1_2.title, summary: 'うんこの列を抜けよう', level: LEVEL_1_2 },
   { id: '1-3', title: LEVEL_1_3.title, summary: '鹿が、道にうんこを落とす', level: LEVEL_1_3 },
   { id: '1-4', title: LEVEL_1_4.title, summary: '安全そうな床に、ご用心', level: LEVEL_1_4 },
-  { id: '1-5', title: 'ステージ1の総仕上げ', summary: '全部まとめて挑戦' },
+  { id: '1-5', title: LEVEL_1_5.title, summary: '全部まとめて挑戦', level: LEVEL_1_5 },
 ];
 
 export const STAGES: { stage: number; title: string; slots: LevelSlot[] }[] = [
