@@ -17,7 +17,13 @@ from PIL import Image
 SRC = sys.argv[1] if len(sys.argv) > 1 else '/mnt/c/Users/katsu/SmartSprouts/rooms/Spra/Mascot/01_Spru/walk'
 OUT = os.path.join(os.path.dirname(__file__), '..', 'public', 'assets', 'spru-walk')
 MANIFEST = os.path.join(os.path.dirname(__file__), '..', 'src', 'game', 'spru-walk.json')  # コードから読むため src 側に置く
-SHEETS = {'down': '植物スプライトのランニングポーズ集.png', 'up': '歩く緑の芽っ子バックビュー4コマ.png'}
+# 向き: (シート, 歩きの順, 立ちのコマ, 大きさをそろえる基準のコマ)
+SHEETS = {
+    # 正面（2026-11-09 再生成版）。全コマが歩きのポーズで、左足前が3コマ続く。手足の組が正しい3・4コマ目と中立の2コマ目だけで左右交互にしている（1コマ目は未使用）。立ちは2コマ目。
+    'down': ('スプラウトキャラクターの歩行アニメーション_strip.png', [2, 1, 3, 1], 1, 1),
+    # 後ろ姿。0コマ目が立ち、1=左足, 2=両足そろう, 3=右足。
+    'up': ('歩く緑の芽っ子バックビュー4コマ.png', [1, 2, 3, 2], 0, 2),
+}
 DIAGONALS = {'dr': 'lower_right', 'dl': 'lower_left', 'ur': 'upper_right', 'ul': 'upper_left'}
 ALPHA_MIN = 24  # これ以下の薄い縁は、大きさの測定に使わない
 PAD = 2
@@ -61,13 +67,13 @@ def main():
         # 0=passing（立ち）, 1=step_l, 2=step_r。歩きは 左→立ち→右→立ち。
         save(key, union_crop(frames), [1, 0, 2, 0], 0, manifest)
     ref_height = reference[3] - reference[1]
-    for key, sheet in SHEETS.items():
+    for key, (sheet, cycle, idle, ref) in SHEETS.items():
         frames = split_sheet(os.path.join(SRC, sheet))
-        # 0=立ち, 1〜3=歩き。passing 相当のコマ（2）の高さを斜めの passing にそろえる。
-        scale = ref_height / (visible_bbox(frames[2])[3] - visible_bbox(frames[2])[1])
+        # 基準のコマの高さを、斜めの passing にそろえる。
+        scale = ref_height / (visible_bbox(frames[ref])[3] - visible_bbox(frames[ref])[1])
         cropped = union_crop(frames)
         scaled = [f.resize((round(f.width * scale), round(f.height * scale)), Image.LANCZOS) for f in cropped]
-        save(key, scaled, [1, 2, 3, 2], 0, manifest)
+        save(key, scaled, cycle, idle, manifest)
         print(f'{key}: scale {scale:.3f}')
     manifest['referenceHeight'] = ref_height
     with open(MANIFEST, 'w', encoding='utf-8') as fh:
