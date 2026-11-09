@@ -63,3 +63,19 @@ button:focus-visible, #game:focus-visible { outline: 3px solid #e7b755; outline-
 @media (max-width: 1100px) { .chapter-note { display: none; } }
 @media (max-width: 800px) { #shell { padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom); } .side-note { display: none; } #game-wrap { height: min(calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom)), 177.7778vw); border-radius: 0; box-shadow: none; } }
 @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto; } }
+// 面選択
+.select-screen { justify-content: flex-start; gap: 3cqw; overflow-y: auto; padding: 5cqw 5cqw 8cqw; background: linear-gradient(#ecf0d5f2, #e8ecc9f5); -webkit-overflow-scrolling: touch;
+  .select-head { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 3cqw; h2 { font-size: max(20px, 6.3cqw); margin: 0; } .secondary { margin: 0; min-height: 44px; } }
+}
+.stage-group { width: 100%; header { display: flex; align-items: baseline; gap: 2.5cqw; margin-bottom: 2cqw; .eyebrow { font-size: max(12px, 2.9cqw); } h3 { flex: 1; margin: 0; font-size: max(16px, 4.4cqw); } .count { font-size: max(14px, 3.3cqw); color: #637655; font-variant-numeric: tabular-nums; } } }
+.levels { display: grid; gap: 2cqw; }
+.level-card { display: grid; grid-template-columns: max-content 1fr auto; align-items: center; gap: 3cqw; width: 100%; min-height: max(56px, 14cqw); padding: 2cqw 3.5cqw; text-align: left; border: 1px solid #fffced; border-radius: 3.5cqw; background: #fffbe8f0; box-shadow: 0 3px 0 #8b9a5b22;
+  b { font-size: max(16px, 4.6cqw); font-variant-numeric: tabular-nums; color: #345e45; white-space: nowrap; min-width: 13cqw; }
+  .lv-name { font-size: max(16px, 4cqw); font-weight: 700; small { display: block; font-size: max(13px, 3cqw); font-weight: normal; color: #6c7d54; margin-top: .6cqw; } }
+  .lv-best { font-size: max(13px, 3cqw); color: #6c7d54; text-align: right; max-width: 30cqw; }
+  &.done b::after { content: "✓"; margin-left: 1cqw; color: #b48742; }
+  &:not(:disabled):not(.soon):active { transform: translateY(2px); box-shadow: 0 1px 0 #8b9a5b22; }
+  &:disabled, &.soon { opacity: .55; cursor: default; box-shadow: none; }
+}
+.soon-note { margin: 0; padding: 3cqw; font-size: max(14px, 3.3cqw); color: #6c7d54; border: 1px dashed #b6c29a; border-radius: 3.5cqw; text-align: center; }
+.secondary-row { display: flex; justify-content: center; gap: 4cqw; flex-wrap: wrap; .secondary { margin-top: 2cqw; } }

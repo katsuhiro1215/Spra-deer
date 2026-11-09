@@ -1,15 +1,17 @@
-import { FIELD, GOAL, POOPS, RULES, START, TRAPS, type Point, type TrapDefinition } from './stage.ts';
+import { FIELD, GOAL, RULES, type Point, type TrapDefinition } from './stage.ts';
+import type { LevelDefinition } from './levels.ts';
 export type Input = { x: number; y: number; jump?: boolean };
 export type Trap = TrapDefinition & { state: 'intact' | 'shaking' | 'open'; elapsed: number };
 export type Event = { kind: 'jump' | 'land' | 'warning' | 'collapse' | 'poop' | 'fall' | 'clear'; x: number; y: number; id?: string };
 export type World = {
+  level: LevelDefinition;
   player: Point & { height: number; jumpTime: number; cooldown: number; facing: number; moving: boolean };
   traps: Trap[]; time: number; jumps: number; outcome: 'playing' | 'poop' | 'fall' | 'clear';
   events: Event[]; furthest: number;
 };
 const clamp = (n: number, a: number, b: number) => Math.max(a, Math.min(b, n));
-export function createWorld(): World {
-  return { player: { ...START, height: 0, jumpTime: -1, cooldown: 0, facing: 1, moving: false }, traps: TRAPS.map(t => ({ ...t, state: 'intact', elapsed: 0 })), time: 0, jumps: 0, outcome: 'playing', events: [], furthest: START.y };
+export function createWorld(level: LevelDefinition): World {
+  return { level, player: { ...level.start, height: 0, jumpTime: -1, cooldown: 0, facing: 1, moving: false }, traps: level.traps.map(t => ({ ...t, state: 'intact', elapsed: 0 })), time: 0, jumps: 0, outcome: 'playing', events: [], furthest: level.start.y };
 }
 export function inHole(p: Point, t: TrapDefinition): boolean {
   // Test the foot/shadow centre against the inner edge; the sprite is not the collider.
@@ -56,7 +58,7 @@ export function step(w: World, input: Input, dt = RULES.step): void {
       }
     }
   }
-  if (p.height < 22 && POOPS.some(o => Math.hypot(o.x - p.x, o.y - p.y) < RULES.radius + RULES.poopRadius)) {
+  if (p.height < 22 && w.level.poops.some(o => Math.hypot(o.x - p.x, o.y - p.y) < RULES.radius + RULES.poopRadius)) {
     w.outcome = 'poop'; w.events.push({ kind: 'poop', x: p.x, y: p.y });
   } else if (p.jumpTime < 0 && w.traps.some(t => t.state === 'open' && inHole(p, t))) {
     w.outcome = 'fall'; w.events.push({ kind: 'fall', x: p.x, y: p.y });

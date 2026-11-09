@@ -1,24 +1,14 @@
 import Phaser from 'phaser';
-import { VIEW, START, GOAL, RULES, chapter } from './game/stage.ts';
+import { VIEW, GOAL, RULES } from './game/stage.ts';
+import { PLAYABLE, STAGES, levelById, type LevelDefinition } from './game/levels.ts';
 import { createWorld, step, type World, type Event } from './game/world.ts';
+import { Progress } from './progress.ts';
 import { ParkView } from './view.ts';
 import { Controls } from './input.ts';
 import './styles.scss';
 
 const el = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
-const STORE = 'spru-deer-2:stage-1:v1';
-type RecordData = { best: number | null; attempts: number; clears: number };
-let record: RecordData = { best: null, attempts: 0, clears: 0 };
-let canSave = true;
-try {
-  const saved = JSON.parse(localStorage.getItem(STORE) || 'null');
-  if (saved && typeof saved === 'object') record = {
-    best: Number.isFinite(saved.best) && saved.best > 0 ? saved.best : null,
-    attempts: Number.isSafeInteger(saved.attempts) && saved.attempts >= 0 ? saved.attempts : 0,
-    clears: Number.isSafeInteger(saved.clears) && saved.clears >= 0 ? saved.clears : 0,
-  };
-} catch { canSave = false; }
-function save() { try { localStorage.setItem(STORE, JSON.stringify(record)); } catch { canSave = false; } }
+const progress = new Progress();
 
 class Sound {
   enabled = false;
@@ -74,9 +64,12 @@ class Boot extends Phaser.Scene {
   }
 }
 
+type Mode = 'title' | 'select' | 'playing' | 'paused' | 'dying' | 'result';
+
 class Park extends Phaser.Scene {
-  world: World = createWorld();
-  mode: 'title' | 'playing' | 'paused' | 'dying' | 'result' = 'title';
+  level: LevelDefinition = PLAYABLE[0];
+  world: World = createWorld(this.level);
+  mode: Mode = 'title';
   private view!: ParkView;
   private controls!: Controls;
   private accumulator = 0;
@@ -86,30 +79,54 @@ class Park extends Phaser.Scene {
   private lastChapter = '';
   constructor() { super('Park'); }
   create() {
-    this.view = new ParkView(this);
-    this.controls = new Controls(() => this.pause(), () => { if (this.mode !== 'title') this.begin(); });
+    this.view = new ParkView(this, this.level);
+    this.controls = new Controls(() => this.pause(), () => { if (this.mode === 'playing' || this.mode === 'paused' || this.mode === 'dying' || this.mode === 'result') this.begin(this.level); });
     el('pause').addEventListener('click', () => this.pause());
     window.addEventListener('blur', () => { if (this.mode === 'playing') this.pause(); });
     document.addEventListener('visibilitychange', () => { if (document.hidden && this.mode === 'playing') this.pause(); });
     el('overlay').addEventListener('click', e => {
-      const action = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-action]')?.dataset.action;
-      if (action === 'begin' || action === 'retry') this.begin();
+      const button = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-action]');
+      const action = button?.dataset.action, target = levelById(button?.dataset.level ?? '');
+      if (action === 'select') this.select();
+      if ((action === 'start' || action === 'next') && target && progress.isUnlocked(target.id)) this.begin(target);
+      if (action === 'retry') this.begin(this.level);
       if (action === 'resume') this.resume();
       if (action === 'title') this.title();
     });
     this.title();
-    if (import.meta.env.DEV) Object.defineProperty(window, '__DEER2__', { configurable: true, get: () => JSON.parse(JSON.stringify({ mode: this.mode, ...this.world, record, canSave })) });
+    if (import.meta.env.DEV) Object.defineProperty(window, '__DEER__', { configurable: true, get: () => JSON.parse(JSON.stringify({ mode: this.mode, ...this.world, record: progress.get(this.level.id), canSave: progress.canSave })) });
+  }
+  private idle(mode: 'title' | 'select') {
+    this.mode = mode; this.controls.enable(false); this.world = createWorld(this.level); this.view.reset();
+    el('hud').hidden = el('controls').hidden = true; el('message').textContent = '';
   }
   private title() {
-    this.mode = 'title'; this.controls.enable(false); this.world = createWorld(); this.view.reset();
-    el('hud').hidden = el('controls').hidden = true; el('message').textContent = '';
-    el('overlay').innerHTML = `<div class="screen title-screen"><span class="eyebrow">奈良の、小さなしかけ話。</span><h2>Spruと鹿。</h2><p class="subtitle">足元には、ご用心。</p><div class="title-art"><img class="title-spru" src="assets/spru.png" alt="Spru"><img class="title-deer" src="assets/deer.png" alt="鹿"><span class="speech">こっち、空いてるよ。</span></div><div class="intro-card"><p>うんこをよけて、ゴールへ。<br>…その道、ほんとうに安全？</p><button class="primary" data-action="begin">第1ステージをはじめる <span>▶</span></button><div class="howto"><span>ドラッグ / 方向キーで移動</span><span>ジャンプボタン / Spaceで跳ぶ</span></div></div><p class="screen-foot">鹿に、悪気はありません。たぶん。</p></div>`;
+    this.idle('title');
+    el('overlay').innerHTML = `<div class="screen title-screen"><span class="eyebrow">奈良の、小さなしかけ話。</span><h2>Spruと鹿。</h2><p class="subtitle">足元には、ご用心。</p><div class="title-art"><img class="title-spru" src="assets/spru.png" alt="Spru"><img class="title-deer" src="assets/deer.png" alt="鹿"><span class="speech">こっち、空いてるよ。</span></div><div class="intro-card"><p>うんこをよけて、ゴールへ。<br>…その道、ほんとうに安全？</p><button class="primary" data-action="select">あそぶ <span>▶</span></button><div class="howto"><span>ドラッグ / 方向キーで移動</span><span>ジャンプボタン / Spaceで跳ぶ</span></div></div><p class="screen-foot">鹿に、悪気はありません。たぶん。</p></div>`;
   }
-  private begin() {
-    this.world = createWorld(); this.view.reset(); this.accumulator = 0; this.visualTime = 0; this.lossAge = 0;
-    this.mode = 'playing'; this.controls.enable(true); record.attempts++; save(); sound.unlock();
+  private select() {
+    this.idle('select');
+    const groups = STAGES.map(group => {
+      const cleared = progress.clearedCount(group.stage), total = group.slots.filter(s => s.level).length;
+      const head = `<header><span class="eyebrow">STAGE ${group.stage}</span><h3>${group.title}</h3>${total ? `<span class="count">${cleared} / ${group.slots.length}</span>` : ''}</header>`;
+      if (!group.slots.length) return `<section class="stage-group">${head}<p class="soon-note">準備中です。</p></section>`;
+      const cards = group.slots.map(slot => {
+        if (!slot.level) return `<div class="level-card soon"><b>${slot.id}</b><span class="lv-name">${slot.title}<small>準備中</small></span></div>`;
+        const record = progress.get(slot.id), open = progress.isUnlocked(slot.id);
+        const status = !open ? 'ロック中' : record.best !== null ? `ベスト ${record.best.toFixed(1)}秒` : '未クリア';
+        return `<button class="level-card${record.clears ? ' done' : ''}" data-action="start" data-level="${slot.id}"${open ? '' : ' disabled'}><b>${slot.id}</b><span class="lv-name">${slot.title}<small>${slot.summary}</small></span><span class="lv-best">${status}</span></button>`;
+      }).join('');
+      return `<section class="stage-group">${head}<div class="levels">${cards}</div></section>`;
+    }).join('');
+    el('overlay').innerHTML = `<div class="screen select-screen"><div class="select-head"><button class="secondary" data-action="title">タイトルへ</button><h2>面をえらぶ</h2></div>${groups}</div>`;
+  }
+  private begin(level: LevelDefinition) {
+    this.level = level; this.view.setLevel(level);
+    this.world = createWorld(level); this.view.reset(); this.accumulator = 0; this.visualTime = 0; this.lossAge = 0;
+    this.mode = 'playing'; this.controls.enable(true); progress.attempt(level.id); sound.unlock();
+    el('hud-level').textContent = `面 ${level.id}`; el('hud-title').textContent = level.title;
     el('hud').hidden = el('controls').hidden = false; el('overlay').innerHTML = ''; this.lastChapter = '';
-    this.message('うんこをよけて、上のゴールへ。', 4);
+    this.message(level.intro, 4);
     el('game').focus({ preventScroll: true }); this.hud();
   }
   private message(text: string, duration = 2) { el('message').textContent = text; this.messageUntil = this.world.time + duration; }
@@ -117,30 +134,34 @@ class Park extends Phaser.Scene {
     if (this.mode === 'paused') { this.resume(); return; }
     if (this.mode !== 'playing') return;
     this.mode = 'paused'; this.controls.enable(false); this.accumulator = 0;
-    el('overlay').innerHTML = `<div class="screen modal-screen"><div class="modal-card"><span class="eyebrow">ちょっと、ひと休み。</span><h2>鹿も、待っています。</h2><p>時間も、崩れかけの床も止まっています。</p><button class="primary" data-action="resume">つづきから</button><button class="secondary" data-action="retry">最初からやり直す</button></div></div>`;
+    el('overlay').innerHTML = `<div class="screen modal-screen"><div class="modal-card"><span class="eyebrow">ちょっと、ひと休み。</span><h2>鹿も、待っています。</h2><p>時間も、崩れかけの床も止まっています。</p><button class="primary" data-action="resume">つづきから</button><div class="secondary-row"><button class="secondary" data-action="retry">最初からやり直す</button><button class="secondary" data-action="select">面選択へ</button></div></div></div>`;
   }
   private resume() {
     if (this.mode !== 'paused') return;
     this.mode = 'playing'; this.controls.enable(true); this.accumulator = 0; el('overlay').innerHTML = ''; el('game').focus({ preventScroll: true });
   }
   private finish() {
-    this.mode = 'result'; const w = this.world, clear = w.outcome === 'clear';
-    const newBest = clear && (record.best === null || w.time < record.best);
-    if (clear) { record.clears++; if (newBest) record.best = w.time; save(); }
+    this.mode = 'result'; const w = this.world, level = this.level, clear = w.outcome === 'clear';
+    const newBest = clear && progress.clear(level.id, w.time);
+    const index = PLAYABLE.indexOf(level), next = clear ? PLAYABLE[index + 1] : undefined;
+    const attempts = progress.get(level.id).attempts;
     const title = clear ? '無事に、おさんぽ。' : w.outcome === 'fall' ? '地面まで、いたずら。' : 'あっ、足元…！';
-    const copy = clear ? '足元のしかけも、見事に突破。\n鹿は、何も知らない顔。' : w.outcome === 'fall' ? 'うんこは避けたのに…！\nひびのある床は、横へ回ろう。\n跳ぶときは、着地点も見てね。' : '鹿の落としものを踏んじゃった。\n足元の影を目印に、\nすきまを通ってみよう。';
-    el('overlay').innerHTML = `<div class="screen modal-screen result-screen"><div class="modal-card"><span class="eyebrow">${clear ? newBest ? '自己ベスト更新！' : '第1ステージ クリア' : `${record.attempts}回目の挑戦`}</span><img class="result-spru" src="assets/${clear ? 'spru-clear' : 'spru-oops'}.png" alt="${clear ? '喜ぶSpru' : '困ったSpru'}"><h2>${title}</h2><p class="result-copy">${copy.replaceAll('\n', '<br>')}</p><div class="result-stats"><div><span>${clear ? 'クリアタイム' : 'ここまでの時間'}</span><strong>${w.time.toFixed(1)}<small>秒</small></strong></div><div><span>${clear ? 'ジャンプ' : 'ゴールへの進み具合'}</span><strong>${clear ? w.jumps : this.progress()}<small>${clear ? '回' : '%'}</small></strong></div></div><button class="primary" data-action="retry">${clear ? 'もう一度あそぶ' : 'すぐに、もう一回'} <span>▶</span></button><button class="secondary" data-action="title">タイトルへ</button><p class="save-note">${clear ? canSave ? '自己ベストはこのブラウザに保存されます。' : 'この環境では記録を保存できません。' : 'Rキーでも再挑戦。しかけの場所は同じです。'}</p></div></div>`;
+    const copy = clear ? (level.traps.length ? '足元のしかけも、見事に突破。\n鹿は、何も知らない顔。' : 'うんこを上手によけて、到着。\n鹿は、何も知らない顔。') : w.outcome === 'fall' ? level.hints.fall : level.hints.poop;
+    const primary = next ? `<button class="primary" data-action="next" data-level="${next.id}">次の面へ（${next.id}） <span>▶</span></button>` : `<button class="primary" data-action="retry">${clear ? 'もう一度あそぶ' : 'すぐに、もう一回'} <span>▶</span></button>`;
+    const secondary = `<div class="secondary-row">${next ? '<button class="secondary" data-action="retry">もう一度あそぶ</button>' : ''}<button class="secondary" data-action="select">面選択へ</button></div>`;
+    el('overlay').innerHTML = `<div class="screen modal-screen result-screen"><div class="modal-card"><span class="eyebrow">${clear ? newBest ? '自己ベスト更新！' : `${level.id} クリア` : `${attempts}回目の挑戦`}</span><img class="result-spru" src="assets/${clear ? 'spru-clear' : 'spru-oops'}.png" alt="${clear ? '喜ぶSpru' : '困ったSpru'}"><h2>${title}</h2><p class="result-copy">${copy.replaceAll('\n', '<br>')}</p><div class="result-stats"><div><span>${clear ? 'クリアタイム' : 'ここまでの時間'}</span><strong>${w.time.toFixed(1)}<small>秒</small></strong></div><div><span>${clear ? 'ジャンプ' : 'ゴールへの進み具合'}</span><strong>${clear ? w.jumps : this.progress()}<small>${clear ? '回' : '%'}</small></strong></div></div>${primary}${secondary}<p class="save-note">${clear ? progress.canSave ? '自己ベストはこのブラウザに保存されます。' : 'この環境では記録を保存できません。' : 'Rキーでも再挑戦。しかけの場所は同じです。'}</p></div></div>`;
     el('overlay').querySelector<HTMLButtonElement>('.primary')?.focus({ preventScroll: true }); this.hud();
   }
-  private progress() { return Math.min(100, Math.max(0, Math.round((START.y - this.world.furthest) / (START.y - GOAL.y - GOAL.radius) * 100))); }
+  private progress() { const { start } = this.level; return Math.min(100, Math.max(0, Math.round((start.y - this.world.furthest) / (start.y - GOAL.y - GOAL.radius) * 100))); }
   private hud() {
+    const best = progress.get(this.level.id).best;
     el('timer').innerHTML = `${this.world.time.toFixed(1)}<small>秒</small>`;
-    el('best').textContent = record.best === null ? '—' : `${record.best.toFixed(1)}秒`;
+    el('best').textContent = best === null ? '—' : `${best.toFixed(1)}秒`;
     el('progress').style.width = `${this.progress()}%`;
     document.querySelector('.progress')!.setAttribute('aria-valuenow', String(this.progress()));
     const p = this.world.player, busy = p.jumpTime >= 0 || p.cooldown > 0;
     el('jump').classList.toggle('busy', busy); el('jump-hint').textContent = p.jumpTime >= 0 ? 'ジャンプ中' : busy ? 'ひと呼吸' : 'Space';
-    const section = chapter(p.y);
+    const section = this.level.chapters.find(c => p.y > c.above)?.text ?? '';
     if (section !== this.lastChapter) { this.lastChapter = section; if (this.world.time >= this.messageUntil) this.message(section, 3); }
     if (this.world.time > this.messageUntil) el('message').textContent = '';
   }
@@ -166,7 +187,7 @@ class Park extends Phaser.Scene {
     if (this.mode !== 'paused') {
       this.visualTime += dt;
       if (this.mode === 'dying') { this.lossAge += dt; if (this.lossAge > .9) this.finish(); }
-      this.view.render(this.world, dt, this.visualTime, this.lossAge, this.mode !== 'title');
+      this.view.render(this.world, dt, this.visualTime, this.lossAge, this.mode !== 'title' && this.mode !== 'select');
     }
   }
 }

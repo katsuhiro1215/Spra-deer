@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
-import { FIELD, GOAL, POOPS, START, VIEW } from './game/stage.ts';
+import { GOAL, VIEW } from './game/stage.ts';
+import type { LevelDefinition } from './game/levels.ts';
 import type { World, Trap, Event } from './game/world.ts';
 
 const FONT = '"Yu Gothic", "Hiragino Kaku Gothic ProN", Meiryo, sans-serif';
@@ -15,19 +16,24 @@ export class ParkView {
   private particles: Particle[] = [];
   private labels: { text: Phaser.GameObjects.Text; born: number; y: number }[] = [];
   private deer: { image: Phaser.GameObjects.Image; y: number; phase: number }[] = [];
-  private cameraY = START.y - 800;
+  private level: LevelDefinition;
+  private staticObjects: Phaser.GameObjects.GameObject[] = [];
+  private cameraY: number;
   private playerHeight = 132;
   private playerWidth = 90;
   private goalFlag: Phaser.GameObjects.Graphics;
 
-  constructor(scene: Phaser.Scene) {
+  constructor(scene: Phaser.Scene, level: LevelDefinition) {
     this.scene = scene;
-    this.drawPark();
+    this.level = level;
+    this.cameraY = level.start.y - 800;
+    this.drawLevel();
     this.trapGraphics = scene.add.graphics().setDepth(2);
     this.goalFlag = scene.add.graphics().setDepth(303);
-    this.shadow = scene.add.ellipse(START.x, START.y, 60, 20, 0x415535, .23).setDepth(10);
+    const { x, y } = level.start;
+    this.shadow = scene.add.ellipse(x, y, 60, 20, 0x415535, .23).setDepth(10);
     this.marker = scene.add.graphics();
-    this.sprite = scene.add.image(START.x, START.y, 'spru').setOrigin(.5, 1);
+    this.sprite = scene.add.image(x, y, 'spru').setOrigin(.5, 1);
     const frame = this.sprite.frame;
     this.playerWidth = this.playerHeight * frame.width / frame.height;
     this.sprite.setDisplaySize(this.playerWidth, this.playerHeight);
@@ -46,8 +52,24 @@ export class ParkView {
     g.lineStyle(2, 0x799851, .6).beginPath().moveTo(x - 19, y - 81).lineTo(x - 3, y - 91).lineTo(x + 11, y - 84).strokePath();
   }
 
+  /** 面を切り替える。公園・うんこ・鹿の飾りを描き直す。 */
+  setLevel(level: LevelDefinition) {
+    if (level === this.level) { this.reset(); return; }
+    this.level = level;
+    for (const o of this.staticObjects) o.destroy();
+    this.staticObjects = []; this.deer = [];
+    this.drawLevel();
+    this.reset();
+  }
+
+  private drawLevel() {
+    const known = new Set(this.scene.children.list);
+    this.drawPark();
+    this.staticObjects = this.scene.children.list.filter(o => !known.has(o));
+  }
+
   private drawPark() {
-    const s = this.scene, ground = s.add.graphics().setDepth(0);
+    const s = this.scene, start0 = this.level.start, ground = s.add.graphics().setDepth(0);
     ground.fillStyle(C.grass).fillRect(0, 0, VIEW.width, 4100);
     ground.fillStyle(C.grassDark, .28);
     for (let i = 0; i < 28; i++) ground.fillEllipse((i * 263) % 720, i * 157, 240 + (i % 3) * 100, 180);
@@ -79,7 +101,7 @@ export class ParkView {
       image.setDisplaySize(128 * image.frame.width / image.frame.height, 128);
       this.deer.push({ image, y, phase: y / 150 });
     }
-    for (const poop of POOPS) {
+    for (const poop of this.level.poops) {
       const g = s.add.graphics().setDepth(poop.y);
       g.fillStyle(0x665b3c, .15).fillEllipse(poop.x + 1, poop.y + 9, 51, 21);
       for (const [dx, dy, r] of [[-11, 1, 10], [7, 4, 10], [0, -10, 9], [15, -8, 8]]) {
@@ -89,8 +111,8 @@ export class ParkView {
     }
     const start = s.add.graphics().setDepth(1);
     start.lineStyle(3, 0xa1ae72, .65);
-    for (let i = 0; i < 3; i++) start.beginPath().moveTo(345, 3470 - i * 32).lineTo(360, 3457 - i * 32).lineTo(375, 3470 - i * 32).strokePath();
-    this.label(360, 3660, '奈良さんぽ、出発。', 26, '#839467').setDepth(1);
+    for (let i = 0; i < 3; i++) start.beginPath().moveTo(start0.x - 15, start0.y - 110 - i * 32).lineTo(start0.x, start0.y - 123 - i * 32).lineTo(start0.x + 15, start0.y - 110 - i * 32).strokePath();
+    this.label(start0.x, start0.y + 80, '奈良さんぽ、出発。', 26, '#839467').setDepth(1);
     // A small rest garden is visible beyond the actual goal, not a fake finish.
     ground.fillStyle(0xd4dcb0).fillEllipse(360, 305, 450, 210);
     ground.lineStyle(3, 0xc0c992).strokeEllipse(360, 305, 450, 210);
@@ -100,10 +122,10 @@ export class ParkView {
     const fence = s.add.graphics().setDepth(1);
     fence.lineStyle(6, 0x9da773).lineBetween(150, 205, 570, 205);
     for (let x = 150; x <= 570; x += 35) fence.lineStyle(7, 0xa9b27e).lineBetween(x, 190, x, 226);
-    const sign = s.add.graphics().setDepth(3530);
-    sign.fillStyle(0x9a8964).fillRoundedRect(572, 3500, 9, 70, 3);
-    sign.fillStyle(0xf6edcf).fillRoundedRect(529, 3450, 96, 56, 9);
-    this.label(576, 3478, '公園入口', 17, '#758258').setDepth(3531);
+    const sign = s.add.graphics().setDepth(start0.y - 50);
+    sign.fillStyle(0x9a8964).fillRoundedRect(572, start0.y - 80, 9, 70, 3);
+    sign.fillStyle(0xf6edcf).fillRoundedRect(529, start0.y - 130, 96, 56, 9);
+    this.label(576, start0.y - 102, '公園入口', 17, '#758258').setDepth(start0.y - 49);
   }
 
   private drawTrap(t: Trap, now: number) {
@@ -155,7 +177,7 @@ export class ParkView {
   }
 
   reset() {
-    this.cameraY = START.y - 800;
+    this.cameraY = this.level.start.y - 800;
     for (const p of this.particles) p.shape.destroy();
     for (const l of this.labels) l.text.destroy();
     this.particles = []; this.labels = [];
