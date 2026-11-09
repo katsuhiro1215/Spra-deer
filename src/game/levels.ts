@@ -1,4 +1,4 @@
-import type { Point, TrapDefinition } from './stage.ts';
+import type { Point, SliderDefinition, TrapDefinition, WallDefinition } from './stage.ts';
 
 /** 画面上の位置（Y）がこの値より下にいる間、text を案内として表示する。上から順に判定する。 */
 export type Chapter = { above: number; text: string };
@@ -29,9 +29,11 @@ export type LevelDefinition = {
   poops: Point[];
   deers: DeerDefinition[];
   traps: TrapDefinition[];
+  walls: WallDefinition[];
+  sliders: SliderDefinition[];
   chapters: Chapter[];
-  /** 失敗の原因と、次の攻略方法 */
-  hints: { poop: string; fall: string };
+  /** 失敗の原因と、次の攻略方法（失敗の種類ごと）。 */
+  hints: { poop: string; fall: string; wall: string };
 };
 
 /** 一覧に出す枠。level が無い枠は「準備中」として表示する。 */
@@ -40,104 +42,17 @@ export type LevelSlot = { id: string; title: string; summary: string; level?: Le
 /** 8個のうんこが一列に並び、gap の近くだけが空く。 */
 const row = (y: number, gap: number): Point[] =>
   Array.from({ length: 8 }, (_, i) => ({ x: 128 + i * 64, y })).filter(p => Math.abs(p.x - gap) > 75);
+/** 道を完全にふさぐうんこの列。ジャンプで越えるしかない。 */
+const block = (y: number): Point[] => Array.from({ length: 8 }, (_, i) => ({ x: 128 + i * 64, y }));
 
-const POOP_HINT = '鹿の落としものを踏んじゃった。\n足元の影を目印に、\nすきまを通ってみよう。';
-const NO_FALL = '';
+const POOP_HINT = '鹿が止まって、しっぽを上げたら合図。\n落ちる場所を見て、少し待つか\n反対側から回ろう。';
+const FALL_HINT = 'うんこは避けたのに…！\n安全そうな道ほど、あやしい。\n一度見たら、次は避けられる。';
+const WALL_HINT = 'いきなり壁が…！\nでも、出てくる場所と時間は毎回同じ。\n出てきたあとに、通ってみよう。';
 
-/** 1-1: 少数のうんこ。移動と足元の当たり判定を覚える。 */
+/** 1-1: 安全そうなすきまにも、床の穴がある。歩く鹿が、道にうんこを落とす。 */
 export const LEVEL_1_1: LevelDefinition = {
-  id: '1-1', stage: 1, title: 'はじめの一歩',
+  id: '1-1', stage: 1, title: '安全そうな道',
   intro: 'うんこをよけて、上のゴールへ。',
-  start: { x: 360, y: 1700 },
-  poops: [...row(1450, 384), ...row(1050, 256), ...row(650, 448)],
-  deers: [],
-  traps: [],
-  chapters: [
-    { above: 1250, text: 'うんこをよけて、上のゴールへ。' },
-    { above: 500, text: 'すきまを見つけて、通ろう。' },
-    { above: -Infinity, text: 'あと少し。旗のところへ！' },
-  ],
-  hints: { poop: POOP_HINT, fall: NO_FALL },
-};
-
-/** 1-2: 列と数が増える。すきまを選ぶ、止まって観察する。 */
-export const LEVEL_1_2: LevelDefinition = {
-  id: '1-2', stage: 1, title: 'すきまをさがせ',
-  intro: 'すきまは、毎回ちがう場所。',
-  start: { x: 360, y: 2500 },
-  poops: [
-    ...row(2250, 256), ...row(1980, 448),
-    { x: 518, y: 1830 }, { x: 551, y: 1800 },
-    ...row(1650, 320), ...row(1330, 448), ...row(1010, 256), ...row(700, 384),
-  ],
-  deers: [],
-  traps: [],
-  chapters: [
-    { above: 2000, text: 'すきまは、毎回ちがう場所。' },
-    { above: 1100, text: '止まって、よく見てから進もう。' },
-    { above: 560, text: 'もう少し。足元をよく見て。' },
-    { above: -Infinity, text: 'あと少し。旗のところへ！' },
-  ],
-  hints: { poop: POOP_HINT, fall: NO_FALL },
-};
-
-/** 1-3: 歩く鹿が、止まって、進路上へ新しいうんこを落とす。動く相手と、変化する道を読む。 */
-export const LEVEL_1_3: LevelDefinition = {
-  id: '1-3', stage: 1, title: '歩く鹿のおくりもの',
-  intro: '鹿が止まったら、うんこの合図。',
-  start: { x: 360, y: 2500 },
-  poops: [...row(2250, 384), ...row(1500, 256), ...row(1000, 448)],
-  deers: [
-    { id: 'doe', kind: 'doe', y: 1880, x1: 150, x2: 570, startX: 170, startDir: 1, speed: 85, firstDrop: 1.4, dropEvery: 3, drops: 3, warning: .9 },
-    { id: 'fawn', kind: 'fawn', y: 1250, x1: 150, x2: 570, startX: 550, startDir: -1, speed: 105, firstDrop: 3, dropEvery: 3.2, drops: 3, warning: .9 },
-  ],
-  traps: [],
-  chapters: [
-    { above: 2150, text: '鹿が止まったら、うんこの合図。' },
-    { above: 1500, text: '鹿は、道の上にも落としていくよ。' },
-    { above: 800, text: 'うんこの場所は、さっきと違うかも。' },
-    { above: -Infinity, text: 'あと少し。旗のところへ！' },
-  ],
-  hints: { poop: '鹿が止まって、しっぽを上げたら合図。\n落ちる場所を見て、少し待つか\n反対側から回ろう。', fall: NO_FALL },
-};
-
-/** 1-4: 安全そうなすきまの床が揺れ、崩れる。試作 deersample2 の内容。 */
-export const LEVEL_1_4: LevelDefinition = {
-  id: '1-4', stage: 1, title: '足元には、ご用心。',
-  intro: 'うんこをよけて、上のゴールへ。',
-  start: { x: 360, y: 3580 },
-  poops: [
-    ...row(3330, 256), ...row(3000, 448),
-    { x: 174, y: 2700 }, { x: 200, y: 2665 },
-    ...row(2470, 384), ...row(2250, 256),
-    { x: 518, y: 1890 }, { x: 551, y: 1860 },
-    ...row(1670, 448), ...row(1280, 384),
-    ...row(700, 256),
-  ],
-  deers: [],
-  // 固定配置なので、驚きも覚えて攻略できる。うんこのすきまごとに、安全な迂回路がある。
-  traps: [
-    { id: 'first-surprise', x: 360, y: 2780, width: 176, height: 130, warning: .65 },
-    { id: 'landing-surprise', x: 168, y: 2030, width: 176, height: 140, warning: .76 },
-    { id: 'last-surprise', x: 296, y: 1060, width: 176, height: 150, warning: .72 },
-  ],
-  chapters: [
-    { above: 3070, text: 'うんこをよけて、上のゴールへ。' },
-    { above: 2510, text: '空いている道。…あれ？' },
-    { above: 1760, text: '跳ぶ前に、着地点も見てみよう。' },
-    { above: 850, text: 'もう大丈夫？ 足元をよく見て。' },
-    { above: -Infinity, text: 'あと少し。旗のところへ！' },
-  ],
-  hints: {
-    poop: POOP_HINT,
-    fall: 'うんこは避けたのに…！\nひびのある床は、横へ回ろう。\n跳ぶときは、着地点も見てね。',
-  },
-};
-
-/** 1-5: ステージ1の総仕上げ。うんこの列、歩く鹿の落とし物、崩れる床を組み合わせる。新しい仕掛けはない。 */
-export const LEVEL_1_5: LevelDefinition = {
-  id: '1-5', stage: 1, title: 'ステージ1の総仕上げ',
-  intro: 'これまでの、全部入り。',
   start: { x: 360, y: 3400 },
   poops: [...row(3150, 384), ...row(2500, 448), ...row(1750, 256), ...row(1050, 384)],
   deers: [
@@ -145,30 +60,79 @@ export const LEVEL_1_5: LevelDefinition = {
     { id: 'fawn', kind: 'fawn', y: 2000, x1: 150, x2: 570, startX: 550, startDir: -1, speed: 105, firstDrop: 5, dropEvery: 3.2, drops: 3, warning: .9 },
     { id: 'stag', kind: 'stag', y: 1300, x1: 150, x2: 570, startX: 300, startDir: 1, speed: 75, firstDrop: 9, dropEvery: 3.4, drops: 3, warning: 1 },
   ],
+  // 床の穴は、ひびも揺れもなく、いきなり開く。
   traps: [
-    { id: 'gap-trap', x: 360, y: 2280, width: 176, height: 130, warning: .65 },
-    { id: 'landing-trap', x: 168, y: 1530, width: 176, height: 140, warning: .76 },
+    { id: 'gap-trap', x: 360, y: 2280, width: 176, height: 130, warning: .65, silent: true },
+    { id: 'landing-trap', x: 168, y: 1530, width: 176, height: 140, warning: .76, silent: true },
   ],
+  walls: [], sliders: [],
   chapters: [
-    { above: 3000, text: 'これまでの、全部入り。' },
+    { above: 3000, text: 'うんこをよけて、上のゴールへ。' },
     { above: 2400, text: '鹿が止まったら、うんこの合図。' },
     { above: 1850, text: '空いている道。…あれ？' },
     { above: 1100, text: 'うんこの場所は、さっきと違うかも。' },
     { above: -Infinity, text: 'あと少し。旗のところへ！' },
   ],
+  hints: { poop: POOP_HINT, fall: FALL_HINT, wall: WALL_HINT },
+};
+
+/** 1-2: 道を完全にふさぐうんこ。跳んで越えると、着地点に穴があく。2つ目は、着地点へ動いてくるうんこ。 */
+export const LEVEL_1_2: LevelDefinition = {
+  id: '1-2', stage: 1, title: '越えた先が、あやしい',
+  intro: '道がふさがれてる。跳ぶしかない。',
+  start: { x: 360, y: 2300 },
+  poops: [...block(1950), ...row(1500, 512), ...block(1250), ...row(850, 256)],
+  deers: [],
+  traps: [
+    // 1つ目のうんこを越えて着地したところが、いきなり穴になる。横にずらして着地すれば無事。
+    { id: 'landing-hole', x: 180, y: 1780, width: 260, height: 130, warning: .05, trigger: 'land', landReach: 110, silent: true },
+  ],
+  walls: [],
+  sliders: [
+    // 2つ目のうんこを跳ぶと、右のすみのうんこが、着地点へ動いてくる。
+    { id: 'slider', x: 570, y: 1010, toX: 500, toY: 1190, within: 420, speed: 560 },
+  ],
+  chapters: [
+    { above: 2100, text: '道がふさがれてる。跳ぶしかない。' },
+    { above: 1450, text: '越えたら、すぐ次へ。' },
+    { above: 800, text: 'もう一度、ふさがれてる…。' },
+    { above: -Infinity, text: 'あと少し。旗のところへ！' },
+  ],
   hints: {
-    poop: '鹿が止まって、しっぽを上げたら合図。\n落ちる場所を見て、少し待つか\n反対側から回ろう。',
-    fall: 'うんこは避けたのに…！\nひびのある床は、横へ回ろう。\n跳ぶときは、着地点も見てね。',
+    poop: 'うんこが…動いてきた！？\n跳ぶと、着地点へ向かってくるみたい。\n着地する場所を、横にずらしてみよう。',
+    fall: '着地した場所に、穴が…！\n越えたあとが、いちばん危ない。\n着地点を、横にずらしてみよう。',
+    wall: WALL_HINT,
   },
 };
 
-/** ステージ1の5枠。 */
+/** 1-3: 突然、横から壁が出てくる。出てくる場所と時間は毎回同じ。 */
+export const LEVEL_1_3: LevelDefinition = {
+  id: '1-3', stage: 1, title: 'とつぜんの壁',
+  intro: 'まっすぐ進めば、すぐゴール。…本当に？',
+  start: { x: 360, y: 2300 },
+  poops: [...row(1560, 384), ...row(1000, 256)],
+  deers: [], traps: [], sliders: [],
+  walls: [
+    { id: 'wall-1', side: 'l', y: 1900, thickness: 80, triggerY: 2110, speed: 950, hold: .8 },
+    { id: 'wall-2', side: 'r', y: 1300, thickness: 80, triggerY: 1420, speed: 1100, hold: .8 },
+    { id: 'wall-3', side: 'l', y: 700, thickness: 80, triggerY: 1100, speed: 1100, hold: .8 },
+  ],
+  chapters: [
+    { above: 2150, text: 'まっすぐ進めば、すぐゴール。' },
+    { above: 1450, text: 'うんこの先も、気をつけて。' },
+    { above: 1000, text: '壁は、毎回同じ場所に出る。' },
+    { above: -Infinity, text: 'あと少し。旗のところへ！' },
+  ],
+  hints: { poop: POOP_HINT, fall: FALL_HINT, wall: WALL_HINT },
+};
+
+/** ステージ1の枠。 */
 export const STAGE_1: LevelSlot[] = [
-  { id: '1-1', title: LEVEL_1_1.title, summary: '少しのうんこをよけよう', level: LEVEL_1_1 },
-  { id: '1-2', title: LEVEL_1_2.title, summary: 'うんこの列を抜けよう', level: LEVEL_1_2 },
-  { id: '1-3', title: LEVEL_1_3.title, summary: '鹿が、道にうんこを落とす', level: LEVEL_1_3 },
-  { id: '1-4', title: LEVEL_1_4.title, summary: '安全そうな床に、ご用心', level: LEVEL_1_4 },
-  { id: '1-5', title: LEVEL_1_5.title, summary: '全部まとめて挑戦', level: LEVEL_1_5 },
+  { id: '1-1', title: LEVEL_1_1.title, summary: '安全そうな道を、よく見よう', level: LEVEL_1_1 },
+  { id: '1-2', title: LEVEL_1_2.title, summary: 'ふさがれた道を、跳んで越える', level: LEVEL_1_2 },
+  { id: '1-3', title: LEVEL_1_3.title, summary: '横から、壁が出てくる', level: LEVEL_1_3 },
+  { id: '1-4', title: '準備中', summary: '' },
+  { id: '1-5', title: '準備中', summary: '' },
 ];
 
 export const STAGES: { stage: number; title: string; slots: LevelSlot[] }[] = [

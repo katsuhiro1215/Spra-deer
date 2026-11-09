@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { GOAL, VIEW, type Point } from './game/stage.ts';
 import type { LevelDefinition } from './game/levels.ts';
-import { dropSpot, type World, type Trap, type Event } from './game/world.ts';
+import { dropSpot, wallRect, type World, type Trap, type Event } from './game/world.ts';
 
 import walk from './game/spru-walk.json';
 import deerWalk from './game/deer-walk.json';
@@ -34,6 +34,8 @@ export class ParkView {
   private deerFx: Phaser.GameObjects.Graphics;
   private walkers = new Map<string, { image: Phaser.GameObjects.Image; shadow: Phaser.GameObjects.Ellipse }>();
   private dropped: Phaser.GameObjects.Graphics[] = [];
+  private sliderShapes = new Map<string, Phaser.GameObjects.Graphics>();
+  private wallFx: Phaser.GameObjects.Graphics;
   private trapGraphics: Phaser.GameObjects.Graphics;
   private particles: Particle[] = [];
   private labels: { text: Phaser.GameObjects.Text; born: number; y: number }[] = [];
@@ -56,6 +58,7 @@ export class ParkView {
     this.shadow = scene.add.ellipse(x, y, 60, 20, 0x415535, .23).setDepth(10);
     this.marker = scene.add.graphics();
     this.deerFx = scene.add.graphics().setDepth(9);
+    this.wallFx = scene.add.graphics().setDepth(7000);
     this.sprite = scene.add.image(x, y, 'spru').setOrigin(.5, 1);
     const frame = this.sprite.frame;
     this.playerWidth = this.playerHeight * frame.width / frame.height;
@@ -92,11 +95,11 @@ export class ParkView {
   }
 
   private poopShape(poop: Point) {
-    const g = this.scene.add.graphics().setDepth(poop.y);
-    g.fillStyle(0x665b3c, .15).fillEllipse(poop.x + 1, poop.y + 9, 51, 21);
+    const g = this.scene.add.graphics().setDepth(poop.y).setPosition(poop.x, poop.y);
+    g.fillStyle(0x665b3c, .15).fillEllipse(1, 9, 51, 21);
     for (const [dx, dy, r] of [[-11, 1, 10], [7, 4, 10], [0, -10, 9], [15, -8, 8]]) {
-      g.fillStyle(0x78553b).fillCircle(poop.x + dx, poop.y + dy, r);
-      g.fillStyle(0xaa8460).fillEllipse(poop.x + dx - 2, poop.y + dy - 3, r * .85, r * .45);
+      g.fillStyle(0x78553b).fillCircle(dx, dy, r);
+      g.fillStyle(0xaa8460).fillEllipse(dx - 2, dy - 3, r * .85, r * .45);
     }
     return g;
   }
@@ -156,6 +159,8 @@ export class ParkView {
 
   private drawTrap(t: Trap, now: number) {
     const g = this.trapGraphics, { x, y, width: w, height: h } = t;
+    // 予兆なしの床は、穴になるまで普通の道に見える。
+    if (t.silent && t.state !== 'open') return;
     if (t.state === 'open') {
       g.fillStyle(0xb5a77c, .8).fillRoundedRect(x - 8, y - 4, w + 16, h + 16, 16);
       const outline = [
@@ -191,6 +196,8 @@ export class ParkView {
       this.labels.push({ text, born: now, y: text.y });
     }
     if (e.kind === 'drop') this.dropped.push(this.poopShape(e));
+    if (e.kind === 'wall') this.scene.cameras.main.shake(140, .005);
+    if (e.kind === 'crush') this.scene.cameras.main.shake(220, .01);
     if (e.kind === 'warning' || e.kind === 'collapse') {
       const text = this.label(e.x, e.y - 32, e.kind === 'warning' ? 'ミシッ…' : 'えっ！？', e.kind === 'warning' ? 29 : 35, '#755338').setDepth(8000);
       text.setStroke('#fff9dc', 6);
@@ -214,9 +221,31 @@ export class ParkView {
     for (const l of this.labels) l.text.destroy();
     this.particles = []; this.labels = [];
     for (const g of this.dropped) g.destroy();
+    for (const g of this.sliderShapes.values()) g.destroy();
+    this.sliderShapes.clear(); this.wallFx.clear();
     for (const k of this.walkers.values()) { k.image.destroy(); k.shadow.destroy(); }
     this.dropped = []; this.walkers.clear();
     this.sprite.setTexture('spru').setAlpha(1).setAngle(0);
+  }
+
+  /** 横から出てくる壁と、ジャンプで動き出すうんこ。 */
+  private renderWallsAndSliders(w: World) {
+    for (const s of w.sliders) {
+      let shape = this.sliderShapes.get(s.id);
+      if (!shape) { shape = this.poopShape({ x: s.cx, y: s.cy }); this.sliderShapes.set(s.id, shape); }
+      shape.setPosition(s.cx, s.cy).setDepth(s.cy);
+    }
+    const g = this.wallFx.clear();
+    for (const wall of w.walls) {
+      if (wall.progress <= 0) continue;
+      const r = wallRect(wall);
+      g.fillStyle(0x4d3a28, .25).fillRoundedRect(r.x + 6, r.y + 12, r.w, r.h, 18);
+      g.fillStyle(0x8a6a45).fillRoundedRect(r.x, r.y, r.w, r.h, 18);
+      g.fillStyle(0xa98258).fillRoundedRect(r.x, r.y, r.w, r.h * .35, 18);
+      g.lineStyle(3, 0x6b4f32, .7);
+      for (let x = r.x + 70; x < r.x + r.w - 20; x += 90) g.lineBetween(x, r.y + 8, x, r.y + r.h - 8);
+      g.lineStyle(4, 0x5e4429).strokeRoundedRect(r.x, r.y, r.w, r.h, 18);
+    }
   }
 
   /** 歩く鹿。歩いた距離でコマを進め、予告中はその場で足踏みし、落とす場所に輪を出す。 */
@@ -264,6 +293,7 @@ export class ParkView {
     this.sprite.setDepth(p.y + 60 + p.height).setFlipX(false).setAlpha(falling ? Math.max(0, 1 - lossAge * 1.35) : 1);
     this.sprite.setAngle(falling ? lossAge * 105 : 0);
     this.renderDeers(w);
+    this.renderWallsAndSliders(w);
     this.sprite.setVisible(showPlayer);
     this.shadow.setVisible(showPlayer);
     this.shadow.setPosition(p.x, p.y).setDepth(p.y - 1).setAlpha(falling ? 0 : .22 - p.height * .0013).setScale(1 - p.height / 260);
