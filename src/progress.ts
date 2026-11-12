@@ -2,6 +2,8 @@ import { PLAYABLE } from './game/levels.ts';
 
 export type LevelRecord = { best: number | null; attempts: number; clears: number };
 const KEY = 'spra-deer:progress:v1';
+/** 開発中は、すべての面を最初から遊べる。公開前に false に戻す（前の面をクリアすると次の面が開く、本来の動きになる）。 */
+export const UNLOCK_ALL = true;
 const empty = (): LevelRecord => ({ best: null, attempts: 0, clears: 0 });
 const count = (n: unknown) => (typeof n === 'number' && Number.isSafeInteger(n) && n >= 0 ? n : 0);
 
@@ -41,6 +43,7 @@ export class Progress {
   /** 遊べる面のうち、直前の面をクリアした面（最初の面は常に）が選べる。 */
   isUnlocked(id: string): boolean {
     const index = PLAYABLE.findIndex(l => l.id === id);
+    if (UNLOCK_ALL) return index >= 0;
     return index === 0 || (index > 0 && this.get(PLAYABLE[index - 1].id).clears > 0);
   }
   clearedCount(stage: number): number { return PLAYABLE.filter(l => l.stage === stage && this.get(l.id).clears > 0).length; }
