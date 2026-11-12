@@ -484,7 +484,7 @@ export const LEVEL_2_1: LevelDefinition = {
   ],
   traps: [
     { id: 'hole-1', x: 330, y: 2260, width: 150, height: 110, warning: .4, silent: true },
-    { id: 'hole-2', x: 200, y: 1560, width: 150, height: 110, warning: .4, silent: true },
+    { id: 'hole-2', x: 250, y: 1560, width: 100, height: 110, warning: .4, silent: true },
     { id: 'big-hole', x: 210, y: 420, width: 300, height: 110, warning: .5, silent: true, trigger: 'y', triggerY: 700 },
   ],
   walls: [], sliders: [], chasers: [], rain: [],
@@ -507,9 +507,9 @@ export const LEVEL_2_2: LevelDefinition = {
   poops: [...row(3150, 256), ...row(2550, 512), ...row(1900, 384), ...row(1250, 256)],
   deers: [],
   traps: [
-    { id: 'hole-1', x: 190, y: 2990, width: 140, height: 100, warning: .35, silent: true },
-    { id: 'hole-2', x: 440, y: 2400, width: 140, height: 100, warning: .35, silent: true },
-    { id: 'hole-3', x: 330, y: 1730, width: 140, height: 100, warning: .35, silent: true },
+    { id: 'hole-1', x: 250, y: 2990, width: 100, height: 100, warning: .35, silent: true },
+    { id: 'hole-2', x: 490, y: 2400, width: 90, height: 100, warning: .35, silent: true },
+    { id: 'hole-3', x: 380, y: 1730, width: 100, height: 100, warning: .35, silent: true },
   ],
   walls: [], sliders: [], chasers: [], rain: [],
   delivery: {
@@ -545,8 +545,8 @@ export const LEVEL_2_3: LevelDefinition = {
   deers: [],
   traps: [
     { id: 'hole-1', x: 330, y: 2540, width: 140, height: 100, warning: .35, silent: true },
-    { id: 'hole-2', x: 440, y: 1880, width: 140, height: 100, warning: .35, silent: true },
-    { id: 'hole-3', x: 190, y: 800, width: 140, height: 100, warning: .35, silent: true },
+    { id: 'hole-2', x: 490, y: 1880, width: 90, height: 100, warning: .35, silent: true },
+    { id: 'hole-3', x: 250, y: 800, width: 100, height: 100, warning: .35, silent: true },
   ],
   walls: [], sliders: [], chasers: [], rain: [],
   delivery: {
@@ -614,10 +614,10 @@ export const LEVEL_2_5: LevelDefinition = {
     { id: 'doe', kind: 'doe', y: 2800, x1: 150, x2: 570, startX: 170, startDir: 1, speed: 95, firstDrop: 1.5, dropEvery: 2.8, drops: 4, warning: .8 },
   ],
   traps: [
-    { id: 'hole-1', x: 190, y: 3000, width: 140, height: 100, warning: .35, silent: true },
-    { id: 'hole-2', x: 440, y: 2450, width: 140, height: 100, warning: .35, silent: true },
-    { id: 'hole-3', x: 330, y: 1900, width: 140, height: 100, warning: .35, silent: true },
-    { id: 'hole-4', x: 200, y: 1350, width: 140, height: 100, warning: .35, silent: true },
+    { id: 'hole-1', x: 250, y: 3000, width: 100, height: 100, warning: .35, silent: true },
+    { id: 'hole-2', x: 490, y: 2450, width: 90, height: 100, warning: .35, silent: true },
+    { id: 'hole-3', x: 380, y: 1900, width: 100, height: 100, warning: .35, silent: true },
+    { id: 'hole-4', x: 250, y: 1350, width: 100, height: 100, warning: .35, silent: true },
     { id: 'goal-hole', x: 395, y: 250, width: 100, height: 160, warning: .3, trigger: 'goal', silent: true },
   ],
   walls: [], sliders: [], chasers: [],

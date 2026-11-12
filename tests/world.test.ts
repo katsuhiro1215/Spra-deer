@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createWorld, step, wallRect, type World, type Input } from '../src/game/world.ts';
-import { RULES, GOAL } from '../src/game/stage.ts';
+import { RULES, GOAL, FIELD } from '../src/game/stage.ts';
 import { facingOf } from '../src/game/facing.ts';
 import { LEVEL_1_1, LEVEL_1_2, LEVEL_1_3, LEVEL_1_4, LEVEL_1_5, LEVEL_2_1, LEVEL_2_2, LEVEL_2_3, LEVEL_2_4, LEVEL_2_5, PLAYABLE, STAGES, type LevelDefinition } from '../src/game/levels.ts';
 
@@ -343,6 +343,31 @@ test('a deer that does not move (sense 0) only matters if you touch it', () => {
 test('delivery: reaching the target deer clears the level', () => {
   const w = make({ ...deliver([]), goal: { x: 360, y: 1100 } });
   run(w, { x: 0, y: -1 }, 2); assert.equal(w.outcome, 'clear');
+});
+
+// ジャンプのない面（ステージ2）では、うんこの列を抜けた出口を、穴が全部ふさいではいけない（歩いて避けられる幅が要る）。
+test('delivery levels: a hole never blocks the whole exit of a poop gap (no jump to save you)', () => {
+  const MARGIN = RULES.radius + RULES.poopRadius, NEED = 44, bad: string[] = [];
+  for (const level of PLAYABLE.filter(l => l.delivery)) {
+    const rows = new Map<number, number[]>();
+    for (const p of level.poops) rows.set(p.y, [...(rows.get(p.y) ?? []), p.x]);
+    for (const t of level.traps.filter(t => !t.trigger || t.trigger === 'near')) {
+      for (const [y, xs] of rows) {
+        if (!(y > t.y + t.height - 20 && y < t.y + t.height + 170)) continue;
+        // 列のすきま（うんこの間の、通れる区間）から、穴にかかる部分を引く。
+        const edges = [FIELD.left, ...xs.sort((a, b) => a - b).flatMap(x => [x - MARGIN, x + MARGIN]), FIELD.right];
+        let best = 0;
+        for (let i = 0; i < edges.length; i += 2) {
+          const lo = edges[i], hi = edges[i + 1];
+          if (hi - lo <= 0) continue;
+          const left = Math.max(0, Math.min(hi, t.x - RULES.radius) - lo), right = Math.max(0, hi - Math.max(lo, t.x + t.width + RULES.radius));
+          best = Math.max(best, left, right);
+        }
+        if (best < NEED) bad.push(`${level.id}: ${t.id} covers the exit of the gap at y=${y} (free width ${Math.round(best)}px)`);
+      }
+    }
+  }
+  assert.deepEqual(bad, []);
 });
 
 test('level data is sound: unique ids, safe start, final chapter, reachable gaps', () => {
