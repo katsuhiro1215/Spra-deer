@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createWorld, step, wallRect, type World, type Input } from '../src/game/world.ts';
 import { RULES, GOAL } from '../src/game/stage.ts';
 import { facingOf } from '../src/game/facing.ts';
-import { LEVEL_1_1, LEVEL_1_2, LEVEL_1_3, LEVEL_1_4, LEVEL_1_5, PLAYABLE, STAGES, type LevelDefinition } from '../src/game/levels.ts';
+import { LEVEL_1_1, LEVEL_1_2, LEVEL_1_3, LEVEL_1_4, LEVEL_1_5, LEVEL_2_1, LEVEL_2_2, LEVEL_2_3, LEVEL_2_4, LEVEL_2_5, PLAYABLE, STAGES, type LevelDefinition } from '../src/game/levels.ts';
 
 // ---- 道具 ----
 const empty: LevelDefinition = {
@@ -305,6 +305,46 @@ test('1-5: block, falling poop, wall, chasing deer, bait holes, and a goal that 
 });
 
 // ---- 面データ ----
+// ---- ステージ2（せんべい配達） ----
+const T = { id: 't', kind: 'stag' as const, x: 360, y: 1100, sense: 300, speed: 260 };
+const deliver = (thieves: object[], baits = 2) => ({ delivery: { baits, targetKind: 'fawn' as const, thieves: thieves as never } });
+test('delivery: the button drops a senbei (no jump), limited in number, with a short pause between', () => {
+  const w = make(deliver([], 1));
+  run(w, { x: 0, y: 0, jump: true }, .05);
+  assert.equal(w.jumps, 0); assert.equal(w.player.height, 0); assert.equal(w.baits.length, 1); assert.equal(w.baitsLeft, 0);
+  run(w, { x: 0, y: 0 }, .5); run(w, { x: 0, y: 0, jump: true }, .05);
+  assert.equal(w.baits.length, 1, 'no senbei left');
+});
+test('a hungry deer waits until you come within its range, then catches a walker who stands still', () => {
+  const w = make(deliver([T]));
+  run(w, { x: 0, y: -1 }, .3); assert.equal(w.thieves[0].state, 'idle');
+  walk(w, 360, 1300); assert.equal(w.thieves[0].state, 'chase');
+  run(w, { x: 0, y: 0 }, 2); assert.equal(w.outcome, 'stolen');
+});
+test('a placed senbei draws the deer away, it eats for a while and then stays full', () => {
+  const w = make({ ...deliver([T]), start: { x: 360, y: 1560 } });
+  walk(w, 360, 1370); step(w, { x: 0, y: 0, jump: true });
+  assert.equal(w.baits.length, 1);
+  walk(w, 150, 1370); // 横へ離れる間に、鹿はせんべいへ向かう
+  for (let i = 0; i < 480 && w.thieves[0].state !== 'eat'; i++) step(w, { x: 0, y: 0 });
+  assert.equal(w.thieves[0].state, 'eat'); assert.equal(w.outcome, 'playing');
+  run(w, { x: 0, y: 0 }, 3);
+  assert.equal(w.thieves[0].state, 'full'); assert.equal(w.baits[0].gone, true);
+  run(w, { x: 0, y: 0 }, 3); assert.equal(w.outcome, 'playing', 'a full deer no longer chases');
+});
+test('a deer that does not move (sense 0) only matters if you touch it', () => {
+  const w = make(deliver([{ ...T, sense: 0, speed: 0, y: 1300 }]));
+  run(w, { x: 0, y: 0 }, 3); assert.equal(w.outcome, 'playing');
+  const touch = make({ ...deliver([{ ...T, sense: 0, speed: 0, y: 1300 }]), start: { x: 360, y: 1500 } });
+  run(touch, { x: 0, y: -1 }, 1.2); assert.equal(touch.outcome, 'stolen');
+  const around = make({ ...deliver([{ ...T, sense: 0, speed: 0, y: 1300 }]), start: { x: 360, y: 1500 } });
+  walk(around, 240, 1300); walk(around, 240, 1100); assert.equal(around.outcome, 'playing');
+});
+test('delivery: reaching the target deer clears the level', () => {
+  const w = make({ ...deliver([]), goal: { x: 360, y: 1100 } });
+  run(w, { x: 0, y: -1 }, 2); assert.equal(w.outcome, 'clear');
+});
+
 test('level data is sound: unique ids, safe start, final chapter, reachable gaps', () => {
   const ids = PLAYABLE.map(l => l.id);
   assert.equal(new Set(ids).size, ids.length);
@@ -319,4 +359,9 @@ test('level data is sound: unique ids, safe start, final chapter, reachable gaps
     for (const c of level.chasers) assert.ok(c.triggerY <= level.start.y - 100, `${level.id}: chaser ${c.id} must start after the player moves`);
   }
   assert.equal(STAGES[0].slots.length, 10);
+  assert.equal(STAGES[1].slots.length, 5);
+  for (const level of PLAYABLE.filter(l => l.delivery)) {
+    for (const t of level.delivery!.thieves) assert.ok(Math.hypot(t.x - level.start.x, t.y - level.start.y) > 350, `${level.id}: ${t.id} too close to start`);
+    if (level.delivery!.thieves.length) assert.ok(level.hints.caught, `${level.id}: needs a stolen hint`);
+  }
 });

@@ -1,4 +1,4 @@
-import type { ChaserDefinition, GoalDefinition, Point, RainDefinition, SliderDefinition, TrapDefinition, WallDefinition } from './stage.ts';
+import type { ChaserDefinition, DeliveryDefinition, GoalDefinition, Point, RainDefinition, SliderDefinition, TrapDefinition, WallDefinition } from './stage.ts';
 
 /** 画面上の位置（Y）がこの値より下にいる間、text を案内として表示する。上から順に判定する。 */
 export type Chapter = { above: number; text: string };
@@ -34,6 +34,8 @@ export type LevelDefinition = {
   chasers: ChaserDefinition[];
   rain: RainDefinition[];
   goal?: GoalDefinition; // 省略するとゴールは中央（GOAL）
+  /** ステージ2の面（せんべい配達）。あると、ボタンは「せんべいを置く」になり、ゴールは届け先の鹿になる。 */
+  delivery?: DeliveryDefinition;
   chapters: Chapter[];
   /** 失敗の原因と、次の攻略方法（失敗の種類ごと）。 */
   hints: { poop: string; fall: string; wall: string; caught?: string };
@@ -468,6 +470,185 @@ export const LEVEL_1_10: LevelDefinition = {
   },
 };
 
+const STOLEN_HINT = 'せんべいを、取られた…！\n鹿は、せんべいの匂いで寄ってくる。\n近づかれる前に、おとりを置こう。';
+
+/** 2-1: はじめての配達。せんべいを持って、目印の鹿へ。道は穴とうんこ。 */
+export const LEVEL_2_1: LevelDefinition = {
+  id: '2-1', stage: 2, title: 'はじめての配達',
+  intro: 'せんべいを、あの鹿へ届けよう。',
+  start: { x: 360, y: 3400 },
+  poops: [...row(3150, 384), ...row(2500, 448), ...row(1750, 256), ...row(1050, 384)],
+  deers: [
+    { id: 'doe', kind: 'doe', y: 2850, x1: 150, x2: 570, startX: 170, startDir: 1, speed: 85, firstDrop: 1.5, dropEvery: 3, drops: 3, warning: .9 },
+    { id: 'fawn', kind: 'fawn', y: 2000, x1: 150, x2: 570, startX: 550, startDir: -1, speed: 105, firstDrop: 5, dropEvery: 3.2, drops: 3, warning: .9 },
+  ],
+  traps: [
+    { id: 'hole-1', x: 330, y: 2260, width: 150, height: 110, warning: .4, silent: true },
+    { id: 'hole-2', x: 200, y: 1560, width: 150, height: 110, warning: .4, silent: true },
+    { id: 'big-hole', x: 210, y: 420, width: 300, height: 110, warning: .5, silent: true, trigger: 'y', triggerY: 700 },
+  ],
+  walls: [], sliders: [], chasers: [], rain: [],
+  delivery: { baits: 0, targetKind: 'stag', mark: true, thieves: [] },
+  chapters: [
+    { above: 3000, text: 'せんべいを、あの鹿へ届けよう。' },
+    { above: 2400, text: '鹿が止まったら、うんこの合図。' },
+    { above: 1800, text: '安全そうな道ほど、あやしい。' },
+    { above: 800, text: 'あと少し。鹿のところへ！' },
+    { above: -Infinity, text: 'もう、目の前。' },
+  ],
+  hints: { poop: POOP_HINT, fall: FALL_HINT, wall: WALL_HINT },
+};
+
+/** 2-2: 届け先は、子鹿。大きさの違う鹿の中から、指定された鹿へ。別の鹿に近づくと、せんべいを取られる。 */
+export const LEVEL_2_2: LevelDefinition = {
+  id: '2-2', stage: 2, title: '届け先は、子鹿',
+  intro: '届け先は、子鹿。他の鹿には近づかないで。',
+  start: { x: 360, y: 3400 },
+  poops: [...row(3150, 256), ...row(2550, 512), ...row(1900, 384), ...row(1250, 256)],
+  deers: [],
+  traps: [
+    { id: 'hole-1', x: 190, y: 2990, width: 140, height: 100, warning: .35, silent: true },
+    { id: 'hole-2', x: 440, y: 2400, width: 140, height: 100, warning: .35, silent: true },
+    { id: 'hole-3', x: 330, y: 1730, width: 140, height: 100, warning: .35, silent: true },
+  ],
+  walls: [], sliders: [], chasers: [], rain: [],
+  delivery: {
+    baits: 0, targetKind: 'fawn',
+    // どれも、その場から動かない。触れると、せんべいを取られる。
+    thieves: [
+      { id: 'd1', kind: 'stag', x: 150, y: 2750, sense: 0, speed: 0 },
+      { id: 'd2', kind: 'doe', x: 570, y: 2150, sense: 0, speed: 0 },
+      { id: 'd3', kind: 'stag', x: 300, y: 1560, sense: 0, speed: 0 },
+      { id: 'd4', kind: 'doe', x: 540, y: 1020, sense: 0, speed: 0 },
+      { id: 'd5', kind: 'stag', x: 190, y: 640, sense: 0, speed: 0 },
+      { id: 'd6', kind: 'doe', x: 530, y: 640, sense: 0, speed: 0 },
+      { id: 'd7', kind: 'stag', x: 360, y: 760, sense: 0, speed: 0 },
+    ],
+  },
+  goal: { x: 360, y: 300, moveTo: { x: 470, y: 300, within: 230, speed: 300 } },
+  chapters: [
+    { above: 3100, text: '届け先は、子鹿。' },
+    { above: 2300, text: '他の鹿に触れると、取られる。' },
+    { above: 1300, text: '鹿の大きさを、よく見て。' },
+    { above: 800, text: '子鹿は、どこだ。' },
+    { above: -Infinity, text: 'あと少し。子鹿のところへ！' },
+  ],
+  hints: { poop: POOP_HINT, fall: FALL_HINT, wall: WALL_HINT, caught: '違う鹿に、せんべいを取られた…！\n届け先は、いちばん小さい子鹿。\n他の鹿には、近づかないように。' },
+};
+
+/** 2-3: 横取りしに来る鹿。置いたせんべいを食べている間に、距離をかせぐ。 */
+export const LEVEL_2_3: LevelDefinition = {
+  id: '2-3', stage: 2, title: '横取りしにくる鹿',
+  intro: 'ボタンで、せんべいを置ける。鹿はそっちへ行く。',
+  start: { x: 360, y: 3400 },
+  poops: [...row(3150, 384), ...row(2650, 256), ...row(2000, 512), ...row(1350, 384), ...row(900, 256)],
+  deers: [],
+  traps: [
+    { id: 'hole-1', x: 330, y: 2540, width: 140, height: 100, warning: .35, silent: true },
+    { id: 'hole-2', x: 440, y: 1880, width: 140, height: 100, warning: .35, silent: true },
+    { id: 'hole-3', x: 190, y: 800, width: 140, height: 100, warning: .35, silent: true },
+  ],
+  walls: [], sliders: [], chasers: [], rain: [],
+  delivery: {
+    baits: 3, targetKind: 'doe', mark: true,
+    thieves: [
+      { id: 't1', kind: 'stag', x: 580, y: 3000, sense: 340, speed: 262 },
+      { id: 't2', kind: 'fawn', x: 140, y: 2300, sense: 340, speed: 272 },
+      { id: 't3', kind: 'stag', x: 580, y: 1500, sense: 340, speed: 266 },
+    ],
+  },
+  goal: { x: 360, y: 300, moveTo: { x: 520, y: 300, within: 240, speed: 360 } },
+  chapters: [
+    { above: 3250, text: 'ボタンで、せんべいを置ける。' },
+    { above: 2900, text: '鹿はせんべいに、寄っていく。' },
+    { above: 2200, text: 'もう1頭、来る。' },
+    { above: 1450, text: 'また、狙われてる。' },
+    { above: 700, text: 'あと少し。鹿のところへ！' },
+    { above: -Infinity, text: '…動かないよね？' },
+  ],
+  hints: { poop: POOP_HINT, fall: FALL_HINT, wall: WALL_HINT, caught: STOLEN_HINT },
+};
+
+/** 2-4: おとりで道をつくる。狭いすきまに、鹿が立っている。せんべいで、どかす。 */
+export const LEVEL_2_4: LevelDefinition = {
+  id: '2-4', stage: 2, title: 'おとりで道をつくる',
+  intro: 'すきまに、鹿が立っている。',
+  start: { x: 360, y: 3400 },
+  poops: [...row(3100, 384), ...row(2500, 256), ...row(1900, 512), ...row(1300, 256), ...row(800, 448)],
+  deers: [],
+  traps: [
+    { id: 'hole-1', x: 440, y: 2440, width: 140, height: 100, warning: .35, silent: true },
+    { id: 'hole-2', x: 200, y: 1850, width: 140, height: 100, warning: .35, silent: true },
+    { id: 'hole-3', x: 330, y: 1240, width: 140, height: 100, warning: .35, silent: true },
+    { id: 'big-hole', x: 210, y: 420, width: 300, height: 110, warning: .5, silent: true, trigger: 'y', triggerY: 700 },
+  ],
+  walls: [], sliders: [], chasers: [], rain: [],
+  delivery: {
+    baits: 5, targetKind: 'stag', mark: true,
+    thieves: [
+      { id: 'g1', kind: 'doe', x: 384, y: 3030, sense: 170, speed: 245 },
+      { id: 'g2', kind: 'stag', x: 256, y: 2430, sense: 170, speed: 245 },
+      { id: 'g3', kind: 'fawn', x: 512, y: 1830, sense: 170, speed: 245 },
+      { id: 'g4', kind: 'doe', x: 256, y: 1230, sense: 170, speed: 245 },
+      { id: 'g5', kind: 'stag', x: 448, y: 730, sense: 170, speed: 245 },
+    ],
+  },
+  chapters: [
+    { above: 3250, text: 'すきまに、鹿が立っている。' },
+    { above: 2900, text: 'せんべいで、おびき出そう。' },
+    { above: 2200, text: 'また、立ってる。' },
+    { above: 1500, text: 'せんべいは、ぎりぎりの数。' },
+    { above: 700, text: 'あと少し。鹿のところへ！' },
+    { above: -Infinity, text: 'もう、目の前。' },
+  ],
+  hints: { poop: POOP_HINT, fall: FALL_HINT, wall: WALL_HINT, caught: 'すきまの鹿に、せんべいを取られた…！\n近づく前に、手前で置いておびき出そう。\n鹿が食べている間に、すきまを抜ける。' },
+};
+
+/** 2-5: 群れの中を抜けて、奥の子鹿へ。 */
+export const LEVEL_2_5: LevelDefinition = {
+  id: '2-5', stage: 2, title: '群れを抜けて',
+  intro: '奥の子鹿へ。群れの中を、抜けよう。',
+  start: { x: 360, y: 3400 },
+  poops: [...row(3150, 256), ...row(2600, 512), ...row(2050, 384), ...row(1500, 256), ...row(1000, 448)],
+  deers: [
+    { id: 'doe', kind: 'doe', y: 2800, x1: 150, x2: 570, startX: 170, startDir: 1, speed: 95, firstDrop: 1.5, dropEvery: 2.8, drops: 4, warning: .8 },
+  ],
+  traps: [
+    { id: 'hole-1', x: 190, y: 3000, width: 140, height: 100, warning: .35, silent: true },
+    { id: 'hole-2', x: 440, y: 2450, width: 140, height: 100, warning: .35, silent: true },
+    { id: 'hole-3', x: 330, y: 1900, width: 140, height: 100, warning: .35, silent: true },
+    { id: 'hole-4', x: 200, y: 1350, width: 140, height: 100, warning: .35, silent: true },
+    { id: 'goal-hole', x: 395, y: 250, width: 100, height: 160, warning: .3, trigger: 'goal', silent: true },
+  ],
+  walls: [], sliders: [], chasers: [],
+  rain: [
+    { id: 'rain-1', triggerY: 1100, delay: .2, warn: .7, aim: 'player' },
+    { id: 'rain-2', triggerY: 1030, delay: .2, warn: .7, aim: 'player' },
+  ],
+  delivery: {
+    baits: 4, targetKind: 'fawn',
+    thieves: [
+      { id: 't1', kind: 'stag', x: 570, y: 3000, sense: 340, speed: 262 },
+      { id: 't2', kind: 'doe', x: 150, y: 2450, sense: 340, speed: 268 },
+      { id: 't3', kind: 'stag', x: 570, y: 1900, sense: 340, speed: 272 },
+      { id: 't4', kind: 'fawn', x: 150, y: 1350, sense: 340, speed: 272 },
+      { id: 'd1', kind: 'doe', x: 150, y: 640, sense: 0, speed: 0 },
+      { id: 'd2', kind: 'stag', x: 570, y: 640, sense: 0, speed: 0 },
+      { id: 'd3', kind: 'stag', x: 360, y: 800, sense: 0, speed: 0 },
+    ],
+  },
+  goal: { x: 360, y: 300, moveTo: { x: 520, y: 300, within: 240, speed: 360 } },
+  chapters: [
+    { above: 3100, text: '奥の子鹿へ。' },
+    { above: 2500, text: '横取りは、まだまだ来る。' },
+    { above: 1500, text: 'せんべいは、使いどころ。' },
+    { above: 1100, text: '上からも…！' },
+    { above: 700, text: '群れの中を、抜けよう。' },
+    { above: -Infinity, text: '…子鹿は、動かないよね？' },
+  ],
+  hints: { poop: 'うんこが、上から降ってきた…！\n影が出たら、動いて避けよう。', fall: FALL_HINT, wall: WALL_HINT, caught: STOLEN_HINT },
+};
+
 /** ステージ1の枠。 */
 export const STAGE_1: LevelSlot[] = [
   { id: '1-1', title: LEVEL_1_1.title, summary: '安全そうな道を、よく見よう', level: LEVEL_1_1 },
@@ -484,7 +665,15 @@ export const STAGE_1: LevelSlot[] = [
 
 export const STAGES: { stage: number; title: string; slots: LevelSlot[] }[] = [
   { stage: 1, title: '足元にご用心', slots: STAGE_1 },
-  { stage: 2, title: '鹿せんべい配達', slots: [] },
+  {
+    stage: 2, title: '鹿せんべい配達', slots: [
+      { id: '2-1', title: LEVEL_2_1.title, summary: 'せんべいを、持っていく', level: LEVEL_2_1 },
+      { id: '2-2', title: LEVEL_2_2.title, summary: '指定された鹿を、見分ける', level: LEVEL_2_2 },
+      { id: '2-3', title: LEVEL_2_3.title, summary: '横取りされる前に、おとり', level: LEVEL_2_3 },
+      { id: '2-4', title: LEVEL_2_4.title, summary: 'おとりで、道をあける', level: LEVEL_2_4 },
+      { id: '2-5', title: LEVEL_2_5.title, summary: '群れを、抜ける', level: LEVEL_2_5 },
+    ],
+  },
   { stage: 3, title: '奈良公園大掃除', slots: [] },
 ];
 

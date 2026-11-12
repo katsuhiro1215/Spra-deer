@@ -46,3 +46,19 @@ export type SliderDefinition = {
   speed: number;
   trigger?: 'jump' | 'near'; // 'jump'=ジャンプしたとき（既定）, 'near'=近づいただけで
 };
+/**
+ * せんべいを狙う鹿。sense 以内にせんべい（持っているSpru、または置いたせんべい）が来ると走り出し、
+ * Spruに触れると取られる。sense が 0 なら、その場から動かない（触れると取られる、見分けるための別の鹿）。
+ */
+export type ThiefDefinition = {
+  id: string; kind: 'stag' | 'doe' | 'fawn'; x: number; y: number;
+  sense: number; speed: number;
+};
+/** ステージ2の面。ボタンは「ジャンプ」でなく「せんべいを置く」になり、ゴールは「届け先の鹿」になる。 */
+export type DeliveryDefinition = {
+  baits: number; // 置けるせんべいの数
+  targetKind: 'stag' | 'doe' | 'fawn';
+  mark?: boolean; // 届け先の鹿に目印を出す
+  thieves: ThiefDefinition[];
+  eat?: number; // 置いたせんべいを食べる時間（秒、既定2.6）
+};

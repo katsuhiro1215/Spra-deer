@@ -12,6 +12,7 @@ import './styles.scss';
 
 const el = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const progress = new Progress();
+const STOLEN_DEFAULT = 'せんべいを、取られた…！\n鹿は、せんべいの匂いで寄ってくる。';
 const CAUGHT_HINT = '鹿が追いかけてきた…！\n止まると追いつかれる。\nジャンプで鹿を越えるのもアリ。';
 
 type Track = 'home' | 'play' | 'clear' | 'fail';
@@ -43,7 +44,7 @@ class Sound {
   }
   play(kind: Event['kind']) {
     if (!this.enabled || this.context?.state !== 'running') return;
-    const notes: Partial<Record<Event['kind'], [number, number, number]>> = { jump: [390, 730, .13], warning: [160, 110, .17], collapse: [110, 38, .28], poop: [180, 75, .22], fall: [390, 85, .4], clear: [540, 1080, .42], wall: [120, 45, .3], slide: [320, 190, .12], crush: [150, 40, .35], chase: [200, 330, .2], caught: [260, 90, .3], drop: [240, 120, .14] };
+    const notes: Partial<Record<Event['kind'], [number, number, number]>> = { jump: [390, 730, .13], warning: [160, 110, .17], collapse: [110, 38, .28], poop: [180, 75, .22], fall: [390, 85, .4], clear: [540, 1080, .42], wall: [120, 45, .3], slide: [320, 190, .12], crush: [150, 40, .35], chase: [200, 330, .2], caught: [260, 90, .3], drop: [240, 120, .14], bait: [330, 220, .1], eat: [200, 260, .12], stolen: [260, 90, .3] };
     const data = notes[kind]; if (!data) return;
     const [start, end, duration] = data, ctx = this.context;
     const oscillator = ctx.createOscillator(), gain = ctx.createGain();
@@ -154,8 +155,20 @@ class Park extends Phaser.Scene {
     this.mode = 'playing'; this.controls.enable(true); progress.attempt(level.id); sound.unlock(); sound.music('play');
     el('hud-level').textContent = `面 ${level.id}`; el('hud-title').textContent = level.title;
     el('hud').hidden = el('controls').hidden = false; el('overlay').innerHTML = ''; this.lastChapter = '';
-    this.message(level.intro, 4);
+    this.message(level.intro, 4); this.setControls(level);
     el('game').focus({ preventScroll: true }); this.hud();
+  }
+  private jumpIcon?: string;
+  /** ステージ2では、ジャンプボタンが「せんべいを置く」になる。 */
+  private setControls(level: LevelDefinition) {
+    const d = !!level.delivery, button = el('jump'), svg = button.querySelector('svg')!;
+    this.jumpIcon ??= svg.innerHTML;
+    svg.innerHTML = d ? '<circle cx="30" cy="22" r="16"/><path d="M20 18H40M22 28H38"/>' : this.jumpIcon;
+    button.querySelector('strong')!.textContent = d ? 'せんべいを置く' : 'ジャンプ';
+    button.setAttribute('aria-label', d ? 'せんべいを置く' : 'ジャンプ');
+    el('game').setAttribute('aria-label', d ? 'ゲーム画面。方向キーで移動、スペースでせんべいを置く' : 'ゲーム画面。方向キーで移動、スペースでジャンプ');
+    const guide = document.querySelectorAll('.keyboard-guide span')[1];
+    if (guide) guide.innerHTML = `<kbd>Space</kbd> ${d ? 'せんべいを置く' : 'ジャンプ'}　<kbd>R</kbd> 再挑戦`;
   }
   private message(text: string, duration = 2) { el('message').textContent = text; this.messageUntil = this.world.time + duration; }
   private pause() {
@@ -174,11 +187,11 @@ class Park extends Phaser.Scene {
     sound.music(clear ? 'clear' : 'fail');
     const index = PLAYABLE.indexOf(level), next = clear ? PLAYABLE[index + 1] : undefined;
     const attempts = progress.get(level.id).attempts;
-    const title = clear ? '無事に、おさんぽ。' : w.outcome === 'fall' ? '地面まで、いたずら。' : w.outcome === 'wall' ? 'ぐえっ、壁…！' : w.outcome === 'caught' ? 'つかまった！' : 'あっ、足元…！';
-    const copy = clear ? '数々のしかけを、見事に突破。\n鹿は、何も知らない顔。' : w.outcome === 'fall' ? level.hints.fall : w.outcome === 'wall' ? level.hints.wall : w.outcome === 'caught' ? (level.hints.caught ?? CAUGHT_HINT) : level.hints.poop;
+    const title = clear ? (level.delivery ? '無事に、お届け。' : '無事に、おさんぽ。') : w.outcome === 'stolen' ? 'せんべい、取られた！' : w.outcome === 'fall' ? '地面まで、いたずら。' : w.outcome === 'wall' ? 'ぐえっ、壁…！' : w.outcome === 'caught' ? 'つかまった！' : 'あっ、足元…！';
+    const copy = clear ? (level.delivery ? 'せんべいは、無事に届いた。\n鹿は、もぐもぐ満足そう。' : '数々のしかけを、見事に突破。\n鹿は、何も知らない顔。') : w.outcome === 'stolen' ? (level.hints.caught ?? STOLEN_DEFAULT) : w.outcome === 'fall' ? level.hints.fall : w.outcome === 'wall' ? level.hints.wall : w.outcome === 'caught' ? (level.hints.caught ?? CAUGHT_HINT) : level.hints.poop;
     const primary = next ? `<button class="primary" data-action="next" data-level="${next.id}">次の面へ（${next.id}） <span>▶</span></button>` : `<button class="primary" data-action="retry">${clear ? 'もう一度あそぶ' : 'すぐに、もう一回'} <span>▶</span></button>`;
     const secondary = `<div class="secondary-row">${next ? '<button class="secondary" data-action="retry">もう一度あそぶ</button>' : ''}<button class="secondary" data-action="select">面選択へ</button></div>`;
-    el('overlay').innerHTML = `<div class="screen modal-screen result-screen"><div class="modal-card"><span class="eyebrow">${clear ? newBest ? '自己ベスト更新！' : `${level.id} クリア` : `${attempts}回目の挑戦`}</span><img class="result-spru" src="assets/${clear ? 'spru-clear' : 'spru-oops'}.png" alt="${clear ? '喜ぶSpru' : '困ったSpru'}"><h2>${title}</h2><p class="result-copy">${copy.replaceAll('\n', '<br>')}</p><div class="result-stats"><div><span>${clear ? 'クリアタイム' : 'ここまでの時間'}</span><strong>${w.time.toFixed(1)}<small>秒</small></strong></div><div><span>${clear ? 'ジャンプ' : 'ゴールへの進み具合'}</span><strong>${clear ? w.jumps : this.progress()}<small>${clear ? '回' : '%'}</small></strong></div></div>${primary}${secondary}<p class="save-note">${clear ? progress.canSave ? '自己ベストはこのブラウザに保存されます。' : 'この環境では記録を保存できません。' : 'Rキーでも再挑戦。しかけの場所は同じです。'}</p></div></div>`;
+    el('overlay').innerHTML = `<div class="screen modal-screen result-screen"><div class="modal-card"><span class="eyebrow">${clear ? newBest ? '自己ベスト更新！' : `${level.id} クリア` : `${attempts}回目の挑戦`}</span><img class="result-spru" src="assets/${clear ? 'spru-clear' : 'spru-oops'}.png" alt="${clear ? '喜ぶSpru' : '困ったSpru'}"><h2>${title}</h2><p class="result-copy">${copy.replaceAll('\n', '<br>')}</p><div class="result-stats"><div><span>${clear ? 'クリアタイム' : 'ここまでの時間'}</span><strong>${w.time.toFixed(1)}<small>秒</small></strong></div><div><span>${clear ? (level.delivery ? 'つかったせんべい' : 'ジャンプ') : 'ゴールへの進み具合'}</span><strong>${clear ? (level.delivery ? w.baits.length : w.jumps) : this.progress()}<small>${clear ? (level.delivery ? '個' : '回') : '%'}</small></strong></div></div>${primary}${secondary}<p class="save-note">${clear ? progress.canSave ? '自己ベストはこのブラウザに保存されます。' : 'この環境では記録を保存できません。' : 'Rキーでも再挑戦。しかけの場所は同じです。'}</p></div></div>`;
     el('overlay').querySelector<HTMLButtonElement>('.primary')?.focus({ preventScroll: true }); this.hud();
   }
   private progress() { const { start } = this.level; return Math.min(100, Math.max(0, Math.round((start.y - this.world.furthest) / (start.y - GOAL.y - GOAL.radius) * 100))); }
@@ -189,7 +202,7 @@ class Park extends Phaser.Scene {
     el('progress').style.width = `${this.progress()}%`;
     document.querySelector('.progress')!.setAttribute('aria-valuenow', String(this.progress()));
     const p = this.world.player, busy = p.jumpTime >= 0 || p.cooldown > 0;
-    el('jump').classList.toggle('busy', busy); el('jump-hint').textContent = p.jumpTime >= 0 ? 'ジャンプ中' : busy ? 'ひと呼吸' : 'Space';
+    if (this.level.delivery) { const left = this.world.baitsLeft; el('jump').classList.toggle('busy', left === 0 || p.cooldown > 0); el('jump-hint').textContent = left === 0 ? 'もう、ない' : `のこり ${left}個`; } else { el('jump').classList.toggle('busy', busy); el('jump-hint').textContent = p.jumpTime >= 0 ? 'ジャンプ中' : busy ? 'ひと呼吸' : 'Space'; }
     const section = this.level.chapters.find(c => p.y > c.above)?.text ?? '';
     if (section !== this.lastChapter) { this.lastChapter = section; if (this.world.time >= this.messageUntil) this.message(section, 3); }
     if (this.world.time > this.messageUntil) el('message').textContent = '';

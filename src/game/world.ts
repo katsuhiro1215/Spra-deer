@@ -1,10 +1,10 @@
-import { FIELD, GOAL, RULES, type ChaserDefinition, type GoalDefinition, type Point, type TrapDefinition, type WallDefinition, type SliderDefinition } from './stage.ts';
+import { FIELD, GOAL, RULES, type ThiefDefinition, type ChaserDefinition, type GoalDefinition, type Point, type TrapDefinition, type WallDefinition, type SliderDefinition } from './stage.ts';
 import type { DeerDefinition, LevelDefinition } from './levels.ts';
 import { facingOf, type Facing } from './facing.ts';
 export type Input = { x: number; y: number; jump?: boolean };
 export type Trap = TrapDefinition & { state: 'intact' | 'shaking' | 'open'; elapsed: number };
 export type Event = {
-  kind: 'jump' | 'land' | 'warning' | 'collapse' | 'poop' | 'fall' | 'clear' | 'dropWarning' | 'drop' | 'wall' | 'slide' | 'crush' | 'goalMove' | 'chase' | 'caught';
+  kind: 'jump' | 'land' | 'warning' | 'collapse' | 'poop' | 'fall' | 'clear' | 'dropWarning' | 'drop' | 'wall' | 'slide' | 'crush' | 'goalMove' | 'chase' | 'caught' | 'bait' | 'eat' | 'stolen';
   x: number; y: number; id?: string;
 };
 /** 歩く鹿。walk=歩く, warn=止まって予告中。 */
@@ -22,11 +22,16 @@ export type Rain = { id: string; state: 'idle' | 'wait' | 'warn' | 'done'; timer
 export type Goal = Point & { state: 'idle' | 'moving' | 'done' };
 /** ジャンプで動き出すうんこ。cx, cy が今の位置。 */
 export type Slider = SliderDefinition & { cx: number; cy: number; state: 'idle' | 'moving' | 'done' };
-export type Outcome = 'playing' | 'poop' | 'fall' | 'wall' | 'caught' | 'clear';
+/** せんべいを狙う鹿。idle=その場, chase=せんべいへ向かう, eat=置かれたせんべいを食べている, full=満腹（もう追わない）。 */
+export type Thief = { id: string; kind: ThiefDefinition['kind']; x: number; y: number; dir: 1 | -1; state: 'idle' | 'chase' | 'eat' | 'full'; timer: number; walked: number; bait: number };
+/** 置いたせんべい。by は食べに来た鹿（-1=まだ誰も来ていない）。gone は食べ終わり。 */
+export type Bait = Point & { by: number; gone: boolean };
+export type Outcome = 'playing' | 'poop' | 'fall' | 'wall' | 'caught' | 'stolen' | 'clear';
 export type World = {
   level: LevelDefinition;
   player: Point & { height: number; jumpTime: number; cooldown: number; facing: Facing; stride: number; moving: boolean };
   traps: Trap[]; deers: Deer[]; walls: Wall[]; sliders: Slider[]; chasers: Chaser[]; rain: Rain[]; goal: Goal;
+  thieves: Thief[]; baits: Bait[]; baitsLeft: number;
   /** 面に置かれたうんこ＋鹿が落としたうんこ。当たり判定はこれと sliders を使う。 */
   poops: Point[];
   time: number; jumps: number; outcome: Outcome;
@@ -48,6 +53,8 @@ export function createWorld(level: LevelDefinition): World {
     deers: level.deers.map(d => ({ id: d.id, kind: d.kind, x: d.startX, y: d.y, dir: d.startDir, state: 'walk', timer: 0, dropped: 0, nextDrop: d.firstDrop, walked: 0 })),
     walls: level.walls.map(wall => ({ ...wall, length: wall.length ?? WALL.length, state: 'idle', progress: 0, timer: 0 })),
     chasers: level.chasers.map(c => ({ id: c.id, kind: c.kind, x: c.x, y: c.y, dir: 1, state: 'idle', walked: 0 })),
+    thieves: (level.delivery?.thieves ?? []).map(t => ({ id: t.id, kind: t.kind, x: t.x, y: t.y, dir: 1, state: 'idle', timer: 0, walked: 0, bait: -1 })),
+    baits: [], baitsLeft: level.delivery?.baits ?? 0,
     rain: level.rain.map(r => ({ id: r.id, state: 'idle', timer: 0, tx: r.x ?? 0, ty: r.y ?? 0 })),
     goal: { x: (level.goal ?? GOAL).x, y: (level.goal ?? GOAL).y, state: 'idle' },
     sliders: level.sliders.map(s => ({ ...s, cx: s.x, cy: s.y, state: 'idle' })),
@@ -128,6 +135,36 @@ function stepChasers(w: World, dt: number) {
     if (Math.abs(dx) > 8) c.dir = dx > 0 ? 1 : -1;
   });
 }
+const BAIT_EAT = 2.6, BAIT_ARRIVE = 18;
+/**
+ * せんべいを狙う鹿。sense 以内にせんべいがあると走り出す。持っているSpruと、置かれたせんべいのうち、近いほうへ向かう。
+ * 置かれたせんべいに着くと、eat 秒だけ食べて、また追いかける。
+ */
+function stepThieves(w: World, dt: number) {
+  const p = w.player, defs = w.level.delivery?.thieves ?? [], eat = w.level.delivery?.eat ?? BAIT_EAT;
+  defs.forEach((def, i) => {
+    const t = w.thieves[i];
+    if (t.state === 'eat') {
+      t.timer += dt;
+      if (t.timer >= eat) { w.baits[t.bait].gone = true; t.bait = -1; t.state = 'full'; }
+      return;
+    }
+    if (t.state === 'full') return; // 満腹。もう追わない（触れると、取られはする）
+    const near = (b: Bait) => !b.gone && b.by < 0 ? Math.hypot(b.x - t.x, b.y - t.y) : Infinity;
+    let bait = -1, baitDist = Infinity;
+    w.baits.forEach((b, k) => { const d = near(b); if (d < baitDist) { baitDist = d; bait = k; } });
+    const playerDist = Math.hypot(p.x - t.x, p.y - t.y);
+    if (t.state === 'idle') {
+      if (playerDist < def.sense || baitDist < def.sense) { t.state = 'chase'; w.events.push({ kind: 'chase', x: t.x, y: t.y, id: t.id }); } else return;
+    }
+    const toBait = bait >= 0 && baitDist < playerDist;
+    const tx = toBait ? w.baits[bait].x : p.x, ty = toBait ? w.baits[bait].y : p.y;
+    const dx = tx - t.x, dy = ty - t.y, d = Math.hypot(dx, dy) || 1, move = Math.min(def.speed * dt, d);
+    t.x += dx / d * move; t.y += dy / d * move; t.walked += move;
+    if (Math.abs(dx) > 8) t.dir = dx > 0 ? 1 : -1;
+    if (toBait && d - move < BAIT_ARRIVE) { t.state = 'eat'; t.timer = 0; t.bait = bait; w.baits[bait].by = i; w.events.push({ kind: 'eat', x: t.x, y: t.y, id: t.id }); }
+  });
+}
 function stepRain(w: World, dt: number) {
   const p = w.player;
   w.level.rain.forEach((def, i) => {
@@ -173,7 +210,13 @@ export function step(w: World, input: Input, dt = RULES.step): void {
   const p = w.player;
   p.cooldown = Math.max(0, p.cooldown - dt);
   let jumped = false;
-  if (input.jump && p.jumpTime < 0 && p.cooldown <= 0) {
+  if (input.jump && w.level.delivery) {
+    // ステージ2: ボタンは、せんべいを置く（ジャンプはしない）。
+    if (w.baitsLeft > 0 && p.cooldown <= 0) {
+      w.baits.push({ x: p.x, y: p.y, by: -1, gone: false }); w.baitsLeft--; p.cooldown = .4;
+      w.events.push({ kind: 'bait', x: p.x, y: p.y });
+    }
+  } else if (input.jump && p.jumpTime < 0 && p.cooldown <= 0) {
     p.jumpTime = 0; w.jumps++; jumped = true; w.events.push({ kind: 'jump', x: p.x, y: p.y });
   }
   const length = Math.hypot(input.x, input.y);
@@ -200,6 +243,7 @@ export function step(w: World, input: Input, dt = RULES.step): void {
   stepSliders(w, dt, jumped);
   stepGoal(w, dt);
   stepChasers(w, dt);
+  stepThieves(w, dt);
   stepRain(w, dt);
   for (const trap of w.traps) {
     if (trap.state === 'intact') {
@@ -226,6 +270,8 @@ export function step(w: World, input: Input, dt = RULES.step): void {
     w.outcome = 'poop'; w.events.push({ kind: 'poop', x: p.x, y: p.y });
   } else if (p.height < 22 && w.chasers.some(c => c.state === 'chase' && Math.hypot(c.x - p.x, c.y - p.y) < CAUGHT_REACH)) {
     w.outcome = 'caught'; w.events.push({ kind: 'caught', x: p.x, y: p.y });
+  } else if (w.thieves.some(t => Math.hypot(t.x - p.x, t.y - p.y) < CAUGHT_REACH)) {
+    w.outcome = 'stolen'; w.events.push({ kind: 'stolen', x: p.x, y: p.y });
   } else if (p.height < 22 && w.walls.some(wall => hitsWall(p, wall))) {
     w.outcome = 'wall'; w.events.push({ kind: 'crush', x: p.x, y: p.y });
   } else if (p.jumpTime < 0 && w.traps.some(t => t.state === 'open' && inHole(p, t))) {

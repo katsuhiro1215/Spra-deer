@@ -25,8 +25,10 @@ export function solve(level: LevelDefinition, opts: { macro?: number; bucket?: n
   const steps = Math.round(macro / (1 / 120));
   let layer: Node[] = [{ w: createWorld(level), parent: null, action: null }];
   let best = level.start.y;
+  let deaths: Record<string, number> = {};
   for (let t = 0; t < maxTime / macro && layer.length; t++) {
     const next = new Map<string, Node>();
+    deaths = {};
     for (const node of layer) {
       for (const a of ACTIONS) {
         const p = node.w.player;
@@ -34,14 +36,14 @@ export function solve(level: LevelDefinition, opts: { macro?: number; bucket?: n
         const w = structuredClone(node.w);
         for (let i = 0; i < steps && w.outcome === 'playing'; i++) step(w, { x: a.x, y: a.y, jump: a.jump && i === 0 } as Input);
         if (w.outcome === 'clear') return { ok: true, actions: unwind({ w, parent: node, action: a }), time: w.time, jumps: w.jumps };
-        if (w.outcome !== 'playing') continue;
+        if (w.outcome !== 'playing') { deaths[w.outcome] = (deaths[w.outcome] ?? 0) + 1; continue; }
         const q = w.player;
-        const key = `${Math.round(q.x / bucket)},${Math.round(q.y / bucket)},${q.height > 0 ? 1 : 0},${w.walls.map(x => x.state[0]).join('')}${w.traps.map(x => x.state[0]).join('')}${w.chasers.map(x => Math.round(x.x / 90) + ':' + Math.round(x.y / 90)).join('')}${w.sliders.map(x => x.state[0]).join('')}`;
+        const key = `${Math.round(q.x / bucket)},${Math.round(q.y / bucket)},${q.height > 0 ? 1 : 0},${w.walls.map(x => x.state[0]).join('')}${w.traps.map(x => x.state[0]).join('')}${w.chasers.map(x => Math.round(x.x / 90) + ':' + Math.round(x.y / 90)).join('')}${w.sliders.map(x => x.state[0]).join('')}${w.baitsLeft}${w.thieves.map(x => x.state[0] + Math.round(x.x / 90) + ':' + Math.round(x.y / 90)).join('')}`;
         if (!next.has(key)) next.set(key, { w, parent: node, action: a });
       }
     }
     let nodes = [...next.values()];
-    if (!nodes.length) return { ok: false, reason: 'no live states', best };
+    if (!nodes.length) return { ok: false, reason: `no live states; last deaths ${JSON.stringify(deaths)}; last y ${Math.round(Math.min(...layer.map(n => n.w.player.y)))} x ${layer.map(n => Math.round(n.w.player.x)).slice(0, 5)}`, best };
     const top = Math.min(...nodes.map(n => n.w.player.y));
     best = Math.min(best, top);
     nodes = nodes.filter(n => n.w.player.y <= top + band);
