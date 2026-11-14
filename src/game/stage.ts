@@ -62,3 +62,10 @@ export type DeliveryDefinition = {
   thieves: ThiefDefinition[];
   eat?: number; // 置いたせんべいを食べる時間（秒、既定2.6）
 };
+/** ステージ3（大掃除）。ボタンで、まわり radius 内のうんこを掃く。うんこが limit 個以上になると失敗。動ける範囲は arena。 */
+export type SweepDefinition = { limit: number; radius: number; cooldown: number; arena: { top: number; bottom: number } };
+/** ステージ4（横断）。道を横切る動物。速さの符号が向き。画面の外で折り返して、同じ道をぐるぐる回る（時間だけで決まる）。 */
+export type CrosserDefinition = { id: string; kind: 'stag' | 'doe' | 'fawn'; y: number; x0: number; speed: number };
+export type CrossDefinition = { crossers: CrosserDefinition[] };
+/** ステージ5（救出）。迷子の鹿は、found 以内に近づくとついてくる。連れている鹿が危険に当たると失敗。 */
+export type RescueDefinition = { kind: 'stag' | 'doe' | 'fawn'; x: number; y: number; found: number; lag: number };

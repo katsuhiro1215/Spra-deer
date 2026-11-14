@@ -24,7 +24,9 @@ export function solve(level: LevelDefinition, opts: { macro?: number; bucket?: n
   const macro = opts.macro ?? .25, bucket = opts.bucket ?? 40, band = opts.band ?? 300, maxTime = opts.maxTime ?? 60, maxLayer = opts.maxLayer ?? 700;
   const steps = Math.round(macro / (1 / 120));
   let layer: Node[] = [{ w: createWorld(level), parent: null, action: null }];
-  let best = level.start.y;
+  // 進み具合。大掃除は「うんこの残り数」（少ないほど良い）、ほかは「上に進んだ位置」。
+  const score = (w: World) => level.sweep ? w.poops.length * 160 : w.player.y;
+  let best = level.sweep ? Infinity : level.start.y;
   let deaths: Record<string, number> = {};
   for (let t = 0; t < maxTime / macro && layer.length; t++) {
     const next = new Map<string, Node>();
@@ -32,22 +34,22 @@ export function solve(level: LevelDefinition, opts: { macro?: number; bucket?: n
     for (const node of layer) {
       for (const a of ACTIONS) {
         const p = node.w.player;
-        if (a.jump && (p.height > 0 || p.jumpTime >= 0 || p.cooldown > 0)) continue;
+        if (a.jump && (p.height > 0 || p.jumpTime >= 0 || p.cooldown > 0 || level.cross || level.rescue)) continue;
         const w = structuredClone(node.w);
         for (let i = 0; i < steps && w.outcome === 'playing'; i++) step(w, { x: a.x, y: a.y, jump: a.jump && i === 0 } as Input);
         if (w.outcome === 'clear') return { ok: true, actions: unwind({ w, parent: node, action: a }), time: w.time, jumps: w.jumps };
         if (w.outcome !== 'playing') { deaths[w.outcome] = (deaths[w.outcome] ?? 0) + 1; continue; }
         const q = w.player;
-        const key = `${Math.round(q.x / bucket)},${Math.round(q.y / bucket)},${q.height > 0 ? 1 : 0},${w.walls.map(x => x.state[0]).join('')}${w.traps.map(x => x.state[0]).join('')}${w.chasers.map(x => Math.round(x.x / 90) + ':' + Math.round(x.y / 90)).join('')}${w.sliders.map(x => x.state[0]).join('')}${w.baitsLeft}${w.thieves.map(x => x.state[0] + Math.round(x.x / 90) + ':' + Math.round(x.y / 90)).join('')}`;
+        const key = `${Math.round(q.x / bucket)},${Math.round(q.y / bucket)},${q.height > 0 ? 1 : 0},${w.walls.map(x => x.state[0]).join('')}${w.traps.map(x => x.state[0]).join('')}${w.chasers.map(x => Math.round(x.x / 90) + ':' + Math.round(x.y / 90)).join('')}${w.sliders.map(x => x.state[0]).join('')}${w.baitsLeft}:${w.poops.length}:${w.follower ? w.follower.state[0] + Math.round(w.follower.x / 60) + ':' + Math.round(w.follower.y / 60) : ''}${w.thieves.map(x => x.state[0] + Math.round(x.x / 90) + ':' + Math.round(x.y / 90)).join('')}`;
         if (!next.has(key)) next.set(key, { w, parent: node, action: a });
       }
     }
     let nodes = [...next.values()];
     if (!nodes.length) return { ok: false, reason: `no live states; last deaths ${JSON.stringify(deaths)}; last y ${Math.round(Math.min(...layer.map(n => n.w.player.y)))} x ${layer.map(n => Math.round(n.w.player.x)).slice(0, 5)}`, best };
-    const top = Math.min(...nodes.map(n => n.w.player.y));
+    const top = Math.min(...nodes.map(n => score(n.w)));
     best = Math.min(best, top);
-    nodes = nodes.filter(n => n.w.player.y <= top + band);
-    if (nodes.length > maxLayer) { nodes.sort((a, b) => a.w.player.y - b.w.player.y); nodes = nodes.slice(0, maxLayer); }
+    nodes = nodes.filter(n => score(n.w) <= top + band);
+    if (nodes.length > maxLayer) { nodes.sort((a, b) => score(a.w) - score(b.w)); nodes = nodes.slice(0, maxLayer); }
     layer = nodes;
   }
   return { ok: false, reason: 'time limit', best };

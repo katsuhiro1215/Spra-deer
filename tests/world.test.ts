@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createWorld, step, wallRect, type World, type Input } from '../src/game/world.ts';
+import { createWorld, step, wallRect, crossX, type World, type Input } from '../src/game/world.ts';
 import { RULES, GOAL, FIELD } from '../src/game/stage.ts';
 import { facingOf } from '../src/game/facing.ts';
-import { LEVEL_1_1, LEVEL_1_2, LEVEL_1_3, LEVEL_1_4, LEVEL_1_5, LEVEL_2_1, LEVEL_2_2, LEVEL_2_3, LEVEL_2_4, LEVEL_2_5, PLAYABLE, STAGES, type LevelDefinition } from '../src/game/levels.ts';
+import { LEVEL_1_1, LEVEL_1_2, LEVEL_1_3, LEVEL_1_4, LEVEL_1_5, LEVEL_2_1, LEVEL_2_2, LEVEL_2_3, LEVEL_2_4, LEVEL_2_5, LEVEL_3_1, LEVEL_4_1, LEVEL_5_1, PLAYABLE, STAGES, type LevelDefinition } from '../src/game/levels.ts';
 
 // ---- 道具 ----
 const empty: LevelDefinition = {
@@ -348,7 +348,7 @@ test('delivery: reaching the target deer clears the level', () => {
 // ジャンプのない面（ステージ2）では、うんこの列を抜けた出口を、穴が全部ふさいではいけない（歩いて避けられる幅が要る）。
 test('delivery levels: a hole never blocks the whole exit of a poop gap (no jump to save you)', () => {
   const MARGIN = RULES.radius + RULES.poopRadius, NEED = 44, bad: string[] = [];
-  for (const level of PLAYABLE.filter(l => l.delivery)) {
+  for (const level of PLAYABLE.filter(l => l.delivery || l.rescue)) {
     const rows = new Map<number, number[]>();
     for (const p of level.poops) rows.set(p.y, [...(rows.get(p.y) ?? []), p.x]);
     for (const t of level.traps.filter(t => !t.trigger || t.trigger === 'near')) {
@@ -370,6 +370,47 @@ test('delivery levels: a hole never blocks the whole exit of a poop gap (no jump
   assert.deepEqual(bad, []);
 });
 
+// ---- ステージ3〜5 ----
+const SWEEP = { limit: 3, radius: 80, cooldown: .5, arena: { top: 900, bottom: 1700 } };
+test('sweep: the button clears only nearby poop, with a pause, and poop does not hurt in this stage', () => {
+  const w = make({ sweep: { ...SWEEP, limit: 9 }, poops: [{ x: 380, y: 1490 }, { x: 360, y: 1300 }] });
+  run(w, { x: 0, y: 0 }, .05); assert.equal(w.outcome, 'playing', 'standing on poop is harmless here');
+  run(w, { x: 0, y: 0, jump: true }, .05);
+  assert.equal(w.poops.length, 1); assert.equal(w.swept, 1); assert.equal(w.jumps, 0); assert.equal(w.player.height, 0);
+  walk(w, 360, 1400); run(w, { x: 0, y: 0, jump: true }, .05);
+  assert.equal(w.poops.length, 1, 'still in the pause between sweeps');
+  run(w, { x: 0, y: 0 }, .6); walk(w, 360, 1330); run(w, { x: 0, y: 0, jump: true }, .05);
+  assert.equal(w.outcome, 'clear', 'nothing left, no more deer to drop');
+});
+test('sweep: too much poop on the ground is a failure, and the player stays inside the arena', () => {
+  const w = make({ sweep: SWEEP, poops: [{ x: 200, y: 1200 }, { x: 300, y: 1200 }, { x: 400, y: 1200 }] });
+  run(w, { x: 0, y: 0 }, .05); assert.equal(w.outcome, 'dirty');
+  const edge = make({ sweep: SWEEP, poops: [{ x: 200, y: 1200 }] });
+  run(edge, { x: 0, y: 1 }, 4); assert.equal(edge.player.y, SWEEP.arena.bottom);
+});
+test('cross: animals travel by time alone, wrap around, and hit a player who stands in their lane', () => {
+  const c = { id: 'a', kind: 'doe' as const, y: 1400, x0: 0, speed: 100 };
+  assert.equal(crossX(c, 0), FIELD.left - 140); assert.ok(Math.abs(crossX(c, 1) - (FIELD.left - 140 + 100)) < 1e-9);
+  assert.ok(crossX(c, 1000) >= FIELD.left - 140 && crossX(c, 1000) < FIELD.right + 140);
+  const still = { ...c, speed: 0, x0: 360 - (FIELD.left - 140) };
+  const w = make({ cross: { crossers: [still] }, start: { x: 360, y: 1500 } });
+  run(w, { x: 0, y: -1 }, 1); assert.equal(w.outcome, 'hit');
+  const safe = make({ cross: { crossers: [{ ...still, x0: still.x0 + 200 }] }, start: { x: 360, y: 1500 } });
+  run(safe, { x: 0, y: -1 }, 1); assert.equal(safe.outcome, 'playing');
+});
+test('rescue: a lost deer follows your trail once found, fails if hurt, and the goal needs it close by', () => {
+  const lv = { rescue: { kind: 'fawn' as const, x: 360, y: 1560, found: 70, lag: 90 }, goal: { x: 360, y: 1000 } };
+  const lone = make({ ...lv, rescue: { ...lv.rescue, x: 150, y: 1560 } });
+  walk(lone, 360, 1000); run(lone, { x: 0, y: -1 }, .3);
+  assert.equal(lone.outcome, 'playing', 'the goal does not open without the lost deer'); assert.equal(lone.follower!.state, 'lost');
+  const w = make({ ...lv, start: { x: 360, y: 1620 } });
+  run(w, { x: 0, y: -1 }, .5); assert.equal(w.follower!.state, 'follow');
+  walk(w, 360, 1300); assert.ok(Math.abs(Math.hypot(w.follower!.x - w.player.x, w.follower!.y - w.player.y) - 90) < 6, 'about lag behind');
+  const hurt = structuredClone(w); hurt.poops.push({ x: hurt.follower!.x, y: hurt.follower!.y }); step(hurt, { x: 0, y: 0 });
+  assert.equal(hurt.outcome, 'lost');
+  walk(w, 360, 1000); assert.equal(w.outcome, 'clear');
+});
+
 test('level data is sound: unique ids, safe start, final chapter, reachable gaps', () => {
   const ids = PLAYABLE.map(l => l.id);
   assert.equal(new Set(ids).size, ids.length);
@@ -385,6 +426,7 @@ test('level data is sound: unique ids, safe start, final chapter, reachable gaps
   }
   assert.equal(STAGES[0].slots.length, 10);
   assert.equal(STAGES[1].slots.length, 5);
+  assert.deepEqual(STAGES.slice(2, 5).map(g => g.slots.length), [1, 1, 1]);
   for (const level of PLAYABLE.filter(l => l.delivery)) {
     for (const t of level.delivery!.thieves) assert.ok(Math.hypot(t.x - level.start.x, t.y - level.start.y) > 350, `${level.id}: ${t.id} too close to start`);
     if (level.delivery!.thieves.length) assert.ok(level.hints.caught, `${level.id}: needs a stolen hint`);

@@ -1,10 +1,10 @@
-import { FIELD, GOAL, RULES, type ThiefDefinition, type ChaserDefinition, type GoalDefinition, type Point, type TrapDefinition, type WallDefinition, type SliderDefinition } from './stage.ts';
+import { FIELD, GOAL, RULES, type CrosserDefinition, type RescueDefinition, type ThiefDefinition, type ChaserDefinition, type GoalDefinition, type Point, type TrapDefinition, type WallDefinition, type SliderDefinition } from './stage.ts';
 import type { DeerDefinition, LevelDefinition } from './levels.ts';
 import { facingOf, type Facing } from './facing.ts';
 export type Input = { x: number; y: number; jump?: boolean };
 export type Trap = TrapDefinition & { state: 'intact' | 'shaking' | 'open'; elapsed: number };
 export type Event = {
-  kind: 'jump' | 'land' | 'warning' | 'collapse' | 'poop' | 'fall' | 'clear' | 'dropWarning' | 'drop' | 'wall' | 'slide' | 'crush' | 'goalMove' | 'chase' | 'caught' | 'bait' | 'eat' | 'stolen';
+  kind: 'jump' | 'land' | 'warning' | 'collapse' | 'poop' | 'fall' | 'clear' | 'dropWarning' | 'drop' | 'wall' | 'slide' | 'crush' | 'goalMove' | 'chase' | 'caught' | 'bait' | 'eat' | 'stolen' | 'sweep' | 'found' | 'lost';
   x: number; y: number; id?: string;
 };
 /** 歩く鹿。walk=歩く, warn=止まって予告中。 */
@@ -26,12 +26,17 @@ export type Slider = SliderDefinition & { cx: number; cy: number; state: 'idle' 
 export type Thief = { id: string; kind: ThiefDefinition['kind']; x: number; y: number; dir: 1 | -1; state: 'idle' | 'chase' | 'eat' | 'full'; timer: number; walked: number; bait: number };
 /** 置いたせんべい。by は食べに来た鹿（-1=まだ誰も来ていない）。gone は食べ終わり。 */
 export type Bait = Point & { by: number; gone: boolean };
-export type Outcome = 'playing' | 'poop' | 'fall' | 'wall' | 'caught' | 'stolen' | 'clear';
+/** 道を横切る動物。位置は時間だけで決まる。 */
+export type Crosser = { id: string; kind: CrosserDefinition['kind']; x: number; y: number; dir: 1 | -1; walked: number };
+/** 迷子の鹿。lost=まだ見つけていない, follow=ついてくる（Spruが通った道を、少し遅れてたどる）。 */
+export type Follower = { kind: RescueDefinition['kind']; x: number; y: number; dir: 1 | -1; state: 'lost' | 'follow'; walked: number; trail: Point[] };
+export type Outcome = 'playing' | 'poop' | 'fall' | 'wall' | 'caught' | 'stolen' | 'dirty' | 'hit' | 'lost' | 'clear';
 export type World = {
   level: LevelDefinition;
   player: Point & { height: number; jumpTime: number; cooldown: number; facing: Facing; stride: number; moving: boolean };
   traps: Trap[]; deers: Deer[]; walls: Wall[]; sliders: Slider[]; chasers: Chaser[]; rain: Rain[]; goal: Goal;
   thieves: Thief[]; baits: Bait[]; baitsLeft: number;
+  crossers: Crosser[]; follower: Follower | null; swept: number; sweepTime: number;
   /** 面に置かれたうんこ＋鹿が落としたうんこ。当たり判定はこれと sliders を使う。 */
   poops: Point[];
   time: number; jumps: number; outcome: Outcome;
@@ -46,6 +51,13 @@ export function wallRect(wall: Pick<Wall, 'side' | 'progress' | 'y' | 'thickness
   const x = wall.side === 'l' ? WALL.left - away : WALL.right - length + away;
   return { x, y: wall.y - wall.thickness / 2, w: length, h: wall.thickness };
 }
+/** 横断する動物の位置。道の左右の外まで行って、反対側から戻ってくる。 */
+const CROSS_MARGIN = 140;
+export const crossSpan = () => FIELD.right - FIELD.left + CROSS_MARGIN * 2;
+export function crossX(c: CrosserDefinition, t: number) {
+  const span = crossSpan();
+  return FIELD.left - CROSS_MARGIN + (((c.x0 + c.speed * t) % span) + span) % span;
+}
 export function createWorld(level: LevelDefinition): World {
   return {
     level, player: { ...level.start, height: 0, jumpTime: -1, cooldown: 0, facing: 'up', stride: 0, moving: false },
@@ -55,6 +67,9 @@ export function createWorld(level: LevelDefinition): World {
     chasers: level.chasers.map(c => ({ id: c.id, kind: c.kind, x: c.x, y: c.y, dir: 1, state: 'idle', walked: 0 })),
     thieves: (level.delivery?.thieves ?? []).map(t => ({ id: t.id, kind: t.kind, x: t.x, y: t.y, dir: 1, state: 'idle', timer: 0, walked: 0, bait: -1 })),
     baits: [], baitsLeft: level.delivery?.baits ?? 0,
+    crossers: (level.cross?.crossers ?? []).map(c => ({ id: c.id, kind: c.kind, x: crossX(c, 0), y: c.y, dir: c.speed >= 0 ? 1 : -1, walked: 0 })),
+    follower: level.rescue ? { kind: level.rescue.kind, x: level.rescue.x, y: level.rescue.y, dir: 1, state: 'lost', walked: 0, trail: [] } : null,
+    swept: 0, sweepTime: -1,
     rain: level.rain.map(r => ({ id: r.id, state: 'idle', timer: 0, tx: r.x ?? 0, ty: r.y ?? 0 })),
     goal: { x: (level.goal ?? GOAL).x, y: (level.goal ?? GOAL).y, state: 'idle' },
     sliders: level.sliders.map(s => ({ ...s, cx: s.x, cy: s.y, state: 'idle' })),
@@ -165,6 +180,41 @@ function stepThieves(w: World, dt: number) {
     if (toBait && d - move < BAIT_ARRIVE) { t.state = 'eat'; t.timer = 0; t.bait = bait; w.baits[bait].by = i; w.events.push({ kind: 'eat', x: t.x, y: t.y, id: t.id }); }
   });
 }
+function stepCrossers(w: World) {
+  w.level.cross?.crossers.forEach((def, i) => {
+    const c = w.crossers[i], x = crossX(def, w.time);
+    c.walked += Math.abs(def.speed) * RULES.step; c.x = x;
+  });
+}
+const FOLLOW_STEP = 4;
+/** 迷子の鹿は、見つけると、Spruが通った道を lag だけ遅れてたどる。 */
+function stepFollower(w: World) {
+  const f = w.follower, def = w.level.rescue, p = w.player;
+  if (!f || !def) return;
+  if (f.state === 'lost') {
+    if (Math.hypot(p.x - f.x, p.y - f.y) < def.found) { f.state = 'follow'; f.trail = [{ x: p.x, y: p.y }]; w.events.push({ kind: 'found', x: f.x, y: f.y }); }
+    return;
+  }
+  const last = f.trail[f.trail.length - 1];
+  if (!last || Math.hypot(p.x - last.x, p.y - last.y) >= FOLLOW_STEP) f.trail.push({ x: p.x, y: p.y });
+  let remain = def.lag, cur: Point = { x: p.x, y: p.y }, pos: Point | null = null, keep = 0;
+  for (let i = f.trail.length - 1; i >= 0; i--) {
+    const q = f.trail[i], d = Math.hypot(cur.x - q.x, cur.y - q.y);
+    if (d >= remain) { const k = remain / d; pos = { x: cur.x + (q.x - cur.x) * k, y: cur.y + (q.y - cur.y) * k }; keep = i; break; }
+    remain -= d; cur = q;
+  }
+  if (keep > 0) f.trail = f.trail.slice(keep);
+  const target = pos ?? f.trail[0], dx = target.x - f.x;
+  f.walked += Math.hypot(target.x - f.x, target.y - f.y); if (Math.abs(dx) > 1) f.dir = dx > 0 ? 1 : -1;
+  f.x = target.x; f.y = target.y;
+}
+function followerHurt(w: World): boolean {
+  const f = w.follower;
+  if (!f || f.state !== 'follow') return false;
+  const reach = RULES.radius + RULES.poopRadius;
+  return w.poops.some(o => Math.hypot(o.x - f.x, o.y - f.y) < reach) || w.sliders.some(s => Math.hypot(s.cx - f.x, s.cy - f.y) < reach)
+    || w.traps.some(t => t.state === 'open' && inHole(f, t)) || w.walls.some(wall => hitsWall(f, wall));
+}
 function stepRain(w: World, dt: number) {
   const p = w.player;
   w.level.rain.forEach((def, i) => {
@@ -210,11 +260,17 @@ export function step(w: World, input: Input, dt = RULES.step): void {
   const p = w.player;
   p.cooldown = Math.max(0, p.cooldown - dt);
   let jumped = false;
-  if (input.jump && w.level.delivery) {
-    // ステージ2: ボタンは、せんべいを置く（ジャンプはしない）。
-    if (w.baitsLeft > 0 && p.cooldown <= 0) {
+  const sweep = w.level.sweep;
+  if (input.jump && (w.level.delivery || sweep || w.level.cross || w.level.rescue)) {
+    // ステージ2以降は、ジャンプしない。2はせんべいを置く、3は掃く。4と5はボタンなし。
+    if (w.level.delivery && w.baitsLeft > 0 && p.cooldown <= 0) {
       w.baits.push({ x: p.x, y: p.y, by: -1, gone: false }); w.baitsLeft--; p.cooldown = .4;
       w.events.push({ kind: 'bait', x: p.x, y: p.y });
+    } else if (sweep && p.cooldown <= 0) {
+      const before = w.poops.length;
+      w.poops = w.poops.filter(o => Math.hypot(o.x - p.x, o.y - p.y) > sweep.radius);
+      w.swept += before - w.poops.length; p.cooldown = sweep.cooldown; w.sweepTime = w.time;
+      w.events.push({ kind: 'sweep', x: p.x, y: p.y });
     }
   } else if (input.jump && p.jumpTime < 0 && p.cooldown <= 0) {
     p.jumpTime = 0; w.jumps++; jumped = true; w.events.push({ kind: 'jump', x: p.x, y: p.y });
@@ -224,7 +280,7 @@ export function step(w: World, input: Input, dt = RULES.step): void {
   p.moving = length > .02;
   const fromX = p.x, fromY = p.y;
   p.x = clamp(p.x + dx * RULES.speed * dt, FIELD.left, FIELD.right);
-  p.y = clamp(p.y + dy * RULES.speed * dt, FIELD.top, FIELD.bottom);
+  p.y = clamp(p.y + dy * RULES.speed * dt, sweep?.arena.top ?? FIELD.top, sweep?.arena.bottom ?? FIELD.bottom);
   // 向きは入力で、歩幅（足の出し入れ）は実際に進んだ距離で決める。壁に押しつけても足は動かない。
   if (p.moving) p.facing = facingOf(dx, dy);
   p.stride += Math.hypot(p.x - fromX, p.y - fromY);
@@ -244,6 +300,8 @@ export function step(w: World, input: Input, dt = RULES.step): void {
   stepGoal(w, dt);
   stepChasers(w, dt);
   stepThieves(w, dt);
+  stepCrossers(w);
+  stepFollower(w);
   stepRain(w, dt);
   for (const trap of w.traps) {
     if (trap.state === 'intact') {
@@ -266,17 +324,26 @@ export function step(w: World, input: Input, dt = RULES.step): void {
     }
   }
   const poopReach = RULES.radius + RULES.poopRadius;
-  if (p.height < 22 && (w.poops.some(o => Math.hypot(o.x - p.x, o.y - p.y) < poopReach) || w.sliders.some(s => Math.hypot(s.cx - p.x, s.cy - p.y) < poopReach))) {
+  if (p.height < 22 && !sweep && (w.poops.some(o => Math.hypot(o.x - p.x, o.y - p.y) < poopReach) || w.sliders.some(s => Math.hypot(s.cx - p.x, s.cy - p.y) < poopReach))) {
     w.outcome = 'poop'; w.events.push({ kind: 'poop', x: p.x, y: p.y });
   } else if (p.height < 22 && w.chasers.some(c => c.state === 'chase' && Math.hypot(c.x - p.x, c.y - p.y) < CAUGHT_REACH)) {
     w.outcome = 'caught'; w.events.push({ kind: 'caught', x: p.x, y: p.y });
   } else if (w.thieves.some(t => Math.hypot(t.x - p.x, t.y - p.y) < CAUGHT_REACH)) {
     w.outcome = 'stolen'; w.events.push({ kind: 'stolen', x: p.x, y: p.y });
+  } else if (w.crossers.some(c => Math.abs(c.x - p.x) < 44 && Math.abs(c.y - p.y) < 26)) {
+    w.outcome = 'hit'; w.events.push({ kind: 'caught', x: p.x, y: p.y });
+  } else if (sweep && w.poops.length >= sweep.limit) {
+    w.outcome = 'dirty'; w.events.push({ kind: 'poop', x: p.x, y: p.y });
+  } else if (followerHurt(w)) {
+    w.outcome = 'lost'; w.events.push({ kind: 'lost', x: w.follower!.x, y: w.follower!.y });
   } else if (p.height < 22 && w.walls.some(wall => hitsWall(p, wall))) {
     w.outcome = 'wall'; w.events.push({ kind: 'crush', x: p.x, y: p.y });
   } else if (p.jumpTime < 0 && w.traps.some(t => t.state === 'open' && inHole(p, t))) {
     w.outcome = 'fall'; w.events.push({ kind: 'fall', x: p.x, y: p.y });
-  } else if (p.jumpTime < 0 && Math.hypot(p.x - w.goal.x, p.y - w.goal.y) < GOAL.radius) {
+  } else if (sweep && w.poops.length === 0 && w.deers.every((d, i) => d.dropped >= w.level.deers[i].drops && d.state === 'walk')) {
+    w.outcome = 'clear'; w.events.push({ kind: 'clear', x: p.x, y: p.y });
+  } else if (!sweep && p.jumpTime < 0 && Math.hypot(p.x - w.goal.x, p.y - w.goal.y) < GOAL.radius
+    && (!w.level.rescue || (w.follower?.state === 'follow' && Math.hypot(w.follower.x - p.x, w.follower.y - p.y) < 140))) {
     w.outcome = 'clear'; w.events.push({ kind: 'clear', x: p.x, y: p.y });
   }
   w.furthest = Math.min(w.furthest, p.y);

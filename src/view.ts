@@ -133,7 +133,7 @@ export class ParkView {
     }
     // The deer watch from the verge; they do not obstruct the safe detours.
     // 道ばたの飾りの鹿。動く鹿（歩く鹿・追いかける鹿）がいる面では、紛らわしいので出さない。
-    const decorations: number[][] = this.level.deers.length || this.level.chasers.length || this.level.delivery ? [] : [[53, 3190, 0], [671, 2680, 1], [53, 1840, 0], [674, 930, 1]];
+    const decorations: number[][] = this.level.deers.length || this.level.chasers.length || this.level.delivery || this.level.cross || this.level.rescue ? [] : [[53, 3190, 0], [671, 2680, 1], [53, 1840, 0], [674, 930, 1]];
     for (const [x, y, flip] of decorations) {
       s.add.ellipse(x, y, 83, 24, 0x54713b, .15).setDepth(y - 1);
       const image = s.add.image(x, y, 'deer').setOrigin(.5, 1).setDepth(y).setFlipX(!!flip);
@@ -141,6 +141,20 @@ export class ParkView {
       this.deer.push({ image, y, phase: y / 150 });
     }
     for (const poop of this.level.poops) this.poopShape(poop);
+    if (this.level.cross) {
+      for (const y of new Set(this.level.cross.crossers.map(c => c.y))) {
+        ground.fillStyle(0xc9b484, .5).fillRoundedRect(100, y - 46, 520, 92, 14);
+        ground.lineStyle(4, 0xf3ecc8, .55);
+        for (let x = 120; x < 600; x += 56) ground.lineBetween(x, y, x + 28, y);
+      }
+    }
+    if (this.level.sweep) {
+      const fence = s.add.graphics().setDepth(1), { top, bottom } = this.level.sweep.arena;
+      for (const y of [top - 34, bottom + 34]) {
+        fence.lineStyle(6, 0x9da773).lineBetween(104, y, 616, y);
+        for (let x = 104; x <= 616; x += 36) fence.lineStyle(7, 0xa9b27e).lineBetween(x, y - 18, x, y + 18);
+      }
+    }
     // スタートゲート。Spruはアーチの下に立つ（ゲートは、Spruより奥に描く）。
     const gate = s.add.image(start0.x, start0.y + 26, 'gate-start').setOrigin(.5, 1).setDepth(start0.y - 5);
     gate.setDisplaySize(380, 380 * gate.frame.height / gate.frame.width);
@@ -200,6 +214,11 @@ export class ParkView {
     }
     if (e.kind === 'drop') this.dropped.push(this.poopShape(e));
     if (e.kind === 'wall') this.scene.cameras.main.shake(140, .005);
+    if (e.kind === 'found' || e.kind === 'lost') {
+      const text = this.label(e.x, e.y - 90, e.kind === 'found' ? 'みつけた！' : 'はぐれた…！', 28, '#755338').setDepth(8000);
+      text.setStroke('#fff9dc', 6);
+      this.labels.push({ text, born: now, y: text.y });
+    }
     if (e.kind === 'bait' || e.kind === 'eat' || e.kind === 'stolen') {
       const text = this.label(e.x, e.y - 70, e.kind === 'bait' ? 'ポトッ' : e.kind === 'eat' ? 'もぐもぐ' : 'あっ、取られた！', e.kind === 'stolen' ? 30 : 24, '#755338').setDepth(8000);
       text.setStroke('#fff9dc', 6);
@@ -211,12 +230,12 @@ export class ParkView {
       text.setStroke('#fff9dc', 6);
       this.labels.push({ text, born: now, y: text.y });
     }
-    if (['collapse', 'land', 'poop', 'clear', 'drop'].includes(e.kind)) {
+    if (['collapse', 'land', 'poop', 'clear', 'drop', 'sweep'].includes(e.kind)) {
       const count = e.kind === 'clear' ? 34 : e.kind === 'collapse' ? 16 : 7;
       for (let i = 0; i < count; i++) {
         const a = i * 2.4, radius = e.kind === 'collapse' ? 65 : 20;
         const x = e.x + Math.cos(a) * radius, y = e.y + Math.sin(a) * radius * .6;
-        const color = e.kind === 'clear' ? [0xe7bb65, 0x99b568, 0xf4edd0][i % 3] : e.kind === 'poop' ? 0x987346 : 0xcfbd8b;
+        const color = e.kind === 'clear' ? [0xe7bb65, 0x99b568, 0xf4edd0][i % 3] : e.kind === 'poop' ? 0x987346 : e.kind === 'sweep' ? 0xb7d27a : 0xcfbd8b;
         const shape = this.scene.add.circle(x, y, 3 + i % 5, color, .85).setDepth(9000);
         this.particles.push({ shape, born: now, duration: e.kind === 'clear' ? 1.7 : .6, x, y, vx: Math.cos(a) * (40 + i * 3), vy: -55 - (i % 5) * 12 });
       }
@@ -295,6 +314,26 @@ export class ParkView {
     }
     // 追いかけてくる鹿
     for (const c of w.chasers) place(c.id, c.kind, c.x, c.y, c.dir, c.state === 'chase', c.walked);
+    // ステージ4: 道を横切る動物
+    for (const c of w.crossers) place(c.id, c.kind, c.x, c.y + 20, c.dir, true, c.walked);
+    // ステージ5: 迷子の鹿（見つけると、ついてくる）
+    if (w.follower) {
+      const f = w.follower;
+      place('follower', f.kind, f.x, f.y, f.dir, f.state === 'follow' && w.player.moving, f.walked);
+      if (f.state === 'lost') {
+        const top = f.y - DEER_HEIGHT[f.kind] - 34 + Math.sin(w.time * 4) * 5;
+        this.deerFx.fillStyle(0xfffbe8).fillEllipse(f.x, top, 60, 38).lineStyle(3, 0x7a8f5a).strokeEllipse(f.x, top, 60, 38);
+        this.deerFx.fillStyle(0x7a8f5a).fillCircle(f.x - 14, top, 4).fillCircle(f.x, top, 4).fillCircle(f.x + 14, top, 4);
+      }
+    }
+    // ステージ3: 掃除の範囲と、ほうき
+    if (w.level.sweep && w.outcome === 'playing') {
+      const p = w.player, r = w.level.sweep.radius, ready = p.cooldown <= 0, swing = w.time - w.sweepTime < .25 ? Math.sin((w.time - w.sweepTime) / .25 * Math.PI) : 0;
+      this.deerFx.lineStyle(3, 0x6f9c45, ready ? .5 : .16).strokeCircle(p.x, p.y, r).fillStyle(0x9cc765, ready ? .1 : .04).fillCircle(p.x, p.y, r);
+      const hx = p.x + 30 - swing * 36, hy = p.y - 14;
+      this.deerFx.lineStyle(6, 0x9a7440).lineBetween(hx + 12, hy - 50, hx, hy);
+      this.deerFx.fillStyle(0xd7b45a).fillTriangle(hx - 16, hy + 22, hx + 16, hy + 22, hx, hy - 4);
+    }
     // ステージ2: せんべいを狙う鹿、置かれたせんべい、持っているせんべい、届け先の鹿
     const delivery = w.level.delivery;
     if (delivery) {
@@ -362,6 +401,6 @@ export class ParkView {
     this.labels = this.labels.filter(l => now - l.born <= 1.2);
     // 旗はゴールの位置について行く（動くゴールがあるため）。基準は、中央ゴール (360,300) のときの形。
     // ゴールゲートはゴールの位置について行く（動くゴールがあるため）。Spruはゲートの手前を通ってクリアする。
-    this.goalGate.setPosition(w.goal.x, w.goal.y + 62).setDepth(w.goal.y - 20).setVisible(!w.level.delivery);
+    this.goalGate.setPosition(w.goal.x, w.goal.y + 62).setDepth(w.goal.y - 20).setVisible(!w.level.delivery && !w.level.sweep);
   }
 }

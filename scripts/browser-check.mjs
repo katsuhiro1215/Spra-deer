@@ -41,11 +41,11 @@ try {
   await first.waitForFunction(() => window.__DEER__?.mode === 'select');
   await snap(first, '02-select-fresh');
   assert.equal(await first.locator('[data-level="1-1"]').isDisabled(), false);
-  assert.equal(await first.locator('[data-level="1-2"]').isDisabled(), true);
-  assert.equal(await first.locator('[data-level="1-3"]').isDisabled(), true);
-  assert.equal(await first.locator('.soon-note').count(), 2, 'stages 2 and 3 are coming soon');
+  // 開発中は全面解放（src/progress.ts の UNLOCK_ALL）。公開前に false へ戻すときは、ここを「1-2 は選べない」に戻す。
+  for (const id of ['1-2', '1-10', '2-1', '3-1', '4-1', '5-1']) assert.equal(await first.locator(`[data-level="${id}"]`).isDisabled(), false, `${id} is selectable while developing`);
+  assert.equal(await first.locator('.soon-note').count(), 0, 'every stage has at least one level');
   await fresh.close();
-  console.log('Fresh visitor: only 1-1 is selectable');
+  console.log('Fresh visitor: every level is selectable (development unlock)');
 
   // --- 保存済みの進行で 1-3 まで選べる ---
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true });

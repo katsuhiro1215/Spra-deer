@@ -1,4 +1,5 @@
-import type { ChaserDefinition, DeliveryDefinition, GoalDefinition, Point, RainDefinition, SliderDefinition, TrapDefinition, WallDefinition } from './stage.ts';
+import { FIELD } from './stage.ts';
+import type { ChaserDefinition, CrosserDefinition, CrossDefinition, DeliveryDefinition, RescueDefinition, SweepDefinition, GoalDefinition, Point, RainDefinition, SliderDefinition, TrapDefinition, WallDefinition } from './stage.ts';
 
 /** 画面上の位置（Y）がこの値より下にいる間、text を案内として表示する。上から順に判定する。 */
 export type Chapter = { above: number; text: string };
@@ -36,6 +37,12 @@ export type LevelDefinition = {
   goal?: GoalDefinition; // 省略するとゴールは中央（GOAL）
   /** ステージ2の面（せんべい配達）。あると、ボタンは「せんべいを置く」になり、ゴールは届け先の鹿になる。 */
   delivery?: DeliveryDefinition;
+  /** ステージ3（大掃除）。 */
+  sweep?: SweepDefinition;
+  /** ステージ4（横断）。 */
+  cross?: CrossDefinition;
+  /** ステージ5（救出）。 */
+  rescue?: RescueDefinition;
   chapters: Chapter[];
   /** 失敗の原因と、次の攻略方法（失敗の種類ごと）。 */
   hints: { poop: string; fall: string; wall: string; caught?: string };
@@ -649,6 +656,93 @@ export const LEVEL_2_5: LevelDefinition = {
   hints: { poop: 'うんこが、上から降ってきた…！\n影が出たら、動いて避けよう。', fall: FALL_HINT, wall: WALL_HINT, caught: STOLEN_HINT },
 };
 
+/** 3-1: はじめての大掃除。ボタンで、まわりのうんこを掃く。鹿が落とす分も、溜まる前に。 */
+export const LEVEL_3_1: LevelDefinition = {
+  id: '3-1', stage: 3, title: 'はじめての大掃除',
+  intro: 'うんこに近づいて、ボタンで掃除！',
+  start: { x: 360, y: 1500 },
+  poops: [{ x: 180, y: 1250 }, { x: 300, y: 1150 }, { x: 440, y: 1250 }, { x: 540, y: 1100 }, { x: 240, y: 1000 }, { x: 400, y: 1020 }, { x: 520, y: 1380 }, { x: 200, y: 1400 }],
+  deers: [
+    { id: 'doe', kind: 'doe', y: 1300, x1: 150, x2: 570, startX: 170, startDir: 1, speed: 90, firstDrop: 2, dropEvery: 3, drops: 5, warning: .8 },
+  ],
+  traps: [], walls: [], sliders: [], chasers: [], rain: [],
+  sweep: { limit: 11, radius: 80, cooldown: .55, arena: { top: 880, bottom: 1700 } },
+  chapters: [
+    { above: -Infinity, text: 'うんこの近くで、ボタン。溜めすぎ注意！' },
+  ],
+  hints: {
+    poop: POOP_HINT, fall: FALL_HINT, wall: WALL_HINT,
+    caught: '公園が、うんこだらけに…！\n溜まる前に、こまめに掃除しよう。\n鹿が落とした場所にも、早めに。',
+  },
+};
+
+/** 道を、同じ間隔で行き交う動物。 */
+const lane = (id: string, y: number, speed: number, count: number, kind: CrosserDefinition['kind'], offset = 0): CrosserDefinition[] =>
+  Array.from({ length: count }, (_, i) => ({ id: `${id}-${i}`, kind, y, x0: offset + i * ((FIELD.right - FIELD.left + 280) / count), speed }));
+
+/** 4-1: はじめての横断。動物が行き交う道を、すきまを読んで渡る。ボタンはない。 */
+export const LEVEL_4_1: LevelDefinition = {
+  id: '4-1', stage: 4, title: 'はじめての横断',
+  intro: '動物の動きを読んで、道を渡ろう。',
+  start: { x: 360, y: 3400 },
+  poops: [], deers: [], traps: [], walls: [], sliders: [], chasers: [], rain: [],
+  cross: {
+    crossers: [
+      ...lane('a', 3000, 110, 3, 'stag', 0), ...lane('b', 2740, -160, 3, 'doe', 100), ...lane('c', 2480, 200, 2, 'doe', 50),
+      ...lane('d', 2220, -130, 4, 'stag', 200), ...lane('e', 1960, 250, 2, 'fawn', 0), ...lane('f', 1700, -180, 3, 'doe', 300),
+      ...lane('g', 1440, 150, 3, 'stag', 150), ...lane('h', 1180, -240, 2, 'fawn', 60), ...lane('i', 920, 170, 3, 'doe', 0),
+      ...lane('j', 660, -210, 3, 'fawn', 250),
+    ],
+  },
+  chapters: [
+    { above: 3250, text: '動物の動きを読んで、道を渡ろう。' },
+    { above: 2900, text: '同じ道は、同じ速さで動いている。' },
+    { above: 2000, text: '小さい鹿ほど、速い。' },
+    { above: 1000, text: 'まだまだ、続く。' },
+    { above: -Infinity, text: 'あと少し。ゴールへ！' },
+  ],
+  hints: {
+    poop: POOP_HINT, fall: FALL_HINT, wall: WALL_HINT,
+    caught: '動物に、ぶつかった…！\n慌てずに、すきまを待とう。\n小さい鹿ほど、速く走る。',
+  },
+};
+
+/** 5-1: まいごの子鹿。迷子を見つけると、ついてくる。通った道をたどるので、壁や雨に気をつけて、出口まで。 */
+export const LEVEL_5_1: LevelDefinition = {
+  id: '5-1', stage: 5, title: 'まいごの子鹿',
+  intro: '迷子の子鹿を、見つけて連れて行こう。',
+  start: { x: 360, y: 3400 },
+  poops: [...row(3150, 384), ...row(2750, 256), ...row(2000, 512), ...row(1450, 256), ...row(900, 384)],
+  deers: [], sliders: [], chasers: [],
+  traps: [
+    { id: 'hole-1', x: 490, y: 1870, width: 90, height: 100, warning: .35, silent: true },
+    { id: 'hole-2', x: 250, y: 1330, width: 100, height: 100, warning: .35, silent: true },
+    { id: 'hole-3', x: 380, y: 780, width: 100, height: 100, warning: .35, silent: true },
+  ],
+  walls: [
+    { id: 'wall-1', side: 'l', y: 1700, thickness: 80, triggerY: 1930, speed: 1000, hold: .6 },
+    { id: 'wall-2', side: 'r', y: 1150, thickness: 80, triggerY: 1380, speed: 1000, hold: .6 },
+  ],
+  rain: [
+    { id: 'rain-1', triggerY: 700, delay: .2, warn: .7, aim: 'player' },
+    { id: 'rain-2', triggerY: 630, delay: .2, warn: .7, aim: 'player' },
+  ],
+  rescue: { kind: 'fawn', x: 520, y: 2330, found: 70, lag: 90 },
+  chapters: [
+    { above: 3250, text: 'どこかに、迷子の子鹿がいる。' },
+    { above: 2550, text: '子鹿は、通った道をついてくる。' },
+    { above: 1950, text: '壁も、子鹿の上に来る。' },
+    { above: 1200, text: '通れる道を、選んであげよう。' },
+    { above: 700, text: 'あと少し。出口へ！' },
+    { above: -Infinity, text: 'もう、出口は目の前。' },
+  ],
+  hints: {
+    poop: 'うんこに、当たった…！\nすきまを通る道を、選ぼう。\n子鹿は、同じ道をついてくる。',
+    fall: FALL_HINT, wall: WALL_HINT,
+    caught: '子鹿が、はぐれてしまった…！\n子鹿は、少し後ろを同じ道でついてくる。\n壁や穴、降ってくるうんこに注意。',
+  },
+};
+
 /** ステージ1の枠。 */
 export const STAGE_1: LevelSlot[] = [
   { id: '1-1', title: LEVEL_1_1.title, summary: '安全そうな道を、よく見よう', level: LEVEL_1_1 },
@@ -674,7 +768,9 @@ export const STAGES: { stage: number; title: string; slots: LevelSlot[] }[] = [
       { id: '2-5', title: LEVEL_2_5.title, summary: '群れを、抜ける', level: LEVEL_2_5 },
     ],
   },
-  { stage: 3, title: '奈良公園大掃除', slots: [] },
+  { stage: 3, title: '奈良公園大掃除', slots: [{ id: '3-1', title: LEVEL_3_1.title, summary: 'ボタンで、うんこを掃く', level: LEVEL_3_1 }] },
+  { stage: 4, title: 'どうぶつ横断パニック', slots: [{ id: '4-1', title: LEVEL_4_1.title, summary: '動物の動きを読んで渡る', level: LEVEL_4_1 }] },
+  { stage: 5, title: '森のなかま救出', slots: [{ id: '5-1', title: LEVEL_5_1.title, summary: '迷子を、出口へ連れて行く', level: LEVEL_5_1 }] },
 ];
 
 /** 遊べる面だけを、遊ぶ順に並べたもの。 */
