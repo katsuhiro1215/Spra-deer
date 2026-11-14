@@ -1,5 +1,6 @@
 // 3D走りゲームの進行計算(見た目に依存しない)。
-import { DEFAULT_RULES, HIT_RADIUS, PLAY_HALF, obstacleState, type Course, type Obstacle, type Rules } from './course.ts';
+import { DEFAULT_RULES, HIT_RADIUS, PLAY_HALF, obstacleRadius, obstacleState, roadCurv, type Course, type Obstacle, type ObstacleState, type Rules } from './course.ts';
+import type { Effect } from './critters.ts';
 
 export interface Input {
   left: boolean;
@@ -14,6 +15,8 @@ export const PLAYER_RADIUS = 0.45;
 const JUMP_V = 10.5;
 const GRAVITY = 32;
 const MAX_LIVES = 3;
+/** カーブで、外側へ押される強さ(大きいほど、曲がり角で操作が要る) */
+const DRIFT_GAIN = 7;
 
 export function baseSpeed(s: number, length: number, rules: Rules = DEFAULT_RULES): number {
   return rules.speed0 + (rules.speed1 - rules.speed0) * Math.min(1, s / length);
@@ -43,10 +46,14 @@ export class Run {
 
   readonly course: Course;
   readonly rules: Rules;
+  /** 突進する動物が動き出した時刻(障害物の id → 時刻) */
+  readonly chargeT = new Map<number, number>();
+  private readonly chargers: Obstacle[];
 
   constructor(course: Course) {
     this.course = course;
     this.rules = course.rules ?? DEFAULT_RULES;
+    this.chargers = course.obstacles.filter((o) => o.behavior === 'charge');
   }
 
   get speed(): number {
@@ -93,7 +100,9 @@ export class Run {
     const accel = this.ice > 0 ? 2.5 : this.rules.steerAccel; // 氷の上では、ほとんど曲がれない
     const dv = Math.max(-accel * dt, Math.min(accel * dt, target - this.vx));
     this.vx += dv;
-    this.x += this.vx * dt;
+    // カーブでは、外側へ押し出される(右カーブなら、左へ)
+    const drift = this.course.curve ? -roadCurv(this.course, this.s) * this.speed * DRIFT_GAIN : 0;
+    this.x += (this.vx + drift) * dt;
     if (this.x > PLAY_HALF) { this.x = PLAY_HALF; this.vx = 0; }
     if (this.x < -PLAY_HALF) { this.x = -PLAY_HALF; this.vx = 0; }
 
@@ -136,8 +145,8 @@ export class Run {
     }
   }
 
-  private damage(kind: 'hit' | 'fall'): void {
-    this.events.push({ kind });
+  private damage(kind: 'hit' | 'fall', id?: number): void {
+    this.events.push({ kind, id });
     this.invuln = 1.6;
     this.speedMul = 0.55;
     this.lives -= 1;
@@ -147,10 +156,36 @@ export class Run {
     }
   }
 
+  /** 障害物の、いまの位置(突進する動物は、近づいてくる)。 */
+  stateOf(o: Obstacle): ObstacleState {
+    return obstacleState(o, this.t, this.chargeT.get(o.id));
+  }
+
+  /** 当たったときの効果をかける。 */
+  private applyEffect(effect: Effect, id: number): void {
+    if (effect === 'slip') {
+      this.slip = 1.6;
+      this.speedMul = Math.min(this.speedMul, 0.7);
+      this.events.push({ kind: 'slip', id });
+    } else if (effect === 'slow') {
+      this.speedMul = Math.min(this.speedMul, 0.6);
+      this.events.push({ kind: 'slow', id });
+    } else if (effect === 'ice') {
+      this.ice = 1.4;
+      this.events.push({ kind: 'slide', id });
+    } else {
+      this.damage('hit', id);
+    }
+  }
+
   private collide(): void {
+    // 突進する動物は、プレイヤーが近づいたら動き出す
+    for (const o of this.chargers) {
+      if (!this.chargeT.has(o.id) && o.s - this.s < (o.trig ?? 38)) this.chargeT.set(o.id, this.t);
+    }
     for (const o of this.course.obstacles) {
-      if (o.s > this.s + 3 + o.len) break; // s 昇順の前提
-      if (o.s + o.len < this.s - 3) continue;
+      // 突進するもの以外は、ずっと同じ位置なので、遠いものは調べない
+      if (o.behavior !== 'charge' && (o.s > this.s + 3 + o.len || o.s + o.len < this.s - 3)) continue;
       if (o.kind === 'hole') {
         // 着地している間だけ落ちる(端は少し大目に見る)
         if (this.y === 0 && this.s > o.s + 0.5 && this.s < o.s + o.len - 0.5) {
@@ -167,31 +202,21 @@ export class Run {
       if (this.y >= o.height) continue;
       if (this.touches(o)) {
         this.consumed.add(o.id);
-        if (o.kind === 'poop') {
-          this.slip = 1.6;
-          this.speedMul = Math.min(this.speedMul, 0.7);
-          this.events.push({ kind: 'slip', id: o.id });
-        } else if (o.kind === 'puddle') {
-          this.speedMul = Math.min(this.speedMul, 0.6);
-          this.events.push({ kind: 'slow', id: o.id });
-        } else if (o.kind === 'ice') {
-          this.ice = 1.4;
-          this.events.push({ kind: 'slide', id: o.id });
-        } else {
-          this.damage('hit');
-        }
+        const effect: Effect = o.kind === 'poop' ? 'slip' : o.kind === 'puddle' ? 'slow' : o.kind === 'ice' ? 'ice' : o.kind === 'critter' ? (o.effect ?? 'damage') : 'damage';
+        this.applyEffect(effect, o.id);
       }
     }
   }
 
   private touches(o: Obstacle): boolean {
-    const ds = Math.abs(o.s - this.s);
     if (o.kind === 'fence') {
-      return ds < HIT_RADIUS.fence + PLAYER_RADIUS * 0.6 && Math.abs(this.x - o.x) < o.halfW + PLAYER_RADIUS * 0.6;
+      return Math.abs(o.s - this.s) < HIT_RADIUS.fence + PLAYER_RADIUS * 0.6 && Math.abs(this.x - o.x) < o.halfW + PLAYER_RADIUS * 0.6;
     }
-    const ox = obstacleState(o, this.t).x;
-    const r = HIT_RADIUS[o.kind] + PLAYER_RADIUS;
-    const dx = ox - this.x;
+    const st = this.stateOf(o);
+    if (st.y > 0.5) return false; // 跳ねて、浮いている間は、下を通れる
+    const ds = Math.abs(st.s - this.s);
+    const r = obstacleRadius(o) + PLAYER_RADIUS;
+    const dx = st.x - this.x;
     return dx * dx + ds * ds < r * r;
   }
 

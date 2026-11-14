@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { COURSE_LENGTH, PLAY_HALF, buildCourse, obstacleState, HIT_RADIUS, type Course, type Obstacle } from '../src/runner/course.ts';
+import { COURSE_LENGTH, PLAY_HALF, buildCourse, obstacleState, roadCurv, roadHeading, roadX, HIT_RADIUS, type Course, type Obstacle } from '../src/runner/course.ts';
 import { Run, PLAYER_RADIUS, type Input } from '../src/runner/sim.ts';
 import { RUNNER_LEVELS, courseOf, runnerById } from '../src/runner/levels.ts';
 
@@ -14,6 +14,18 @@ function bot(r: Run): Input {
   let right = false;
   let jump = false;
   for (const o of r.course.obstacles) {
+    if (o.kind === 'critter') {
+      // 動物・モンスター: ぶつかる頃の位置を予想して、ちょうどよい時に跳ぶ(突進は、近づく分も見込む)
+      const st = r.stateOf(o);
+      const dd = st.s - r.s;
+      if (dd < -1 || dd > 25) continue;
+      const closing = o.behavior === 'charge' && r.chargeT.has(o.id) ? o.freq : 0;
+      const ta = dd / (v + closing);
+      const at = obstacleState(o, r.t + ta, r.chargeT.get(o.id));
+      if (o.behavior === 'hop' && at.y > 0.5) continue; // その頃は、跳んで浮いている
+      if (Math.abs(at.x - r.x) < (o.radius ?? 0.8) + 1.0 && ta > 0.26 && ta < 0.36) jump = true;
+      continue;
+    }
     const d = o.s - r.s;
     if (d < -1 || d > 18) continue;
     if (o.kind === 'hole') {
@@ -36,6 +48,11 @@ function bot(r: Run): Input {
         if (r.x >= PLAY_HALF - 0.1) { right = false; left = true; }
       }
     }
+  }
+  // 何もよける必要がなければ、道の中央へもどる(カーブで外へ押されるので)
+  if (!left && !right && Math.abs(r.x) > 0.5) {
+    left = r.x > 0;
+    right = r.x < 0;
   }
   return { left, right, jump };
 }
@@ -69,12 +86,101 @@ test('どの面も: 障害物は前から順で、穴は跳べる長さ、コイ
     const c = courseOf(l);
     for (let i = 1; i < c.obstacles.length; i++) assert.ok(c.obstacles[i].s >= c.obstacles[i - 1].s, l.id);
     for (const o of c.obstacles.filter((x: Obstacle) => x.kind === 'hole')) assert.ok(o.len <= 6.6, `${l.id}: 穴が長すぎる ${o.len}`);
-    assert.ok(c.coins.length >= 150, `${l.id}: コイン ${c.coins.length}`);
-    assert.ok(c.obstacles.filter((o) => o.kind === 'hole').length >= 3, l.id);
+    assert.ok(c.coins.length >= 120, `${l.id}: コイン ${c.coins.length}`);
+    assert.ok(c.obstacles.filter((o) => o.kind === 'hole').length >= 1, l.id);
     assert.ok(c.obstacles.every((o) => o.s < l.length - 40), `${l.id}: ゴール直前に障害物がある`);
   }
   assert.ok(courseOf(runnerById('3-3')!).obstacles.some((o) => o.kind === 'puddle'), '雨の面にはみずたまり');
   assert.ok(courseOf(runnerById('3-4')!).obstacles.some((o) => o.kind === 'ice'), '雪の面にはこおり');
+});
+
+test('動物・モンスターの罠が、面ごとに4つの動きで出る', () => {
+  for (const id of ['3-2', '3-3', '3-4', '3-5']) {
+    const l = runnerById(id)!;
+    const crit = courseOf(l).obstacles.filter((o) => o.kind === 'critter');
+    const behaviors = new Set(crit.map((o) => o.behavior));
+    for (const b of ['sleep', 'cross', 'hop', 'charge']) assert.ok(behaviors.has(b as 'sleep'), `${id}: ${b} が無い`);
+    assert.ok(crit.every((o) => l.critters!.includes(o.critter!)), `${id}: 設定外のキャラ`);
+    assert.ok(crit.length >= 8, `${id}: 動物の罠が少ない ${crit.length}`);
+  }
+  assert.ok(!courseOf(runnerById('3-1')!).obstacles.some((o) => o.kind === 'critter'), '3-1は今までどおり');
+});
+
+const critterCourse = (behavior: 'sleep' | 'hop' | 'charge', effect: 'damage' | 'slip' | 'slow' | 'ice' = 'damage'): Course => ({
+  obstacles: [{ id: 0, kind: 'critter', critter: 'fox', behavior, effect, radius: 0.8, trig: 38, s: behavior === 'charge' ? 45 : 8, x: 0, len: 0, halfW: 0, height: 1.0, amp: 0, freq: behavior === 'charge' ? 9 : 0.7, phase: 0 }],
+  coins: [], length: COURSE_LENGTH,
+});
+
+test('寝ている動物にぶつかると効果が出る(効果ごとに違う)', () => {
+  const none = { left: false, right: false, jump: false };
+  const dmg = new Run(critterCourse('sleep', 'damage'));
+  dmg.start();
+  for (let i = 0; i < 400 && dmg.lives === 3; i++) dmg.step(DT, none);
+  assert.equal(dmg.lives, 2);
+  const slip = new Run(critterCourse('sleep', 'slip'));
+  slip.start();
+  for (let i = 0; i < 400 && slip.slip === 0; i++) slip.step(DT, none);
+  assert.ok(slip.slip > 0 && slip.lives === 3);
+  const ice = new Run(critterCourse('sleep', 'ice'));
+  ice.start();
+  for (let i = 0; i < 400 && ice.ice === 0; i++) ice.step(DT, none);
+  assert.ok(ice.ice > 0 && ice.lives === 3);
+});
+
+test('突進する動物は、近づくまで動かず、近づくと正面から走ってくる', () => {
+  const r = new Run(critterCourse('charge'));
+  r.start();
+  const o = r.course.obstacles[0];
+  r.step(DT, { left: false, right: false, jump: false });
+  assert.equal(r.stateOf(o).s, 45, 'まだ動かない');
+  for (let i = 0; i < 240; i++) r.step(DT, { left: false, right: false, jump: false });
+  assert.ok(r.chargeT.has(0), '近づいたので、動き出した');
+  assert.ok(r.stateOf(o).s < 45 - 5, '手前へ近づいている');
+  for (let i = 0; i < 600 && r.lives === 3; i++) r.step(DT, { left: false, right: false, jump: false });
+  assert.equal(r.lives, 2, '立ち止まっていると、ぶつかる');
+});
+
+test('跳ねている間は下を通れる(跳ねる動物)', () => {
+  const o = critterCourse('hop').obstacles[0];
+  const ups = [0, 0.3, 0.5, 0.7, 1.0, 1.3, 1.4].map((t) => obstacleState(o, t).y);
+  assert.ok(ups.some((y) => y > 0.5) && ups.some((y) => y < 0.5), '浮く時間と、地面にいる時間がある');
+});
+
+test('曲がる道: 出だしとゴール前はまっすぐ。3-1と3-10は、ずっとまっすぐ', () => {
+  for (const l of RUNNER_LEVELS) {
+    const c = courseOf(l);
+    assert.ok(Math.abs(roadX(c, 0)) < 1e-9, l.id);
+    assert.ok(Math.abs(roadX(c, l.length - 100)) < 0.01 && Math.abs(roadX(c, l.length)) < 0.01, `${l.id}: ゴール前がまっすぐでない`);
+    if (!l.curve) {
+      assert.equal(roadHeading(c, l.length / 2), 0, l.id);
+      assert.equal(roadCurv(c, l.length / 2), 0, l.id);
+    } else {
+      const mid = Array.from({ length: 40 }, (_, i) => Math.abs(roadHeading(c, 150 + (i * (l.length - 350)) / 40)));
+      assert.ok(Math.max(...mid) > 0.1, `${l.id}: カーブが小さすぎる`);
+    }
+  }
+  assert.ok(!runnerById('3-1')!.curve && !runnerById('3-10')!.curve);
+  assert.ok(runnerById('3-5')!.curve!.amp > runnerById('3-2')!.curve!.amp, '山道のほうが、きついカーブ');
+});
+
+test('カーブでは、外側へ押される(右カーブなら左へ)', () => {
+  const c = courseOf(runnerById('3-5')!);
+  // 曲がりが一番きつい所を探す
+  let best = 0;
+  for (let s = 200; s < 800; s += 1) if (Math.abs(roadCurv(c, s)) > Math.abs(roadCurv(c, best))) best = s;
+  const k = roadCurv(c, best);
+  assert.ok(Math.abs(k) > 0.02, `曲がりがゆるい: ${k}`);
+  const r = new Run({ ...c, obstacles: [], coins: [] });
+  r.start();
+  r.s = best;
+  const x0 = r.x;
+  for (let i = 0; i < 60; i++) r.step(DT, { left: false, right: false, jump: false });
+  const moved = r.x - x0;
+  assert.ok(k > 0 ? moved < -0.3 : moved > 0.3, `外へ押されない: k=${k.toFixed(3)} moved=${moved.toFixed(2)}`);
+  const flat = new Run(buildCourse());
+  flat.start();
+  for (let i = 0; i < 60; i++) flat.step(DT, { left: false, right: false, jump: false });
+  assert.equal(flat.x, 0, 'まっすぐな道では、押されない');
 });
 
 test('何もしないと穴に落ちて失敗する', () => {

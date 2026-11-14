@@ -2,7 +2,8 @@
 // 面ごとの空・光・天候・景色は RunnerLevel.theme で切り替える。
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import { GOAL_GAP, ROAD_HALF, obstacleState, type Course, type Obstacle } from './course.ts';
+import { GOAL_GAP, ROAD_HALF, roadHeading, roadX, type Course, type Obstacle } from './course.ts';
+import { CRITTERS, type CritterDef } from './critters.ts';
 import type { RunnerLevel, Theme } from './levels.ts';
 import type { Run } from './sim.ts';
 
@@ -147,12 +148,14 @@ export class KasugaView {
   private camera: THREE.PerspectiveCamera;
   private sun: THREE.DirectionalLight;
   private headlight?: THREE.PointLight;
+  private footGlow?: THREE.Mesh;
   private deer: THREE.Mesh;
   private deerShadow: THREE.Mesh;
   private runTex: THREE.Texture[] = [];
   private coinDisc!: THREE.InstancedMesh;
   private coinRim!: THREE.InstancedMesh;
-  private obstacleObjs: { o: Obstacle; obj: THREE.Object3D; spin?: THREE.Object3D; sprite?: THREE.Mesh }[] = [];
+  private obstacleObjs: { o: Obstacle; obj: THREE.Object3D; spin?: THREE.Object3D; sprite?: THREE.Mesh; crit?: { def: CritterDef; tex: Record<'normal' | 'angry' | 'sleep' | 'dizzy', THREE.Texture>; pose: string } }[] = [];
+  private critterTex = new Map<string, THREE.Texture>();
   private walkTex: Record<string, THREE.Texture[]> = {};
   private lastCoinState: Uint8Array;
   private shake = 0;
@@ -205,19 +208,28 @@ export class KasugaView {
     this.scene.add(this.sun, this.sun.target);
     if (theme.night) {
       // 鹿の前を、ぼんやり照らす灯り
-      this.headlight = new THREE.PointLight(0xffd9a0, 70, 22, 1.5);
+      this.headlight = new THREE.PointLight(0xffd9a0, 85, 16, 1.4);
       this.scene.add(this.headlight);
+      // 足元の、ぼんやりした光の輪
+      const tex = glowTexture();
+      this.disposables.push(tex);
+      this.footGlow = new THREE.Mesh(
+        new THREE.PlaneGeometry(13, 13).rotateX(-Math.PI / 2),
+        new THREE.MeshBasicMaterial({ map: tex, color: 0xffd9a0, transparent: true, opacity: 0.26, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }),
+      );
+      this.scene.add(this.footGlow);
     }
 
     this.buildGround();
-    if (theme.setting === 'sando') {
-      this.buildSandoScenery();
-      this.buildTorii();
-    } else {
+    if (theme.setting === 'town') {
       this.buildTownScenery();
+    } else {
+      this.buildSandoScenery(); // 山道も、灯籠・鳥居をのぞいて同じ木々
+      if (theme.setting === 'sando') this.buildTorii();
     }
     if (theme.goal === 'shrine') this.buildShrine();
-    else this.buildBay();
+    else if (theme.goal === 'bay') this.buildBay();
+    else this.buildSummit();
     this.buildObstacles();
     this.buildCoins();
     this.buildWeather();
@@ -245,6 +257,45 @@ export class KasugaView {
     this.resize();
   }
 
+  /** 距離 s・道の中心から右へ x の位置を、世界の座標にする(曲がる道に沿う)。psi=道の向き */
+  private roadW(s: number, x = 0): { x: number; z: number; psi: number } {
+    const psi = roadHeading(this.course, s);
+    return { x: roadX(this.course, s) + x * Math.cos(psi), z: -s + x * Math.sin(psi), psi };
+  }
+
+  /** 道に沿った、置き物の位置と向き(rotY は、道の向きに足す)。 */
+  private rp(s: number, x: number, o: { y?: number; rotY?: number; scale?: number } = {}): Placement {
+    const w = this.roadW(s, x);
+    return { x: w.x, z: w.z, y: o.y, rotY: -w.psi + (o.rotY ?? 0), scale: o.scale };
+  }
+
+  /** 道の面(中心線に沿って曲がる帯)。 */
+  private roadRibbon(a: number, b: number, width: number, mat: THREE.Material): THREE.Mesh {
+    const n = Math.max(1, Math.ceil((b - a) / 2));
+    const pos: number[] = [];
+    const uv: number[] = [];
+    const idx: number[] = [];
+    for (let i = 0; i <= n; i++) {
+      const s = a + ((b - a) * i) / n;
+      const l = this.roadW(s, -width / 2);
+      const r = this.roadW(s, width / 2);
+      pos.push(l.x, 0, l.z, r.x, 0, r.z);
+      uv.push(0, s / 4, width / 4, s / 4);
+      if (i < n) {
+        const k = i * 2;
+        idx.push(k, k + 1, k + 2, k + 1, k + 3, k + 2);
+      }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    g.setIndex(idx);
+    g.computeVertexNormals();
+    const m = new THREE.Mesh(g, mat);
+    m.receiveShadow = true;
+    return m;
+  }
+
   // ---- 地面 ----
   private buildGround(): void {
     const th = this.theme;
@@ -265,57 +316,47 @@ export class KasugaView {
     spans.push([cur, pierEnd]);
     const w = ROAD_HALF * 2;
     const dash: Placement[] = [];
+    const curbs: Placement[] = [];
     for (const [a, b] of spans) {
-      const len = b - a;
-      const g = new THREE.PlaneGeometry(w, len);
-      const uv = g.attributes.uv;
-      for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * (w / 4), uv.getY(i) * (len / 4));
-      const road = new THREE.Mesh(g, matRoad);
-      road.rotation.x = -Math.PI / 2;
-      road.position.set(0, 0, -(a + b) / 2);
-      road.receiveShadow = true;
-      this.scene.add(road);
-      for (const sx of [-1, 1]) {
-        const curb = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.22, len), matCurb);
-        curb.position.set(sx * (ROAD_HALF + 0.2), 0.11, -(a + b) / 2);
-        curb.receiveShadow = true;
-        curb.castShadow = true;
-        this.scene.add(curb);
-      }
-      if (th.setting === 'town') for (let s = Math.ceil(a / 6) * 6; s < b - 2.5; s += 6) dash.push({ x: 0, y: 0.015, z: -(s + 1.2) });
+      this.scene.add(this.roadRibbon(a, b, w, matRoad));
+      // 縁石(2mごとの短い石)
+      if (th.setting !== 'mountain') for (let q = Math.ceil(a / 2) * 2; q + 2 <= b + 0.01; q += 2) for (const sx of [-1, 1]) curbs.push(this.rp(q + 1, sx * (ROAD_HALF + 0.2)));
+      if (th.setting === 'town') for (let q = Math.ceil(a / 6) * 6; q < b - 2.5; q += 6) dash.push(this.rp(q + 1.2, 0, { y: 0.015 }));
     }
+    addInstanced(this.scene, [{ geo: new THREE.BoxGeometry(0.4, 0.22, 2.08), mat: matCurb, pos: [0, 0.11, 0] }], curbs);
     if (dash.length) {
       addInstanced(this.scene, [{ geo: new THREE.BoxGeometry(0.22, 0.02, 2.6), mat: new THREE.MeshStandardMaterial({ color: 0xf4efe0, roughness: 0.7 }) }], dash, false);
     }
-    // 両側の芝(ゴールが海なら、岸まで)
+    // 地面の芝(曲がる道でも足りるよう、広い1枚。ゴールが海なら、岸まで)
     const grassEnd = th.goal === 'bay' ? pierEnd : this.end + 330;
     const L = grassEnd + 40;
-    const gs = 90;
-    for (const sx of [-1, 1]) {
-      const g = new THREE.PlaneGeometry(gs, L);
-      const uv = g.attributes.uv;
-      for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * (gs / 6), uv.getY(i) * (L / 6));
-      const m = new THREE.Mesh(g, matGrass);
-      m.rotation.x = -Math.PI / 2;
-      m.position.set(sx * (ROAD_HALF + 0.4 + gs / 2), -0.02, -(L / 2 - 40));
-      m.receiveShadow = true;
-      this.scene.add(m);
-    }
+    const gw = 1400;
+    const gg = new THREE.PlaneGeometry(gw, L + 600);
+    const uv = gg.attributes.uv;
+    for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * (gw / 6), uv.getY(i) * ((L + 600) / 6));
+    const ground = new THREE.Mesh(gg, matGrass);
+    ground.rotation.x = -Math.PI / 2;
+    ground.position.set(0, -0.02, -(L / 2 - 40) + (th.goal === 'bay' ? 0 : 0));
+    ground.receiveShadow = true;
+    this.scene.add(ground);
     // 穴(のぞくと深い)
     const pitMat = new THREE.MeshStandardMaterial({ color: 0x2a1e16, roughness: 1, side: THREE.BackSide });
     const pylonMat = new THREE.MeshStandardMaterial({ color: 0xff6a2a, roughness: 0.5, emissive: 0x401400 });
     const stripe = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5 });
     for (const h of holes) {
       const pit = new THREE.Mesh(new THREE.BoxGeometry(w + 0.8, 4, h.len), pitMat);
-      pit.position.set(0, -2, -(h.s + h.len / 2));
+      const pw = this.roadW(h.s + h.len / 2, 0);
+      pit.position.set(pw.x, -2, pw.z);
+      pit.rotation.y = -pw.psi;
       this.scene.add(pit);
       for (const sx of [-1, 1]) {
         for (const zz of [h.s - 1.4, h.s + h.len + 1.4]) {
+          const cw = this.roadW(zz, sx * (ROAD_HALF - 0.5));
           const cone = new THREE.Mesh(new THREE.ConeGeometry(0.33, 0.9, 14), pylonMat);
-          cone.position.set(sx * (ROAD_HALF - 0.5), 0.45, -zz);
+          cone.position.set(cw.x, 0.45, cw.z);
           cone.castShadow = true;
           const band = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.25, 0.14, 14), stripe);
-          band.position.set(sx * (ROAD_HALF - 0.5), 0.5, -zz);
+          band.position.set(cw.x, 0.5, cw.z);
           this.scene.add(cone, band);
         }
       }
@@ -338,10 +379,12 @@ export class KasugaView {
     ];
     const lp: Placement[] = [];
     for (let s = 10; s < this.end - 8; s += 13) {
-      for (const sx of [-1, 1]) lp.push({ x: sx * (ROAD_HALF + 1.5), z: -s, rotY: Math.PI / 4, scale: 1.3 });
+      for (const sx of [-1, 1]) lp.push(this.rp(s, sx * (ROAD_HALF + 1.5), { rotY: Math.PI / 4, scale: 1.3 }));
     }
-    addInstanced(this.scene, lanternParts, lp);
-    if (th.halo > 0) this.addHalos(lp.map((p) => new THREE.Vector3(p.x, 2.0, p.z)), 0xffb450, 3.6 * th.halo + 1.2, Math.min(1, th.halo));
+    if (th.setting === 'sando') {
+      addInstanced(this.scene, lanternParts, lp);
+      if (th.halo > 0) this.addHalos(lp.map((p) => new THREE.Vector3(p.x, 2.0, p.z)), 0xffb450, 3.6 * th.halo + 1.2, Math.min(1, th.halo));
+    }
 
     // 杉(根もと・3段の葉)
     const trunk = new THREE.MeshStandardMaterial({ color: 0x6b4a2e, roughness: 1 });
@@ -367,8 +410,8 @@ export class KasugaView {
       for (const sx of [-1, 1]) {
         if (rnd() < 0.18) continue;
         const near = 8 + rnd() * 6;
-        tp.push({ x: sx * near, z: -(s + rnd() * 3), scale: 0.8 + rnd() * 0.7, rotY: rnd() * 6 });
-        if (rnd() < 0.5) tp.push({ x: sx * (near + 9 + rnd() * 14), z: -(s + rnd() * 4), scale: 1 + rnd() * 0.9, rotY: rnd() * 6 });
+        tp.push(this.rp(s + rnd() * 3, sx * near, { scale: 0.8 + rnd() * 0.7, rotY: rnd() * 6 }));
+        if (rnd() < 0.5) tp.push(this.rp(s + rnd() * 4, sx * (near + 9 + rnd() * 14), { scale: 1 + rnd() * 0.9, rotY: rnd() * 6 }));
       }
     }
     addInstanced(this.scene, treeParts, tp);
@@ -376,7 +419,7 @@ export class KasugaView {
     const bushMat = new THREE.MeshStandardMaterial({ color: th.snowCaps ? 0xe9f1f7 : 0x4f9446, roughness: 1 });
     const bp: Placement[] = [];
     for (let s = 0; s < this.end; s += 7) {
-      for (const sx of [-1, 1]) if (rnd() < 0.7) bp.push({ x: sx * (ROAD_HALF + 3 + rnd() * 3), z: -(s + rnd() * 6), scale: 0.6 + rnd() * 0.6 });
+      for (const sx of [-1, 1]) if (rnd() < 0.7) bp.push(this.rp(s + rnd() * 6, sx * (ROAD_HALF + 3 + rnd() * 3), { scale: 0.6 + rnd() * 0.6 }));
     }
     addInstanced(this.scene, [{ geo: new THREE.SphereGeometry(1, 10, 8), mat: bushMat, pos: [0, 0.6, 0] }], bp);
   }
@@ -407,11 +450,14 @@ export class KasugaView {
     const lp: Placement[] = [];
     const halos: THREE.Vector3[] = [];
     for (let s = 8; s < this.course.length + 40; s += 22) {
-      lp.push({ x: -(ROAD_HALF + 1.2), z: -s, rotY: 0 });
-      lp.push({ x: ROAD_HALF + 1.2, z: -(s + 11), rotY: Math.PI });
+      lp.push(this.rp(s, -(ROAD_HALF + 1.2)));
+      lp.push(this.rp(s + 11, ROAD_HALF + 1.2, { rotY: Math.PI }));
+      // 灯りの位置は、街灯の腕の先(道の内側へ1.35m)
+      const h1 = this.roadW(s, -(ROAD_HALF + 1.2) + 1.35);
+      const h2 = this.roadW(s + 11, ROAD_HALF + 1.2 - 1.35);
+      halos.push(new THREE.Vector3(h1.x, 6.25, h1.z), new THREE.Vector3(h2.x, 6.25, h2.z));
     }
     addInstanced(this.scene, lampParts, lp);
-    for (const p of lp) halos.push(new THREE.Vector3(p.x + (p.rotY ? -1.35 : 1.35), 6.25, p.z));
     if (th.halo > 0) this.addHalos(halos, 0xffc070, 4.2, Math.min(1, th.halo));
 
     // 並木(丸い木)
@@ -419,7 +465,7 @@ export class KasugaView {
     const leaf = new THREE.MeshStandardMaterial({ color: 0x55803a, roughness: 0.95, flatShading: true });
     const tp: Placement[] = [];
     for (let s = 0; s < this.course.length + 40; s += 9) {
-      for (const sx of [-1, 1]) if (rnd() < 0.75) tp.push({ x: sx * (ROAD_HALF + 2.6 + rnd() * 1.4), z: -(s + rnd() * 4), scale: 0.7 + rnd() * 0.5 });
+      for (const sx of [-1, 1]) if (rnd() < 0.75) tp.push(this.rp(s + rnd() * 4, sx * (ROAD_HALF + 2.6 + rnd() * 1.4), { scale: 0.7 + rnd() * 0.5 }));
     }
     addInstanced(this.scene, [
       { geo: new THREE.CylinderGeometry(0.2, 0.28, 2.4, 8), mat: trunk, pos: [0, 1.2, 0] },
@@ -457,7 +503,7 @@ export class KasugaView {
           const nearEnd = s > this.course.length - 80;
           if (nearEnd && rnd() < 0.85) continue; // 海が見えるよう、ゴール近くは開ける
           const x = sx * (ROAD_HALF + 8 + t.w / 2 + rnd() * 22);
-          places.push({ x, y: t.h / 2, z: -(s + rnd() * 9) });
+          places.push(this.rp(s + rnd() * 9, x, { y: t.h / 2 }));
         }
       }
       addInstanced(this.scene, [{ geo, mat }], places);
@@ -487,7 +533,9 @@ export class KasugaView {
     top.position.set(0, 7.9, 0);
     for (const m of [nuki, shimaki, kasagi, top]) m.castShadow = true;
     g.add(nuki, shimaki, kasagi, top);
-    g.position.z = -z;
+    const tw = this.roadW(z, 0);
+    g.position.set(tw.x, 0, tw.z);
+    g.rotation.y = -tw.psi;
     g.scale.setScalar(scale);
     return g;
   }
@@ -690,6 +738,47 @@ export class KasugaView {
     addInstanced(this.scene, [{ geo: new THREE.CylinderGeometry(0.1, 0.1, 1.1, 8), mat: rail, pos: [0, 0.55, 0] }], posts);
   }
 
+  // ---- 若草山の山頂: 木のゴールゲート・山なみ ----
+  private buildSummit(): void {
+    const L = this.course.length;
+    const wood = new THREE.MeshStandardMaterial({ color: 0x9b6a3c, roughness: 0.85 });
+    const woodDark = new THREE.MeshStandardMaterial({ color: 0x6d4524, roughness: 0.9 });
+    const gate = new THREE.Group();
+    for (const sx of [-1, 1]) {
+      const p = new THREE.Mesh(new THREE.BoxGeometry(1.1, 9, 1.1), wood);
+      p.position.set(sx * 5.4, 4.5, 0);
+      p.castShadow = true;
+      gate.add(p);
+    }
+    const beam = new THREE.Mesh(new THREE.BoxGeometry(13.4, 2.4, 1.0), woodDark);
+    beam.position.set(0, 9.4, 0);
+    beam.castShadow = true;
+    gate.add(beam);
+    const banner = new THREE.Mesh(
+      new THREE.PlaneGeometry(12, 2.0),
+      new THREE.MeshBasicMaterial({ map: this.bannerTexture(this.level.goalName), transparent: true, toneMapped: false }),
+    );
+    banner.position.set(0, 9.4, 0.52);
+    gate.add(banner);
+    gate.position.z = -L;
+    gate.scale.setScalar(1.15);
+    this.scene.add(gate);
+    // 山頂の先に、重なる山なみ(遠いほど、うすい)
+    for (let i = 0; i < 16; i++) {
+      const layer = i % 3;
+      const mat = new THREE.MeshStandardMaterial({ color: [0x5f8f5a, 0x7fa87a, 0xa6c5a3][layer], roughness: 1, flatShading: true });
+      const h = 38 + ((i * 29) % 40) + layer * 10;
+      const m = new THREE.Mesh(new THREE.ConeGeometry(70 + (i % 4) * 18, h, 7), mat);
+      m.position.set(-420 + i * 56, h / 2 - 3, -(L + 230 + layer * 70));
+      this.scene.add(m);
+    }
+    // 山頂の目印の石
+    const stone = new THREE.Mesh(new THREE.DodecahedronGeometry(2.6, 0), new THREE.MeshStandardMaterial({ color: 0x9a968c, roughness: 0.95, flatShading: true }));
+    stone.position.set(-8, 2, -(L + 14));
+    stone.castShadow = true;
+    this.scene.add(stone);
+  }
+
   private glintTexture(): THREE.CanvasTexture {
     return canvasTexture(128, (g, n) => {
       const grd = g.createLinearGradient(0, 0, n, 0);
@@ -837,10 +926,44 @@ export class KasugaView {
           obj.add(crack);
         }
       }
-      obj.position.set(o.x, 0, -o.s);
+      let crit: { def: CritterDef; tex: Record<'normal' | 'angry' | 'sleep' | 'dizzy', THREE.Texture>; pose: string } | undefined;
+      if (o.kind === 'critter' && o.critter) {
+        const def = CRITTERS[o.critter];
+        const t = (n: number) => this.loadCritterTex(o.critter!, n);
+        const tex = { normal: t(def.pose.normal), angry: t(def.pose.angry), sleep: t(def.pose.sleep), dizzy: t(def.pose.dizzy) };
+        const m = new THREE.Mesh(
+          new THREE.PlaneGeometry(1, 1).translate(0, 0.5, 0),
+          new THREE.MeshBasicMaterial({ map: tex.normal, transparent: true, alphaTest: 0.45, toneMapped: false }),
+        );
+        (m.material as THREE.MeshBasicMaterial).color.setScalar(this.theme.night ? 0.8 : this.theme.weather === 'rain' ? 0.94 : 1);
+        m.scale.set(def.size, def.size, 1);
+        sprite = m;
+        obj.add(m);
+        const sh = new THREE.Mesh(
+          new THREE.CircleGeometry(def.r, 20).rotateX(-Math.PI / 2),
+          new THREE.MeshBasicMaterial({ color: 0x1a2a14, transparent: true, opacity: 0.3, depthWrite: false }),
+        );
+        sh.position.y = 0.02;
+        obj.add(sh);
+        crit = { def, tex, pose: 'normal' };
+      }
+      const ow = this.roadW(o.s, o.x);
+      obj.position.set(ow.x, 0, ow.z);
+      obj.rotation.y = -ow.psi;
       this.scene.add(obj);
-      this.obstacleObjs.push({ o, obj, spin, sprite });
+      this.obstacleObjs.push({ o, obj, spin, sprite, crit });
     }
+  }
+
+  /** 動物・モンスターの、ポーズごとの絵(同じ絵は1回だけ読み込む)。 */
+  private loadCritterTex(key: string, pose: number): THREE.Texture {
+    const id = `${key}_${pose}`;
+    let t = this.critterTex.get(id);
+    if (!t) {
+      t = loadTex(`${ASSET}/runner/critters/${id}.png`);
+      this.critterTex.set(id, t);
+    }
+    return t;
   }
 
   // ---- コイン ----
@@ -894,9 +1017,14 @@ export class KasugaView {
     const { pos, n, rain, seed } = wd;
     const cx = this.camera.position.x;
     const cz = this.camera.position.z;
+    const cs = Math.cos(this.camPsi);
+    const sn = Math.sin(this.camPsi);
     for (let i = 0; i < n; i++) {
-      const sx = seed[i * 4];
-      const sz = seed[i * 4 + 2];
+      const lx = seed[i * 4];
+      const lz = seed[i * 4 + 2];
+      // 道の向きに合わせて回した、カメラからの位置
+      const sx = lx * cs - lz * sn;
+      const sz = lx * sn + lz * cs;
       const r = seed[i * 4 + 3];
       if (rain) {
         // 速く落ちて地面でもどる(カメラのまわりに降り続ける)
@@ -939,6 +1067,7 @@ export class KasugaView {
   private tmpP = new THREE.Vector3();
   private tmpE = new THREE.Euler();
   private clock = 0;
+  private camPsi = 0; // いまの道の向き(カメラの向き)
 
   render(run: Run, dt: number): void {
     const t = run.t;
@@ -947,21 +1076,23 @@ export class KasugaView {
     const pz = -run.s;
     const waving = run.phase === 'cleared' ? Math.sin(t * 9) * 0.06 : 0;
 
-    // 鹿
+    // 鹿(道の中心から x の位置。道の向きに合わせて、カメラのほうを向く)
+    const wd = this.roadW(run.s, px);
+    this.camPsi = wd.psi;
     const frame = run.airborne ? 1 : Math.floor(run.stride / 0.85) % 4;
     const mat = this.deer.material as THREE.MeshBasicMaterial;
     if (mat.map !== this.runTex[frame]) mat.map = this.runTex[frame];
     const bob = run.airborne ? 0 : Math.abs(Math.sin(run.stride * 1.9)) * 0.1;
-    this.deer.position.set(px, run.y + bob, pz);
-    this.deer.rotation.z = -run.vx * 0.022 + waving;
+    this.deer.position.set(wd.x, run.y + bob, wd.z);
+    this.deer.rotation.set(0, -wd.psi, -run.vx * 0.022 + waving, 'YXZ');
     const squash = run.airborne ? 1 + Math.min(0.1, run.y * 0.04) : 1;
     this.deer.scale.set(1 / squash, squash, 1);
     this.deer.visible = run.invuln > 0 ? Math.floor(t * 16) % 2 === 0 : true;
-    this.deerShadow.position.set(px, 0.03, pz);
+    this.deerShadow.position.set(wd.x, 0.03, wd.z);
     const ss = Math.max(0.5, 1 - run.y * 0.18);
     this.deerShadow.scale.set(ss, 1, ss);
 
-    // カメラ(鹿の少しうしろ・上から。左右はゆるく追う)
+    // カメラ(鹿の少しうしろ・上から。道に沿って曲がり、左右はゆるく追う)
     this.camX += (px * 0.72 - this.camX) * Math.min(1, dt * 6);
     let sx = 0;
     let sy = 0;
@@ -974,15 +1105,26 @@ export class KasugaView {
     // クリア後は少し引いて、ゴールの景色の全体が見えるようにする
     this.cine += ((run.phase === 'cleared' ? 1 : 0) - this.cine) * Math.min(1, dt * 1.6);
     const c = this.cine;
-    this.camera.position.set(this.camX + sx, 3.5 + lift + sy + c * 2.2, pz + 6.4 + c * 3.2);
-    this.camera.lookAt(this.camX * 0.95, 1.5 + lift * 0.5 + c * 2.6, pz - 9 - c * 14);
+    const back = this.roadW(run.s - (6.4 + c * 3.2), this.camX + sx);
+    const ahead = this.roadW(run.s + 9 + c * 14, this.camX * 0.95);
+    this.camera.position.set(back.x, 3.5 + lift + sy + c * 2.2, back.z);
+    this.camera.lookAt(ahead.x, 1.5 + lift * 0.5 + c * 2.6, ahead.z);
 
     // 太陽(月)の影は鹿のまわりだけ
     const sp = this.theme.sunPos;
-    this.sun.position.set(px + sp[0], sp[1], pz + sp[2]);
-    this.sun.target.position.set(px, 0, pz - 6);
+    this.sun.position.set(wd.x + sp[0], sp[1], wd.z + sp[2]);
+    const tw = this.roadW(run.s + 6, px);
+    this.sun.target.position.set(tw.x, 0, tw.z);
     this.sun.target.updateMatrixWorld();
-    this.headlight?.position.set(px, 2.6, pz - 4);
+    if (this.headlight) {
+      const hw = this.roadW(run.s + 4, px);
+      this.headlight.position.set(hw.x, 3.4, hw.z);
+    }
+    if (this.footGlow) {
+      const gw = this.roadW(run.s + 3.2, px);
+      this.footGlow.position.set(gw.x, 0.05, gw.z);
+      this.footGlow.rotation.y = -gw.psi;
+    }
 
     // コイン
     const coins = this.course.coins;
@@ -995,7 +1137,8 @@ export class KasugaView {
       this.lastCoinState[i] = alive ? 1 : 0;
       const k = alive ? 1 : 0;
       this.tmpQ.setFromEuler(this.tmpE.set(0, spin + i * 0.7, 0));
-      this.tmpM.compose(this.tmpP.set(cn.x, cn.y + Math.sin(t * 3 + i) * 0.06, -cn.s), this.tmpQ, this.tmpS.set(k, k, k));
+      const cw = this.roadW(cn.s, cn.x);
+      this.tmpM.compose(this.tmpP.set(cw.x, cn.y + Math.sin(t * 3 + i) * 0.06, cw.z), this.tmpQ, this.tmpS.set(k, k, k));
       this.coinDisc.setMatrixAt(i, this.tmpM);
       this.coinRim.setMatrixAt(i, this.tmpM);
     }
@@ -1004,14 +1147,40 @@ export class KasugaView {
 
     // 動く障害物
     for (const e of this.obstacleObjs) {
-      if (e.o.s - run.s > 170 || e.o.s - run.s < -3.5) {
+      const st = run.stateOf(e.o);
+      if (st.s - run.s > 170 || st.s - run.s < -3.5) {
         e.obj.visible = false;
         continue;
       }
       e.obj.visible = true;
+      if (e.crit && e.sprite) {
+        // 動物・モンスター: 動き方と状態で、ポーズを切りかえる
+        const o = e.o;
+        const ow = this.roadW(st.s, st.x);
+        e.obj.position.set(ow.x, 0, ow.z);
+        e.obj.rotation.y = -this.camPsi; // 絵は、いつもカメラのほうを向く
+        const hit = run.consumed.has(o.id);
+        const pose = hit ? 'dizzy' : o.behavior === 'sleep' ? 'sleep' : o.behavior === 'charge' ? (run.chargeT.has(o.id) ? 'angry' : 'normal') : o.behavior === 'hop' && st.y > 0.5 ? 'angry' : 'normal';
+        if (pose !== e.crit.pose) {
+          e.crit.pose = pose;
+          const m = e.sprite.material as THREE.MeshBasicMaterial;
+          m.map = e.crit.tex[pose as 'normal'];
+          m.needsUpdate = true;
+        }
+        // 絵の縦横比に合わせて大きさをそろえる(読み込み前は正方形)
+        const img = e.crit.tex[pose as 'normal'].image as { width: number; height: number } | undefined;
+        const aspect = img && img.height ? img.width / img.height : 1;
+        const h = e.crit.def.size;
+        const walk = o.behavior === 'cross' ? Math.abs(Math.sin(t * 8)) * 0.1 : 0;
+        e.sprite.scale.set(h * aspect, h * (1 + (o.behavior === 'charge' && pose === 'angry' ? Math.sin(t * 20) * 0.04 : 0)), 1);
+        e.sprite.position.y = st.y + walk;
+        e.sprite.rotation.z = o.behavior === 'cross' ? Math.sin(t * 8) * 0.07 * (st.dir || 1) : 0;
+        continue;
+      }
       if (e.o.kind === 'stone' || e.o.kind === 'deer') {
-        const st = obstacleState(e.o, t);
-        e.obj.position.x = st.x;
+        const ow = this.roadW(st.s, st.x);
+        e.obj.position.set(ow.x, 0, ow.z);
+        e.obj.rotation.y = e.o.kind === 'deer' ? -this.camPsi : -ow.psi;
         if (e.spin) {
           if (this.theme.setting === 'town') {
             e.spin.rotation.z -= st.dir * dt * 2.6; // 樽は横にころがる
@@ -1052,6 +1221,7 @@ export class KasugaView {
       }
     });
     for (const t of this.runTex) t.dispose();
+    for (const t of this.critterTex.values()) t.dispose();
     for (const arr of Object.values(this.walkTex)) for (const t of arr) t.dispose();
     for (const d of this.disposables) d.dispose();
     this.renderer.dispose();

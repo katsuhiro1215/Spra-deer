@@ -1,25 +1,33 @@
 // 3D走りゲームのコース定義(見た目に依存しない)。
 // 前へ進む向きを s(メートル)、左右を x で表す。同じ設定(seed)なら必ず同じコースになる。
 
+import { CRITTERS, type Behavior, type Effect } from './critters.ts';
+
 export const ROAD_HALF = 3.6; // 参道・道路の幅の半分
 export const PLAY_HALF = 3.0; // 鹿が動ける範囲の半分
 export const COURSE_LENGTH = 1000; // 既定の長さ
 /** ゴールの先、背景の建物(社殿・港)までの距離。 */
 export const GOAL_GAP = 75;
 
-export type ObstacleKind = 'hole' | 'poop' | 'fence' | 'stone' | 'deer' | 'puddle' | 'ice';
+export type ObstacleKind = 'hole' | 'poop' | 'fence' | 'stone' | 'deer' | 'puddle' | 'ice' | 'critter';
 
 export interface Obstacle {
   id: number;
   kind: ObstacleKind;
-  s: number; // 前後の位置(穴は手前の端)
+  s: number; // 前後の位置(穴は手前の端。突進するものは、はじまりの位置)
   x: number; // 左右の中心(動くものは基準)
   len: number; // 穴の長さ
   halfW: number; // 柵・穴の幅の半分
   height: number; // これ以上の高さで跳べば越えられる
   amp: number; // 左右の振れ幅(転がる岩)
-  freq: number; // 転がる岩=角速度 / 横切る鹿=秒速
+  freq: number; // 転がる岩=角速度 / 横切る=秒速 / 跳ねる=1秒あたりの回数 / 突進=秒速
   phase: number;
+  // ---- 動物・モンスター(kind='critter') ----
+  critter?: string; // キャラの名前(critters.ts)
+  behavior?: Behavior; // 動き方
+  effect?: Effect; // 当たったときの効果
+  radius?: number; // 当たりの半径(無ければ、種類ごとの既定)
+  trig?: number; // 突進をはじめる距離(プレイヤーがこの近さに来たら動き出す)
 }
 
 export interface Coin {
@@ -38,32 +46,98 @@ export interface Rules {
 }
 export const DEFAULT_RULES: Rules = { speed0: 13, speed1: 20, steerAccel: 42, steerSpeed: 6.8 };
 
+/** 曲がる道。道の中心線の左右のずれを、sin の波(振れ幅 amp[m]・波長 wave[m])で表す。 */
+export interface Curve {
+  amp: number;
+  wave: number;
+}
+
 export interface Course {
   obstacles: Obstacle[];
   coins: Coin[];
   length: number;
   rules?: Rules;
+  curve?: Curve;
+}
+
+const smooth = (a: number, b: number, x: number): number => {
+  const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+};
+
+/** 距離 s での、道の中心線の左右のずれ[m]。出だしとゴール前は、まっすぐ(0)。 */
+export function roadX(course: { curve?: Curve; length: number }, s: number): number {
+  const c = course.curve;
+  if (!c) return 0;
+  const a = 90; // ここからカーブがはじまる
+  const b = course.length - 190; // ここから、まっすぐにもどる(ゴールの100m手前で、まっすぐ)
+  const env = smooth(a, a + 120, s) * (1 - smooth(b, b + 90, s));
+  return c.amp * env * Math.sin((2 * Math.PI * (s - a)) / c.wave);
+}
+/** 道の向き(進む向きが、まっすぐからどれだけ右へ曲がっているか。ラジアン)。 */
+export function roadHeading(course: { curve?: Curve; length: number }, s: number): number {
+  if (!course.curve) return 0;
+  return Math.atan((roadX(course, s + 0.5) - roadX(course, s - 0.5)) / 1.0);
+}
+/** 道の曲がりぐあい(右へ曲がるほど正。1/半径[m]ぐらい)。 */
+export function roadCurv(course: { curve?: Curve; length: number }, s: number): number {
+  if (!course.curve) return 0;
+  return roadX(course, s + 1) - 2 * roadX(course, s) + roadX(course, s - 1);
 }
 
 /** 各障害物の当たりの大きさ(半径)。 */
-export const HIT_RADIUS: Record<ObstacleKind, number> = { hole: 0, poop: 0.6, fence: 0.35, stone: 0.85, deer: 0.8, puddle: 1.1, ice: 1.5 };
-export const OBSTACLE_HEIGHT: Record<ObstacleKind, number> = { hole: 0, poop: 0.55, fence: 1.05, stone: 1.15, deer: 1.25, puddle: 0.3, ice: 0.3 };
+export const HIT_RADIUS: Record<ObstacleKind, number> = { hole: 0, poop: 0.6, fence: 0.35, stone: 0.85, deer: 0.8, puddle: 1.1, ice: 1.5, critter: 0.8 };
+export const OBSTACLE_HEIGHT: Record<ObstacleKind, number> = { hole: 0, poop: 0.55, fence: 1.05, stone: 1.15, deer: 1.25, puddle: 0.3, ice: 0.3, critter: 1.2 };
 
 const DEER_RANGE = (PLAY_HALF + 1.2) * 2;
+const HOP_HEIGHT = 1.7;
 
-/** 時刻 t での障害物の左右位置と向き(+1=右へ, -1=左へ)。 */
-export function obstacleState(o: Obstacle, t: number): { x: number; dir: number } {
+export const obstacleRadius = (o: Obstacle): number => o.radius ?? HIT_RADIUS[o.kind];
+
+export interface ObstacleState {
+  x: number;
+  s: number; // 前後の位置(突進するものは、近づいてくる)
+  y: number; // 地面からの高さ(跳ねるもの)
+  dir: number; // 動いている向き(+1=右, -1=左, 0=動かない)
+}
+
+/** 往復する動き(横切る鹿・動物)。 */
+function pingPong(t: number, speed: number, phase: number): { x: number; dir: number } {
+  const R = DEER_RANGE;
+  const p = (((t * speed + phase) % (2 * R)) + 2 * R) % (2 * R);
+  const xx = p < R ? p : 2 * R - p;
+  return { x: xx - R / 2, dir: p < R ? 1 : -1 };
+}
+
+/**
+ * 時刻 t での障害物の位置。突進する動物は、動き出した時刻 t0 を渡す(まだなら、渡さない)。
+ */
+export function obstacleState(o: Obstacle, t: number, t0?: number): ObstacleState {
   if (o.kind === 'stone') {
     const a = t * o.freq + o.phase;
-    return { x: o.x + o.amp * Math.sin(a), dir: Math.cos(a) >= 0 ? 1 : -1 };
+    return { x: o.x + o.amp * Math.sin(a), s: o.s, y: 0, dir: Math.cos(a) >= 0 ? 1 : -1 };
   }
   if (o.kind === 'deer') {
-    const R = DEER_RANGE;
-    const p = (((t * o.freq + o.phase) % (2 * R)) + 2 * R) % (2 * R);
-    const xx = p < R ? p : 2 * R - p;
-    return { x: xx - R / 2, dir: p < R ? 1 : -1 };
+    const m = pingPong(t, o.freq, o.phase);
+    return { x: m.x, s: o.s, y: 0, dir: m.dir };
   }
-  return { x: o.x, dir: 0 };
+  if (o.kind === 'critter') {
+    switch (o.behavior) {
+      case 'cross': {
+        const m = pingPong(t, o.freq, o.phase);
+        return { x: m.x, s: o.s, y: 0, dir: m.dir };
+      }
+      case 'hop':
+        return { x: o.x, s: o.s, y: HOP_HEIGHT * Math.abs(Math.sin(Math.PI * (t * o.freq + o.phase))), dir: 0 };
+      case 'charge': {
+        const run = t0 === undefined ? 0 : Math.max(0, t - t0);
+        return { x: o.x + 0.5 * Math.sin(t * 2.2 + o.phase), s: o.s - o.freq * run, y: 0, dir: 0 };
+      }
+      default:
+        break;
+    }
+  }
+  return { x: o.x, s: o.s, y: 0, dir: 0 };
 }
 
 function mulberry32(seed: number) {
@@ -77,18 +151,24 @@ function mulberry32(seed: number) {
   };
 }
 
-export type PatternName = 'hole' | 'poop' | 'fenceGap' | 'stones' | 'deerCross' | 'holePoop' | 'fenceHole' | 'coinSnake' | 'puddle' | 'ice';
+export type PatternName =
+  | 'hole' | 'poop' | 'fenceGap' | 'stones' | 'deerCross' | 'holePoop' | 'fenceHole' | 'coinSnake' | 'puddle' | 'ice'
+  | 'critterSleep' | 'critterCross' | 'critterHop' | 'critterCharge';
 
 export interface CourseOptions {
   seed?: number;
   length?: number;
   /** 0〜1。大きいほど、仕掛けの間隔がつまる。 */
   difficulty?: number;
-  /** この面だけの罠(雨=みずたまり、雪=こおり)。 */
+  /** この面だけの罠(雨=みずたまり、雪=こおり、動物の罠など)。 */
   extra?: PatternName[];
+  /** この面に出る動物・モンスター(critters.ts の名前)。critter〜の罠が使う。 */
+  critters?: string[];
   /** 最初に順番に出す仕掛け(練習用)。 */
   opening?: PatternName[];
   rules?: Rules;
+  /** 曲がる道(無ければ、まっすぐ) */
+  curve?: Curve;
 }
 
 export function buildCourse(opts: CourseOptions = {}): Course {
@@ -198,8 +278,62 @@ export function buildCourse(opts: CourseOptions = {}): Course {
     return s + 16;
   };
 
+  // ---- 動物・モンスターの罠 ----
+  const critters = opts.critters ?? [];
+  const pick = () => critters[Math.floor(rand() * critters.length)] ?? 'fox';
+  const addCritter = (key: string, behavior: Behavior, o: Partial<Obstacle> & Pick<Obstacle, 's'>) => {
+    const d = CRITTERS[key];
+    add({ kind: 'critter', critter: key, behavior, effect: d.effect, radius: d.r, height: d.height, ...o });
+  };
+  // 寝ている: 道ばたでぐっすり。1匹なら避けるだけ、2匹なら、すき間を通る
+  const critterSleepPattern = (s: number) => {
+    if (rand() < 0.45) {
+      const x = (rand() * 2 - 1) * 2.0;
+      addCritter(pick(), 'sleep', { s, x });
+      line(s - 8, x > 0 ? -1.2 : 1.2, 3, 2.2);
+      coin(s, x, 1.9);
+      return s + 3;
+    }
+    const gapX = (rand() * 2 - 1) * 1.0;
+    const a = pick();
+    const b = pick();
+    addCritter(a, 'sleep', { s, x: gapX - (1.25 + CRITTERS[a].r) });
+    addCritter(b, 'sleep', { s: s + 1.5, x: gapX + (1.25 + CRITTERS[b].r) });
+    line(s - 8, gapX, 4, 2.0);
+    coin(s, gapX, 1.9);
+    return s + 4;
+  };
+  // 横切る: 左右に歩く。タイミングを見て、通るか跳ぶ
+  const critterCrossPattern = (s: number) => {
+    addCritter(pick(), 'cross', { s, freq: 3.0 + rand() * 1.2, phase: rand() * DEER_RANGE * 2 });
+    line(s - 7, 0, 3, 2.2);
+    coin(s, 0, 1.9);
+    return s + 4;
+  };
+  // 跳ねる: 2匹が交互にぴょんぴょん。地面にいる側に当たるので、跳んでいる側を通る
+  const critterHopPattern = (s: number) => {
+    const a = pick();
+    addCritter(a, 'hop', { s, x: -0.8, freq: 0.7, phase: 0 });
+    addCritter(pick(), 'hop', { s, x: 0.9, freq: 0.7, phase: 0.5 });
+    line(s - 8, 0, 3, 2.2);
+    coin(s + 1, -2.5);
+    coin(s + 1, 2.6);
+    return s + 4;
+  };
+  // 突進: 近づくと、正面から走ってくる。よけるか、跳ぶ
+  const critterChargePattern = (s: number) => {
+    const x = (rand() * 2 - 1) * 2.0;
+    addCritter(pick(), 'charge', { s: s + 38, x, freq: 8 + rand() * 2, trig: 38, phase: rand() * 6 });
+    line(s + 10, x > 0 ? -1.4 : 1.4, 4, 2.2);
+    return s + 42;
+  };
+
   const run = (name: PatternName, s: number, p: number) => {
     switch (name) {
+      case 'critterSleep': return critterSleepPattern(s);
+      case 'critterCross': return critterCrossPattern(s);
+      case 'critterHop': return critterHopPattern(s);
+      case 'critterCharge': return critterChargePattern(s);
       case 'hole': return holePattern(s, p);
       case 'poop': return poopPattern(s);
       case 'fenceGap': return fenceGapPattern(s);
@@ -219,7 +353,8 @@ export function buildCourse(opts: CourseOptions = {}): Course {
   for (const name of opening) s = run(name, s, 0) + 30;
 
   let prev: PatternName = opening[opening.length - 1] ?? 'fenceGap';
-  const endObstacles = length - 75;
+  const used = new Set<PatternName>(opening);
+  const endObstacles = length - (critters.length ? 100 : 75); // 突進する動物は手前から走ってくるので、ゴールから離す(3-1は従来どおり)
   while (s < endObstacles) {
     const p = s / length;
     const pool: PatternName[] = ['hole', 'poop', 'fenceGap', 'coinSnake', ...extra];
@@ -227,7 +362,11 @@ export function buildCourse(opts: CourseOptions = {}): Course {
     if (p > 0.5) pool.push('holePoop', 'fenceHole', 'stones', 'deerCross');
     let name = pool[Math.floor(rand() * pool.length)];
     if (name === prev) name = pool[Math.floor(rand() * pool.length)];
+    // この面だけの罠は、運に任せず、中盤までに必ず1回は出す(練習にもなる)
+    const missing = extra.filter((n) => !used.has(n));
+    if (missing.length && p > 0.22) name = missing[0];
     prev = name;
+    used.add(name);
     s = run(name, s, p) + Math.max(22, 38 - 14 * p - 6 * difficulty);
   }
 
@@ -240,5 +379,5 @@ export function buildCourse(opts: CourseOptions = {}): Course {
     coin(ss, 2.2);
   }
   obstacles.sort((a, b) => a.s - b.s);
-  return { obstacles, coins, length, rules: opts.rules };
+  return { obstacles, coins, length, rules: opts.rules, curve: opts.curve };
 }

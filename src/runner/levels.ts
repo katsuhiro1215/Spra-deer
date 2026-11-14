@@ -1,12 +1,12 @@
 // ステージ3「鹿の大脱走」の面の一覧(3D走りゲームのシリーズ)。
 // 面を足すときは、ここに1つ書くだけ。見た目は theme、手ごたえは rules、仕掛けは seed/extra で変える。
-import { buildCourse, type Course, type PatternName, type Rules } from './course.ts';
+import { buildCourse, type Course, type Curve, type PatternName, type Rules } from './course.ts';
 
 export type Weather = 'none' | 'rain' | 'snow';
-/** 道の景色: sando=灯籠と杉の参道 / town=街道(夕焼けの街) */
-export type Setting = 'sando' | 'town';
-/** ゴールの景色: shrine=春日大社 / bay=大阪湾 */
-export type GoalScene = 'shrine' | 'bay';
+/** 道の景色: sando=灯籠と杉の参道 / town=街道(夕焼けの街) / mountain=灯籠のない山道 */
+export type Setting = 'sando' | 'town' | 'mountain';
+/** ゴールの景色: shrine=春日大社 / bay=大阪湾 / summit=山頂 */
+export type GoalScene = 'shrine' | 'bay' | 'summit';
 
 export interface Theme {
   setting: Setting;
@@ -45,8 +45,12 @@ export interface RunnerLevel {
   seed: number;
   difficulty: number;
   extra: PatternName[];
+  /** この面に出る動物・モンスター(critters.ts の名前) */
+  critters?: string[];
   opening?: PatternName[];
   rules: Rules;
+  /** 曲がる道(無ければ、まっすぐ) */
+  curve?: Curve;
   theme: Theme;
   goalName: string;
   /** 半分・8割・9割を過ぎたときの一言。 */
@@ -68,10 +72,11 @@ const DAY: Theme = {
 
 const NIGHT: Theme = {
   ...SANDO, weather: 'none', night: true,
-  sky: ['#040a22', '#0c1844', '#1b2d62', '#2b4075'],
-  fog: 0x15204a, fogNear: 18, fogFar: 170,
-  hemiSky: 0x7088d0, hemiGround: 0x23324a, hemi: 0.55,
-  sun: 0xb4c8ff, sunPower: 1.5, sunPos: [-12, 28, 12], env: 0.14, exposure: 1.2,
+  // まっくらな参道。鹿の足元だけがぼんやり見える(霧を近くに寄せ、環境光をほぼ消している)
+  sky: ['#02040f', '#050a1e', '#0a1330', '#111b3d'],
+  fog: 0x070b1f, fogNear: 6, fogFar: 46,
+  hemiSky: 0x4a5fa0, hemiGround: 0x141c2c, hemi: 0.16,
+  sun: 0xa8bcff, sunPower: 0.45, sunPos: [-12, 28, 12], env: 0.04, exposure: 1.25,
   road: { base: '#a39d8c', specks: ['#8c8778', '#b8b2a0', '#7d7869'], rough: 1 },
   grass: { base: '#2f6a46', specks: ['#285a3c', '#3b7a52', '#23503a'] },
   lampGlow: 5, halo: 1, snowCaps: false,
@@ -99,6 +104,17 @@ const SNOW: Theme = {
   lampGlow: 3, halo: 0.55, snowCaps: true,
 };
 
+const MOUNTAIN: Theme = {
+  setting: 'mountain', goal: 'summit', weather: 'none', night: false,
+  sky: ['#4fa3e8', '#9ccff2', '#d9efe6', '#eef5dc'],
+  fog: 0xdcebe0, fogNear: 70, fogFar: 300,
+  hemiSky: 0xdcefff, hemiGround: 0x8fae7a, hemi: 0.85,
+  sun: 0xfff0d2, sunPower: 2.6, sunPos: [14, 26, 8], env: 0.45, exposure: 1.05,
+  road: { base: '#b89d74', specks: ['#a68a62', '#c9b088', '#9a8056', '#d6c298'], rough: 1 },
+  grass: { base: '#86ad55', specks: ['#76a047', '#98bf66', '#6a9440'] },
+  lampGlow: 1.6, halo: 0, snowCaps: false,
+};
+
 const BAY: Theme = {
   setting: 'town', goal: 'bay', weather: 'none', night: false,
   sky: ['#4a4896', '#bc6c9a', '#f2a068', '#ffd9a0'],
@@ -123,7 +139,10 @@ export const RUNNER_LEVELS: RunnerLevel[] = [
     id: '3-2', title: '夜の参道', summary: '暗い道。灯籠の灯りだけが頼り',
     intro: '夜の参道。灯籠の灯りを たよりに 走ろう！',
     length: 900, seed: 20261201, difficulty: 0.35,
-    extra: [], rules: { speed0: 13, speed1: 21, steerAccel: 42, steerSpeed: 6.8 },
+    extra: ['critterSleep', 'critterCross', 'critterHop', 'critterCharge'], critters: ['kage', 'owl', 'fox', 'pachi'],
+    opening: ['hole', 'critterSleep', 'poop', 'critterCross'],
+    rules: { speed0: 13, speed1: 21, steerAccel: 42, steerSpeed: 6.8 },
+    curve: { amp: 14, wave: 300 },
     theme: NIGHT, goalName: '春日大社',
     lines: ['灯籠が ゆれて きれい…', '遠くに ともしびが 見えてきた', '灯りに 照らされた 春日大社！'],
   },
@@ -131,7 +150,10 @@ export const RUNNER_LEVELS: RunnerLevel[] = [
     id: '3-3', title: '雨の参道', summary: '地面がすべる。みずたまりに注意',
     intro: '雨で 地面が すべるよ。みずたまりは おそくなる！',
     length: 900, seed: 20261207, difficulty: 0.4,
-    extra: ['puddle'], rules: { speed0: 14, speed1: 21, steerAccel: 22, steerSpeed: 6.8 },
+    extra: ['puddle', 'critterSleep', 'critterCross', 'critterHop', 'critterCharge'], critters: ['puni', 'doro', 'noko', 'turtle', 'bubu'],
+    opening: ['hole', 'puddle', 'critterSleep', 'fenceGap'],
+    rules: { speed0: 14, speed1: 21, steerAccel: 22, steerSpeed: 6.8 },
+    curve: { amp: 22, wave: 240 },
     theme: RAIN, goalName: '春日大社',
     lines: ['雨は まだ やまない…', 'あと もうすこし！', '雨の向こうに 赤い社殿が…！'],
   },
@@ -139,9 +161,23 @@ export const RUNNER_LEVELS: RunnerLevel[] = [
     id: '3-4', title: '雪の参道', summary: 'こおりの上は、つるつる。曲がれない',
     intro: '雪の参道。こおりを ふむと つるつる すべるよ！',
     length: 900, seed: 20261213, difficulty: 0.45,
-    extra: ['ice'], rules: { speed0: 12, speed1: 19, steerAccel: 14, steerSpeed: 6.4 },
+    extra: ['ice', 'critterSleep', 'critterCross', 'critterHop', 'critterCharge'], critters: ['snowy', 'frosty', 'gingi', 'rabbit', 'candi'],
+    opening: ['hole', 'ice', 'critterSleep', 'poop'],
+    rules: { speed0: 12, speed1: 19, steerAccel: 14, steerSpeed: 6.4 },
+    curve: { amp: 26, wave: 220 },
     theme: SNOW, goalName: '春日大社',
     lines: ['しんしんと 雪が ふっている', '雪の中に 赤が 見えてきた', '雪化粧の 春日大社だ！'],
+  },
+  {
+    id: '3-5', title: '若草山のつづら折り', summary: '連続カーブ。外へ押されるよ',
+    intro: '若草山のつづら折り！ カーブで 外へ 押されるよ！',
+    length: 1000, seed: 20261230, difficulty: 0.55,
+    extra: ['critterSleep', 'critterCross', 'critterHop', 'critterCharge'], critters: ['bear', 'tanuki', 'squirrel', 'koron', 'goro', 'toge'],
+    opening: ['hole', 'critterSleep', 'poop', 'critterCross'],
+    rules: { speed0: 13.5, speed1: 20, steerAccel: 40, steerSpeed: 7.0 },
+    curve: { amp: 34, wave: 170 },
+    theme: MOUNTAIN, goalName: '若草山',
+    lines: ['つづら折りが つづく…', 'もうすぐ 山頂だよ', '山頂が 見えてきた！'],
   },
   {
     id: '3-10', title: '大阪湾をめざせ！', summary: '最長の最終面。街をぬけて、海まで',
@@ -158,6 +194,6 @@ export const runnerById = (id: string): RunnerLevel | undefined => RUNNER_LEVELS
 export function courseOf(level: RunnerLevel): Course {
   return buildCourse({
     seed: level.seed, length: level.length, difficulty: level.difficulty,
-    extra: level.extra, opening: level.opening, rules: level.rules,
+    extra: level.extra, critters: level.critters, opening: level.opening, rules: level.rules, curve: level.curve,
   });
 }

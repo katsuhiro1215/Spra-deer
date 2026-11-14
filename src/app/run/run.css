@@ -365,3 +365,17 @@
   font-size: 18px;
   background: linear-gradient(180deg, #ffb870, #ff944a);
 }
+
+/* 長い面の名前でも、折り返さない */
+.ks-level {
+  flex: 1;
+  min-width: 0;
+  max-width: 190px;
+}
+.ks-level span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}

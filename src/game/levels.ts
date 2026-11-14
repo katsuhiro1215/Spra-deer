@@ -743,10 +743,10 @@ export const STAGES: { stage: number; title: string; slots: LevelSlot[] }[] = [
     ],
   },
   {
-    // ステージ3は、Three.js の3D走りゲーム(/run/)。面の並びは runner/levels.ts の順。3-5〜3-9は、これから作る枠。
+    // ステージ3は、Three.js の3D走りゲーム(/run/)。面の並びは runner/levels.ts の順。3-6〜3-9は、これから作る枠。
     stage: 3, title: '鹿の大脱走', slots: [
       ...RUNNER_LEVELS.filter(r => r.id !== '3-10').map(r => ({ id: r.id, title: r.title, summary: r.summary, runnerId: r.id })),
-      ...['3-5', '3-6', '3-7', '3-8', '3-9'].map(id => ({ id, title: 'これから、作ります', summary: '' })),
+      ...['3-6', '3-7', '3-8', '3-9'].map(id => ({ id, title: 'これから、作ります', summary: '' })),
       ...RUNNER_LEVELS.filter(r => r.id === '3-10').map(r => ({ id: r.id, title: r.title, summary: r.summary, runnerId: r.id })),
     ],
   },

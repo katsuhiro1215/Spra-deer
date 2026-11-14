@@ -1,13 +1,15 @@
 // 3D走りゲームの組み立て: 入力・画面表示(HUD)・効果音・ループ・記録。
 import { Progress } from '../progress.ts';
-import type { ObstacleKind } from './course.ts';
+import type { Obstacle } from './course.ts';
+import { CRITTERS } from './critters.ts';
 import { RUNNER_LEVELS, courseOf, type RunnerLevel } from './levels.ts';
 import { Run, type Input, type SimEvent } from './sim.ts';
 import { KasugaView } from './view.ts';
 
 const STEP = 1 / 120;
 
-const HINTS: Record<ObstacleKind, string> = {
+/** はじめて見る罠に出す一言(種類ごとに1回)。動物・モンスターは、動き方ごと。 */
+const HINTS: Record<string, string> = {
   hole: 'あな！ ジャンプで とびこえよう',
   poop: 'ふんを ふむと 操作が逆になるよ',
   fence: '柵は ジャンプ、すき間も あるよ',
@@ -15,7 +17,12 @@ const HINTS: Record<ObstacleKind, string> = {
   deer: '鹿が よこぎるよ！ ジャンプでも越えられる',
   puddle: 'みずたまり！ ふむと おそくなるよ',
   ice: 'こおり！ ふむと つるつる すべるよ',
+  'critter:sleep': 'ねている どうぶつ！ そっと よけよう',
+  'critter:cross': 'どうぶつが よこぎるよ！ タイミングを見て',
+  'critter:hop': 'ぴょんぴょん！ とんでいる あいだに 通ろう',
+  'critter:charge': 'つっこんでくる！ よけるか ジャンプ！',
 };
+const hintKey = (o: Obstacle) => (o.kind === 'critter' ? `critter:${o.behavior}` : o.kind);
 
 export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
   const q = <T extends HTMLElement>(k: string) => root.querySelector<T>(`[data-ks="${k}"]`)!;
@@ -34,6 +41,7 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
   q('s-title').textContent = level.title;
   q('s-lead').textContent = level.summary;
   let run = new Run(course);
+  const byId = new Map(course.obstacles.map((o) => [o.id, o]));
   const input: Input = { left: false, right: false, jump: false };
 
   // ---- 効果音(WebAudio。最初のタップで有効化) ----
@@ -111,7 +119,7 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
     elMark.style.left = p;
   };
 
-  let hinted = new Set<ObstacleKind>();
+  let hinted = new Set<string>();
   let miles = new Set<number>();
   let resultTimer = 0;
 
@@ -252,7 +260,11 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
     }
     for (const e of run.drainEvents()) {
       sound(e);
-      if (e.kind === 'hit' || e.kind === 'fall') {
+      const hitCritter = e.id !== undefined ? byId.get(e.id)?.critter : undefined;
+      if (hitCritter && (e.kind === 'hit' || e.kind === 'slip' || e.kind === 'slow' || e.kind === 'slide')) {
+        view.bump(e.kind === 'hit' ? 0.4 : 0.2);
+        toast(CRITTERS[hitCritter].line, 2000);
+      } else if (e.kind === 'hit' || e.kind === 'fall') {
         view.bump(0.4);
         toast(e.kind === 'fall' ? 'あなに おちた…！' : 'いたっ！');
       } else if (e.kind === 'slip') {
@@ -275,9 +287,9 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
     if (run.phase === 'running') {
       for (const o of course.obstacles) {
         const d = o.s - run.s;
-        if (d > 0 && d < 36 && !hinted.has(o.kind)) {
-          hinted.add(o.kind);
-          toast(HINTS[o.kind], 2800);
+        if (d > 0 && d < 36 && !hinted.has(hintKey(o))) {
+          hinted.add(hintKey(o));
+          toast(HINTS[hintKey(o)], 2800);
           break;
         }
       }
