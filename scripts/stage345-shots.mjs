@@ -27,16 +27,9 @@ await page.locator('[data-action="select"]').click();
 await page.screenshot({ path: 'test-results/s345-select.png', fullPage: true });
 await page.locator('[data-action="title"]').click();
 
-// 3-1: 掃除。うんこに近づいて、ボタン
+// 3-1: 掃除（触れると掃ける）。スタートの見た目だけ
 await open('3-1');
 await page.screenshot({ path: 'test-results/s345-3-1-start.png' });
-await page.keyboard.down('ArrowUp');
-await page.waitForFunction(() => window.__DEER__.player.y < 1330);
-await page.keyboard.up('ArrowUp');
-await page.keyboard.press('Space');
-await page.waitForTimeout(120);
-await page.screenshot({ path: 'test-results/s345-3-1-sweep.png' });
-console.log('3-1 swept:', await page.evaluate(() => window.__DEER__.swept), 'poops:', await page.evaluate(() => window.__DEER__.poops.length));
 await back();
 
 // 4-1: 横断。ボタンなし

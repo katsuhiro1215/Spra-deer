@@ -163,12 +163,12 @@ class Park extends Phaser.Scene {
   private jumpIcon?: string;
   /** ステージごとに、ボタンの意味が変わる（1=ジャンプ, 2=せんべいを置く, 3=そうじする, 4と5=ボタンなし）。 */
   private setControls(level: LevelDefinition) {
-    const mode = level.delivery ? 'senbei' : level.sweep ? 'sweep' : level.cross || level.rescue ? 'none' : 'jump';
-    const names = { senbei: 'せんべいを置く', sweep: 'そうじする', jump: 'ジャンプ', none: '' } as const;
-    const icons = { senbei: '<circle cx="30" cy="22" r="16"/><path d="M20 18H40M22 28H38"/>', sweep: '<path d="M38 4L26 28"/><path d="M14 40L22 26H34L42 40Z"/>' };
+    const mode = level.delivery ? 'senbei' : level.sweep || level.cross || level.rescue ? 'none' : 'jump';
+    const names = { senbei: 'せんべいを置く', jump: 'ジャンプ', none: '' } as const;
+    const icons = { senbei: '<circle cx="30" cy="22" r="16"/><path d="M20 18H40M22 28H38"/>' };
     const button = el('jump'), svg = button.querySelector('svg')!;
     this.jumpIcon ??= svg.innerHTML;
-    svg.innerHTML = mode === 'senbei' || mode === 'sweep' ? icons[mode] : this.jumpIcon;
+    svg.innerHTML = mode === 'senbei' ? icons[mode] : this.jumpIcon;
     button.style.visibility = mode === 'none' ? 'hidden' : '';
     button.querySelector('strong')!.textContent = names[mode] || 'ジャンプ';
     button.setAttribute('aria-label', names[mode] || 'ジャンプ');
@@ -202,17 +202,17 @@ class Park extends Phaser.Scene {
     el('overlay').querySelector<HTMLButtonElement>('.primary')?.focus({ preventScroll: true }); this.hud();
   }
   private progress() {
-    const sweep = this.level.sweep;
-    if (sweep) { const w = this.world, left = w.poops.length + this.level.deers.reduce((n, d, i) => n + d.drops - w.deers[i].dropped, 0); return Math.min(100, Math.round(w.swept / Math.max(1, w.swept + left) * 100)); }
     const { start } = this.level; return Math.min(100, Math.max(0, Math.round((start.y - this.world.furthest) / (start.y - GOAL.y - GOAL.radius) * 100))); }
   private hud() {
     const best = progress.get(this.level.id).best;
     el('timer').innerHTML = `${this.world.time.toFixed(1)}<small>秒</small>`;
-    el('best').textContent = best === null ? '—' : `${best.toFixed(1)}秒`;
+    const sw = this.level.sweep;
+    document.querySelector('.best-stat .stat-label')!.textContent = sw ? '見逃し' : '自己ベスト';
+    el('best').textContent = sw ? `${this.world.missed} / ${sw.limit}` : best === null ? '—' : `${best.toFixed(1)}秒`;
     el('progress').style.width = `${this.progress()}%`;
     document.querySelector('.progress')!.setAttribute('aria-valuenow', String(this.progress()));
     const p = this.world.player, busy = p.jumpTime >= 0 || p.cooldown > 0;
-    if (this.level.cross || this.level.rescue) { /* ボタンなし */ } else if (this.level.sweep) { el('jump').classList.toggle('busy', p.cooldown > 0); el('jump-hint').textContent = p.cooldown > 0 ? 'ひと呼吸' : 'Space'; } else if (this.level.delivery) { const left = this.world.baitsLeft; el('jump').classList.toggle('busy', left === 0 || p.cooldown > 0); el('jump-hint').textContent = left === 0 ? 'もう、ない' : `のこり ${left}個`; } else { el('jump').classList.toggle('busy', busy); el('jump-hint').textContent = p.jumpTime >= 0 ? 'ジャンプ中' : busy ? 'ひと呼吸' : 'Space'; }
+    if (this.level.cross || this.level.rescue || this.level.sweep) { /* ボタンなし */ } else if (this.level.delivery) { const left = this.world.baitsLeft; el('jump').classList.toggle('busy', left === 0 || p.cooldown > 0); el('jump-hint').textContent = left === 0 ? 'もう、ない' : `のこり ${left}個`; } else { el('jump').classList.toggle('busy', busy); el('jump-hint').textContent = p.jumpTime >= 0 ? 'ジャンプ中' : busy ? 'ひと呼吸' : 'Space'; }
     const section = this.level.chapters.find(c => p.y > c.above)?.text ?? '';
     if (section !== this.lastChapter) { this.lastChapter = section; if (this.world.time >= this.messageUntil) this.message(section, 3); }
     if (this.world.time > this.messageUntil) el('message').textContent = '';

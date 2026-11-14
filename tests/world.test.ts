@@ -371,22 +371,20 @@ test('delivery levels: a hole never blocks the whole exit of a poop gap (no jump
 });
 
 // ---- ステージ3〜5 ----
-const SWEEP = { limit: 3, radius: 80, cooldown: .5, arena: { top: 900, bottom: 1700 } };
-test('sweep: the button clears only nearby poop, with a pause, and poop does not hurt in this stage', () => {
-  const w = make({ sweep: { ...SWEEP, limit: 9 }, poops: [{ x: 380, y: 1490 }, { x: 360, y: 1300 }] });
-  run(w, { x: 0, y: 0 }, .05); assert.equal(w.outcome, 'playing', 'standing on poop is harmless here');
-  run(w, { x: 0, y: 0, jump: true }, .05);
-  assert.equal(w.poops.length, 1); assert.equal(w.swept, 1); assert.equal(w.jumps, 0); assert.equal(w.player.height, 0);
-  walk(w, 360, 1400); run(w, { x: 0, y: 0, jump: true }, .05);
-  assert.equal(w.poops.length, 1, 'still in the pause between sweeps');
-  run(w, { x: 0, y: 0 }, .6); walk(w, 360, 1330); run(w, { x: 0, y: 0, jump: true }, .05);
-  assert.equal(w.outcome, 'clear', 'nothing left, no more deer to drop');
+const SWEEP = { limit: 2, radius: 52 };
+test('sweep: touching poop sweeps it (no button), and poop does not hurt in this stage', () => {
+  const w = make({ sweep: SWEEP, poops: [{ x: 380, y: 1490 }, { x: 360, y: 1300 }] });
+  run(w, { x: 0, y: 0 }, .05);
+  assert.equal(w.outcome, 'playing'); assert.equal(w.poops.length, 1); assert.equal(w.swept, 1); assert.equal(w.combo, 1);
+  run(w, { x: 0, y: 0, jump: true }, .05); assert.equal(w.jumps, 0, 'the button does nothing here');
+  walk(w, 360, 1330); assert.equal(w.poops.length, 0); assert.equal(w.swept, 2); assert.equal(w.bestCombo, 2);
 });
-test('sweep: too much poop on the ground is a failure, and the player stays inside the arena', () => {
-  const w = make({ sweep: SWEEP, poops: [{ x: 200, y: 1200 }, { x: 300, y: 1200 }, { x: 400, y: 1200 }] });
-  run(w, { x: 0, y: 0 }, .05); assert.equal(w.outcome, 'dirty');
-  const edge = make({ sweep: SWEEP, poops: [{ x: 200, y: 1200 }] });
-  run(edge, { x: 0, y: 1 }, 4); assert.equal(edge.player.y, SWEEP.arena.bottom);
+test('sweep: poop left behind is a miss; too many misses fail, and the combo resets', () => {
+  const w = make({ sweep: SWEEP, poops: [{ x: 200, y: 1480 }, { x: 520, y: 1460 }, { x: 360, y: 1000 }] });
+  run(w, { x: 0, y: -1 }, .9);
+  assert.equal(w.swept, 0); assert.equal(w.missed, 2); assert.equal(w.outcome, 'dirty'); assert.equal(w.combo, 0);
+  const ok = make({ sweep: { ...SWEEP, limit: 3 }, poops: [{ x: 200, y: 1480 }] });
+  run(ok, { x: 0, y: -1 }, .9); assert.equal(ok.missed, 1); assert.equal(ok.outcome, 'playing');
 });
 test('cross: animals travel by time alone, wrap around, and hit a player who stands in their lane', () => {
   const c = { id: 'a', kind: 'doe' as const, y: 1400, x0: 0, speed: 100 };

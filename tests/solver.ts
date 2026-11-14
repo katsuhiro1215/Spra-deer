@@ -24,9 +24,9 @@ export function solve(level: LevelDefinition, opts: { macro?: number; bucket?: n
   const macro = opts.macro ?? .25, bucket = opts.bucket ?? 40, band = opts.band ?? 300, maxTime = opts.maxTime ?? 60, maxLayer = opts.maxLayer ?? 700;
   const steps = Math.round(macro / (1 / 120));
   let layer: Node[] = [{ w: createWorld(level), parent: null, action: null }];
-  // 進み具合。大掃除は「うんこの残り数」（少ないほど良い）、ほかは「上に進んだ位置」。
-  const score = (w: World) => level.sweep ? w.poops.length * 160 : w.player.y;
-  let best = level.sweep ? Infinity : level.start.y;
+  // 進み具合は「上に進んだ位置」。
+  const score = (w: World) => w.player.y;
+  let best = level.start.y;
   let deaths: Record<string, number> = {};
   for (let t = 0; t < maxTime / macro && layer.length; t++) {
     const next = new Map<string, Node>();

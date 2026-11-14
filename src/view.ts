@@ -32,6 +32,8 @@ export class ParkView {
   private shadow: Phaser.GameObjects.Ellipse;
   private marker: Phaser.GameObjects.Graphics;
   private deerFx: Phaser.GameObjects.Graphics;
+  private flowerList: { x: number; y: number; born: number; color: number }[] = [];
+  private visualTime = 0;
   private walkers = new Map<string, { image: Phaser.GameObjects.Image; shadow: Phaser.GameObjects.Ellipse }>();
   private dropped: Phaser.GameObjects.Graphics[] = [];
   private sliderShapes = new Map<string, Phaser.GameObjects.Graphics>();
@@ -148,13 +150,6 @@ export class ParkView {
         for (let x = 120; x < 600; x += 56) ground.lineBetween(x, y, x + 28, y);
       }
     }
-    if (this.level.sweep) {
-      const fence = s.add.graphics().setDepth(1), { top, bottom } = this.level.sweep.arena;
-      for (const y of [top - 34, bottom + 34]) {
-        fence.lineStyle(6, 0x9da773).lineBetween(104, y, 616, y);
-        for (let x = 104; x <= 616; x += 36) fence.lineStyle(7, 0xa9b27e).lineBetween(x, y - 18, x, y + 18);
-      }
-    }
     // スタートゲート。Spruはアーチの下に立つ（ゲートは、Spruより奥に描く）。
     const gate = s.add.image(start0.x, start0.y + 26, 'gate-start').setOrigin(.5, 1).setDepth(start0.y - 5);
     gate.setDisplaySize(380, 380 * gate.frame.height / gate.frame.width);
@@ -230,6 +225,15 @@ export class ParkView {
       text.setStroke('#fff9dc', 6);
       this.labels.push({ text, born: now, y: text.y });
     }
+    if (e.kind === 'sweep') {
+      this.flowerList.push({ x: e.x, y: e.y, born: now, color: [0xff9ec0, 0xffe27a, 0xffffff, 0xb59cff][this.flowerList.length % 4] });
+      if (this.flowerList.length > 60) this.flowerList.shift();
+    }
+    if (e.kind === 'miss') {
+      const text = this.label(e.x, e.y - 30, 'みのがし…', 26, '#755338').setDepth(8000);
+      text.setStroke('#fff9dc', 6);
+      this.labels.push({ text, born: now, y: text.y });
+    }
     if (['collapse', 'land', 'poop', 'clear', 'drop', 'sweep'].includes(e.kind)) {
       const count = e.kind === 'clear' ? 34 : e.kind === 'collapse' ? 16 : 7;
       for (let i = 0; i < count; i++) {
@@ -243,6 +247,7 @@ export class ParkView {
   }
 
   reset() {
+    this.flowerList = [];
     this.cameraY = this.level.start.y - 800;
     for (const p of this.particles) p.shape.destroy();
     for (const l of this.labels) l.text.destroy();
@@ -326,13 +331,11 @@ export class ParkView {
         this.deerFx.fillStyle(0x7a8f5a).fillCircle(f.x - 14, top, 4).fillCircle(f.x, top, 4).fillCircle(f.x + 14, top, 4);
       }
     }
-    // ステージ3: 掃除の範囲と、ほうき
-    if (w.level.sweep && w.outcome === 'playing') {
-      const p = w.player, r = w.level.sweep.radius, ready = p.cooldown <= 0, swing = w.time - w.sweepTime < .25 ? Math.sin((w.time - w.sweepTime) / .25 * Math.PI) : 0;
-      this.deerFx.lineStyle(3, 0x6f9c45, ready ? .5 : .16).strokeCircle(p.x, p.y, r).fillStyle(0x9cc765, ready ? .1 : .04).fillCircle(p.x, p.y, r);
-      const hx = p.x + 30 - swing * 36, hy = p.y - 14;
-      this.deerFx.lineStyle(6, 0x9a7440).lineBetween(hx + 12, hy - 50, hx, hy);
-      this.deerFx.fillStyle(0xd7b45a).fillTriangle(hx - 16, hy + 22, hx + 16, hy + 22, hx, hy - 4);
+    // ステージ3: 掃除のあとに、花が咲く
+    for (const f of this.flowerList) {
+      const age = Math.min(1, (this.visualTime - f.born) / .35), r = 10 * age;
+      for (let i = 0; i < 5; i++) this.deerFx.fillStyle(f.color, .95).fillCircle(f.x + Math.cos(i * 1.2566) * r, f.y + Math.sin(i * 1.2566) * r * .7, 6 * age);
+      this.deerFx.fillStyle(0xfff4a8).fillCircle(f.x, f.y, 4 * age);
     }
     // ステージ2: せんべいを狙う鹿、置かれたせんべい、持っているせんべい、届け先の鹿
     const delivery = w.level.delivery;
@@ -359,6 +362,8 @@ export class ParkView {
   }
 
   render(w: World, dt: number, now: number, lossAge: number, showPlayer = true) {
+    this.visualTime = now;
+    this.visualTime = now;
     const p = w.player;
     // Leave room above the park so the finish flag stays below the fixed HUD.
     const target = Phaser.Math.Clamp(p.y - 800, -240, 2820);
@@ -401,6 +406,6 @@ export class ParkView {
     this.labels = this.labels.filter(l => now - l.born <= 1.2);
     // 旗はゴールの位置について行く（動くゴールがあるため）。基準は、中央ゴール (360,300) のときの形。
     // ゴールゲートはゴールの位置について行く（動くゴールがあるため）。Spruはゲートの手前を通ってクリアする。
-    this.goalGate.setPosition(w.goal.x, w.goal.y + 62).setDepth(w.goal.y - 20).setVisible(!w.level.delivery && !w.level.sweep);
+    this.goalGate.setPosition(w.goal.x, w.goal.y + 62).setDepth(w.goal.y - 20).setVisible(!w.level.delivery);
   }
 }

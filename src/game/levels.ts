@@ -656,23 +656,27 @@ export const LEVEL_2_5: LevelDefinition = {
   hints: { poop: 'うんこが、上から降ってきた…！\n影が出たら、動いて避けよう。', fall: FALL_HINT, wall: WALL_HINT, caught: STOLEN_HINT },
 };
 
-/** 3-1: はじめての大掃除。ボタンで、まわりのうんこを掃く。鹿が落とす分も、溜まる前に。 */
+/** 3-1: はじめての大掃除。うんこに触れると、掃ける。通り過ぎて残すと「見逃し」。見逃しが溜まると失敗。 */
 export const LEVEL_3_1: LevelDefinition = {
   id: '3-1', stage: 3, title: 'はじめての大掃除',
-  intro: 'うんこに近づいて、ボタンで掃除！',
-  start: { x: 360, y: 1500 },
-  poops: [{ x: 180, y: 1250 }, { x: 300, y: 1150 }, { x: 440, y: 1250 }, { x: 540, y: 1100 }, { x: 240, y: 1000 }, { x: 400, y: 1020 }, { x: 520, y: 1380 }, { x: 200, y: 1400 }],
+  intro: 'うんこに触れると、掃除できる！',
+  start: { x: 360, y: 3400 },
+  poops: [{ x: 170, y: 3150 }, { x: 440, y: 3150 }, { x: 280, y: 2980 }, { x: 550, y: 2980 }, { x: 190, y: 2810 }, { x: 500, y: 2810 }, { x: 250, y: 2640 }, { x: 560, y: 2640 }, { x: 170, y: 2470 }, { x: 440, y: 2470 }, { x: 280, y: 2300 }, { x: 550, y: 2300 }, { x: 190, y: 2130 }, { x: 500, y: 2130 }, { x: 250, y: 1960 }, { x: 560, y: 1960 }, { x: 170, y: 1790 }, { x: 440, y: 1790 }, { x: 280, y: 1620 }, { x: 550, y: 1620 }, { x: 190, y: 1450 }, { x: 500, y: 1450 }, { x: 250, y: 1280 }, { x: 560, y: 1280 }, { x: 170, y: 1110 }, { x: 440, y: 1110 }, { x: 280, y: 940 }, { x: 550, y: 940 }],
   deers: [
-    { id: 'doe', kind: 'doe', y: 1300, x1: 150, x2: 570, startX: 170, startDir: 1, speed: 90, firstDrop: 2, dropEvery: 3, drops: 5, warning: .8 },
+    { id: 'doe', kind: 'doe', y: 2300, x1: 150, x2: 570, startX: 170, startDir: 1, speed: 90, firstDrop: 1.5, dropEvery: 1, drops: 3, warning: .6 },
+    { id: 'stag', kind: 'stag', y: 1500, x1: 150, x2: 570, startX: 560, startDir: -1, speed: 100, firstDrop: 5, dropEvery: 1, drops: 3, warning: .6 },
   ],
   traps: [], walls: [], sliders: [], chasers: [], rain: [],
-  sweep: { limit: 11, radius: 80, cooldown: .55, arena: { top: 880, bottom: 1700 } },
+  sweep: { limit: 8, radius: 52 },
   chapters: [
-    { above: -Infinity, text: 'うんこの近くで、ボタン。溜めすぎ注意！' },
+    { above: 3250, text: 'うんこに触れると、掃除できる。' },
+    { above: 2900, text: '通り過ぎると、見逃し。' },
+    { above: 1500, text: '鹿が落としたうんこも、掃こう。' },
+    { above: -Infinity, text: 'あと少し。ゴールへ！' },
   ],
   hints: {
     poop: POOP_HINT, fall: FALL_HINT, wall: WALL_HINT,
-    caught: '公園が、うんこだらけに…！\n溜まる前に、こまめに掃除しよう。\n鹿が落とした場所にも、早めに。',
+    caught: '見逃しが、溜まりすぎた…！\nうんこに、近づいて触れよう。\n左右に動いて、拾いにいこう。',
   },
 };
 

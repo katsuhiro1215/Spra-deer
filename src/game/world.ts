@@ -4,7 +4,7 @@ import { facingOf, type Facing } from './facing.ts';
 export type Input = { x: number; y: number; jump?: boolean };
 export type Trap = TrapDefinition & { state: 'intact' | 'shaking' | 'open'; elapsed: number };
 export type Event = {
-  kind: 'jump' | 'land' | 'warning' | 'collapse' | 'poop' | 'fall' | 'clear' | 'dropWarning' | 'drop' | 'wall' | 'slide' | 'crush' | 'goalMove' | 'chase' | 'caught' | 'bait' | 'eat' | 'stolen' | 'sweep' | 'found' | 'lost';
+  kind: 'jump' | 'land' | 'warning' | 'collapse' | 'poop' | 'fall' | 'clear' | 'dropWarning' | 'drop' | 'wall' | 'slide' | 'crush' | 'goalMove' | 'chase' | 'caught' | 'bait' | 'eat' | 'stolen' | 'sweep' | 'found' | 'lost' | 'miss';
   x: number; y: number; id?: string;
 };
 /** 歩く鹿。walk=歩く, warn=止まって予告中。 */
@@ -36,7 +36,7 @@ export type World = {
   player: Point & { height: number; jumpTime: number; cooldown: number; facing: Facing; stride: number; moving: boolean };
   traps: Trap[]; deers: Deer[]; walls: Wall[]; sliders: Slider[]; chasers: Chaser[]; rain: Rain[]; goal: Goal;
   thieves: Thief[]; baits: Bait[]; baitsLeft: number;
-  crossers: Crosser[]; follower: Follower | null; swept: number; sweepTime: number;
+  crossers: Crosser[]; follower: Follower | null; swept: number; sweepTime: number; missed: number; combo: number; bestCombo: number;
   /** 面に置かれたうんこ＋鹿が落としたうんこ。当たり判定はこれと sliders を使う。 */
   poops: Point[];
   time: number; jumps: number; outcome: Outcome;
@@ -69,7 +69,7 @@ export function createWorld(level: LevelDefinition): World {
     baits: [], baitsLeft: level.delivery?.baits ?? 0,
     crossers: (level.cross?.crossers ?? []).map(c => ({ id: c.id, kind: c.kind, x: crossX(c, 0), y: c.y, dir: c.speed >= 0 ? 1 : -1, walked: 0 })),
     follower: level.rescue ? { kind: level.rescue.kind, x: level.rescue.x, y: level.rescue.y, dir: 1, state: 'lost', walked: 0, trail: [] } : null,
-    swept: 0, sweepTime: -1,
+    swept: 0, sweepTime: -1, missed: 0, combo: 0, bestCombo: 0,
     rain: level.rain.map(r => ({ id: r.id, state: 'idle', timer: 0, tx: r.x ?? 0, ty: r.y ?? 0 })),
     goal: { x: (level.goal ?? GOAL).x, y: (level.goal ?? GOAL).y, state: 'idle' },
     sliders: level.sliders.map(s => ({ ...s, cx: s.x, cy: s.y, state: 'idle' })),
@@ -262,15 +262,10 @@ export function step(w: World, input: Input, dt = RULES.step): void {
   let jumped = false;
   const sweep = w.level.sweep;
   if (input.jump && (w.level.delivery || sweep || w.level.cross || w.level.rescue)) {
-    // ステージ2以降は、ジャンプしない。2はせんべいを置く、3は掃く。4と5はボタンなし。
+    // ステージ2以降は、ジャンプしない。2はせんべいを置く。3・4・5はボタンなし（3は、触れると掃ける）。
     if (w.level.delivery && w.baitsLeft > 0 && p.cooldown <= 0) {
       w.baits.push({ x: p.x, y: p.y, by: -1, gone: false }); w.baitsLeft--; p.cooldown = .4;
       w.events.push({ kind: 'bait', x: p.x, y: p.y });
-    } else if (sweep && p.cooldown <= 0) {
-      const before = w.poops.length;
-      w.poops = w.poops.filter(o => Math.hypot(o.x - p.x, o.y - p.y) > sweep.radius);
-      w.swept += before - w.poops.length; p.cooldown = sweep.cooldown; w.sweepTime = w.time;
-      w.events.push({ kind: 'sweep', x: p.x, y: p.y });
     }
   } else if (input.jump && p.jumpTime < 0 && p.cooldown <= 0) {
     p.jumpTime = 0; w.jumps++; jumped = true; w.events.push({ kind: 'jump', x: p.x, y: p.y });
@@ -280,7 +275,7 @@ export function step(w: World, input: Input, dt = RULES.step): void {
   p.moving = length > .02;
   const fromX = p.x, fromY = p.y;
   p.x = clamp(p.x + dx * RULES.speed * dt, FIELD.left, FIELD.right);
-  p.y = clamp(p.y + dy * RULES.speed * dt, sweep?.arena.top ?? FIELD.top, sweep?.arena.bottom ?? FIELD.bottom);
+  p.y = clamp(p.y + dy * RULES.speed * dt, FIELD.top, FIELD.bottom);
   // 向きは入力で、歩幅（足の出し入れ）は実際に進んだ距離で決める。壁に押しつけても足は動かない。
   if (p.moving) p.facing = facingOf(dx, dy);
   p.stride += Math.hypot(p.x - fromX, p.y - fromY);
@@ -323,6 +318,19 @@ export function step(w: World, input: Input, dt = RULES.step): void {
       }
     }
   }
+  if (sweep) {
+    // 触れたうんこは、掃ける。通り過ぎて、後ろに残したうんこは、見逃し。
+    const keep: typeof w.poops = [];
+    for (const o of w.poops) {
+      if (Math.hypot(o.x - p.x, o.y - p.y) <= sweep.radius) {
+        w.swept++; w.combo++; w.bestCombo = Math.max(w.bestCombo, w.combo); w.sweepTime = w.time;
+        w.events.push({ kind: 'sweep', x: o.x, y: o.y });
+      } else if (o.y > p.y + 150) {
+        w.missed++; w.combo = 0; w.events.push({ kind: 'miss', x: o.x, y: o.y });
+      } else keep.push(o);
+    }
+    w.poops = keep;
+  }
   const poopReach = RULES.radius + RULES.poopRadius;
   if (p.height < 22 && !sweep && (w.poops.some(o => Math.hypot(o.x - p.x, o.y - p.y) < poopReach) || w.sliders.some(s => Math.hypot(s.cx - p.x, s.cy - p.y) < poopReach))) {
     w.outcome = 'poop'; w.events.push({ kind: 'poop', x: p.x, y: p.y });
@@ -332,7 +340,7 @@ export function step(w: World, input: Input, dt = RULES.step): void {
     w.outcome = 'stolen'; w.events.push({ kind: 'stolen', x: p.x, y: p.y });
   } else if (w.crossers.some(c => Math.abs(c.x - p.x) < 44 && Math.abs(c.y - p.y) < 26)) {
     w.outcome = 'hit'; w.events.push({ kind: 'caught', x: p.x, y: p.y });
-  } else if (sweep && w.poops.length >= sweep.limit) {
+  } else if (sweep && w.missed >= sweep.limit) {
     w.outcome = 'dirty'; w.events.push({ kind: 'poop', x: p.x, y: p.y });
   } else if (followerHurt(w)) {
     w.outcome = 'lost'; w.events.push({ kind: 'lost', x: w.follower!.x, y: w.follower!.y });
@@ -340,9 +348,7 @@ export function step(w: World, input: Input, dt = RULES.step): void {
     w.outcome = 'wall'; w.events.push({ kind: 'crush', x: p.x, y: p.y });
   } else if (p.jumpTime < 0 && w.traps.some(t => t.state === 'open' && inHole(p, t))) {
     w.outcome = 'fall'; w.events.push({ kind: 'fall', x: p.x, y: p.y });
-  } else if (sweep && w.poops.length === 0 && w.deers.every((d, i) => d.dropped >= w.level.deers[i].drops && d.state === 'walk')) {
-    w.outcome = 'clear'; w.events.push({ kind: 'clear', x: p.x, y: p.y });
-  } else if (!sweep && p.jumpTime < 0 && Math.hypot(p.x - w.goal.x, p.y - w.goal.y) < GOAL.radius
+  } else if (p.jumpTime < 0 && Math.hypot(p.x - w.goal.x, p.y - w.goal.y) < GOAL.radius
     && (!w.level.rescue || (w.follower?.state === 'follow' && Math.hypot(w.follower.x - p.x, w.follower.y - p.y) < 140))) {
     w.outcome = 'clear'; w.events.push({ kind: 'clear', x: p.x, y: p.y });
   }

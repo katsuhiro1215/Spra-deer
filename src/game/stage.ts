@@ -63,7 +63,8 @@ export type DeliveryDefinition = {
   eat?: number; // 置いたせんべいを食べる時間（秒、既定2.6）
 };
 /** ステージ3（大掃除）。ボタンで、まわり radius 内のうんこを掃く。うんこが limit 個以上になると失敗。動ける範囲は arena。 */
-export type SweepDefinition = { limit: number; radius: number; cooldown: number; arena: { top: number; bottom: number } };
+/** ステージ3（大掃除）。うんこに触れる（radius以内）と、自動で掃ける。通り過ぎて残したうんこが limit 個になると失敗。 */
+export type SweepDefinition = { limit: number; radius: number };
 /** ステージ4（横断）。道を横切る動物。速さの符号が向き。画面の外で折り返して、同じ道をぐるぐる回る（時間だけで決まる）。 */
 export type CrosserDefinition = { id: string; kind: 'stag' | 'doe' | 'fawn'; y: number; x0: number; speed: number };
 export type CrossDefinition = { crossers: CrosserDefinition[] };
