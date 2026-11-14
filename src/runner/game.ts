@@ -1,5 +1,7 @@
-// 「春日大社へ」お試しの組み立て: 入力・画面表示(HUD)・効果音・ループ。
-import { COURSE_LENGTH, buildCourse, type ObstacleKind } from './course.ts';
+// 3D走りゲームの組み立て: 入力・画面表示(HUD)・効果音・ループ・記録。
+import { Progress } from '../progress.ts';
+import type { ObstacleKind } from './course.ts';
+import { RUNNER_LEVELS, courseOf, type RunnerLevel } from './levels.ts';
 import { Run, type Input, type SimEvent } from './sim.ts';
 import { KasugaView } from './view.ts';
 
@@ -11,17 +13,26 @@ const HINTS: Record<ObstacleKind, string> = {
   fence: '柵は ジャンプ、すき間も あるよ',
   stone: 'ころがる岩！ タイミングよくジャンプ',
   deer: '鹿が よこぎるよ！ ジャンプでも越えられる',
+  puddle: 'みずたまり！ ふむと おそくなるよ',
+  ice: 'こおり！ ふむと つるつる すべるよ',
 };
-const MILESTONES: [number, string][] = [
-  [500, 'ちょうど 半分！ コインも いっぱい'],
-  [800, 'もうすぐ 春日大社だよ'],
-  [915, '赤い社殿が 見えてきた！'],
-];
 
-export function startKasuga(root: HTMLElement): () => void {
+export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
   const q = <T extends HTMLElement>(k: string) => root.querySelector<T>(`[data-ks="${k}"]`)!;
-  const course = buildCourse();
-  const view = new KasugaView(q('stage'), course);
+  const course = courseOf(level);
+  const view = new KasugaView(q('stage'), course, level);
+  const progress = new Progress();
+  const MILESTONES: [number, string][] = [
+    [course.length * 0.5, level.lines[0]],
+    [course.length * 0.8, level.lines[1]],
+    [course.length * 0.92, level.lines[2]],
+  ];
+  const nextLevel = RUNNER_LEVELS[RUNNER_LEVELS.findIndex((l) => l.id === level.id) + 1];
+  q('lv-id').textContent = `面 ${level.id}`;
+  q('lv-title').textContent = level.title;
+  q('lv-goal').textContent = level.goalName;
+  q('s-title').textContent = level.title;
+  q('s-lead').textContent = level.summary;
   let run = new Run(course);
   const input: Input = { left: false, right: false, jump: false };
 
@@ -49,9 +60,32 @@ export function startKasuga(root: HTMLElement): () => void {
       case 'hit': tone(200, 60, 0.3, 'sawtooth', 0.1); break;
       case 'fall': tone(520, 50, 0.6, 'triangle', 0.1); break;
       case 'slip': tone(760, 220, 0.35, 'square', 0.05); break;
+      case 'slow': tone(300, 140, 0.25, 'sine', 0.08); break;
+      case 'slide': tone(1500, 900, 0.4, 'triangle', 0.05); break;
       case 'clear': [523, 659, 784, 1047].forEach((f, i) => tone(f, f * 1.01, 0.3, 'triangle', 0.1, i * 0.12)); break;
       case 'fail': tone(330, 80, 0.8, 'sawtooth', 0.08); break;
     }
+  };
+
+  // 雨の面だけ、さーっという雨の音(ノイズ)を小さく流す
+  let rainNode: AudioBufferSourceNode | null = null;
+  const startRain = () => {
+    if (level.theme.weather !== 'rain' || !ac || rainNode) return;
+    const len = ac.sampleRate * 2;
+    const buf = ac.createBuffer(1, len, ac.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+    const src = ac.createBufferSource();
+    src.buffer = buf;
+    src.loop = true;
+    const filter = ac.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.value = 3200;
+    const gain = ac.createGain();
+    gain.gain.value = 0.05;
+    src.connect(filter).connect(gain).connect(ac.destination);
+    src.start();
+    rainNode = src;
   };
 
   // ---- HUD ----
@@ -81,16 +115,31 @@ export function startKasuga(root: HTMLElement): () => void {
   let miles = new Set<number>();
   let resultTimer = 0;
 
+  let recorded = false;
   const showResult = () => {
     const cleared = run.phase === 'cleared';
     const time = run.t.toFixed(1);
     const total = course.coins.length;
     const stars = cleared ? (run.lives === 3 ? 3 : run.lives === 2 ? 2 : 1) : 0;
-    q('r-title').textContent = cleared ? '春日大社に とうちゃく！' : 'ざんねん… もうすこしだった';
+    let newBest = false;
+    if (cleared && !recorded) {
+      recorded = true;
+      newBest = progress.clear(level.id, run.t);
+    }
+    const best = progress.get(level.id).best;
+    q('r-title').textContent = cleared ? `${level.goalName}に とうちゃく！` : 'ざんねん… もうすこしだった';
     q('r-stars').textContent = cleared ? '★'.repeat(stars) + '☆'.repeat(3 - stars) : '';
     q('r-coins').textContent = `${run.coins} / ${total}`;
     q('r-hearts').textContent = '♥'.repeat(Math.max(0, run.lives)) || '—';
-    q('r-time').textContent = cleared ? `${time} 秒` : `${Math.floor(run.progress * 100)} % まで`;
+    q('r-time').textContent = cleared ? `${time} 秒${newBest ? '（ベスト更新！）' : ''}` : `${Math.floor(run.progress * 100)} % まで`;
+    q('r-best').textContent = best === null ? '—' : `${best.toFixed(1)} 秒`;
+    // クリアしたら次の面へ(最後の面なら、面えらびへ)
+    const next = q<HTMLAnchorElement>('next');
+    next.hidden = !cleared || !nextLevel;
+    if (nextLevel) {
+      next.href = `/run/?level=${nextLevel.id}`;
+      next.textContent = `次の面へ（${nextLevel.id}）▶`;
+    }
     elResult.classList.toggle('fail', !cleared);
     elResult.classList.add('on');
   };
@@ -109,12 +158,15 @@ export function startKasuga(root: HTMLElement): () => void {
     run = new Run(course);
     hinted = new Set();
     miles = new Set();
+    recorded = false;
     input.left = input.right = input.jump = false;
     run.start();
+    progress.attempt(level.id);
     elStart.classList.remove('on');
     elResult.classList.remove('on');
+    startRain();
     paintHud();
-    toast('◀ ▶ で よけて、ジャンプで あなを こえよう！', 3200);
+    toast(level.intro, 3600);
   };
 
   q('go').addEventListener('click', begin);
@@ -206,8 +258,13 @@ export function startKasuga(root: HTMLElement): () => void {
       } else if (e.kind === 'slip') {
         view.bump(0.2);
         toast('ふんで スリップ！ 操作が逆に！', 1800);
+      } else if (e.kind === 'slow') {
+        toast('ばしゃっ！ おそくなった', 1400);
+      } else if (e.kind === 'slide') {
+        view.bump(0.12);
+        toast('つるつる〜！ 曲がれない！', 1600);
       } else if (e.kind === 'clear') {
-        toast('春日大社に とうちゃく！', 4000);
+        toast(`${level.goalName}に とうちゃく！`, 4000);
       }
       if (e.kind === 'coin') {
         elCoins.classList.remove('ks-pop');
@@ -248,7 +305,7 @@ export function startKasuga(root: HTMLElement): () => void {
     get run() { return run; },
     course,
     input,
-    COURSE_LENGTH,
+    level,
   };
 
   return () => {
@@ -259,6 +316,7 @@ export function startKasuga(root: HTMLElement): () => void {
     window.removeEventListener('keyup', ku);
     root.removeEventListener('contextmenu', noMenu);
     delete (window as unknown as { __kasuga?: unknown }).__kasuga;
+    try { rainNode?.stop(); } catch { /* 止まっていたら何もしない */ }
     void ac?.close();
     view.dispose();
   };

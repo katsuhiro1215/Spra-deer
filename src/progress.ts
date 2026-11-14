@@ -1,4 +1,4 @@
-import { PLAYABLE } from './game/levels.ts';
+import { ALL_PLAYABLE_SLOTS } from './game/levels.ts';
 
 export type LevelRecord = { best: number | null; attempts: number; clears: number };
 const KEY = 'spra-deer:progress:v1';
@@ -18,7 +18,7 @@ export class Progress {
       const levels = saved && typeof saved === 'object' ? saved.levels : null;
       if (levels && typeof levels === 'object') {
         // 知らない面の記録は無視する（データ側から面を消しても壊れない）。
-        for (const level of PLAYABLE) {
+        for (const level of ALL_PLAYABLE_SLOTS) {
           const r = levels[level.id];
           if (r && typeof r === 'object') {
             this.levels.set(level.id, { best: Number.isFinite(r.best) && r.best > 0 ? r.best : null, attempts: count(r.attempts), clears: count(r.clears) });
@@ -42,9 +42,9 @@ export class Progress {
   }
   /** 遊べる面のうち、直前の面をクリアした面（最初の面は常に）が選べる。 */
   isUnlocked(id: string): boolean {
-    const index = PLAYABLE.findIndex(l => l.id === id);
+    const index = ALL_PLAYABLE_SLOTS.findIndex(l => l.id === id);
     if (UNLOCK_ALL) return index >= 0;
-    return index === 0 || (index > 0 && this.get(PLAYABLE[index - 1].id).clears > 0);
+    return index === 0 || (index > 0 && this.get(ALL_PLAYABLE_SLOTS[index - 1].id).clears > 0);
   }
-  clearedCount(stage: number): number { return PLAYABLE.filter(l => l.stage === stage && this.get(l.id).clears > 0).length; }
+  clearedCount(stage: number): number { return ALL_PLAYABLE_SLOTS.filter(l => l.stage === stage && this.get(l.id).clears > 0).length; }
 }

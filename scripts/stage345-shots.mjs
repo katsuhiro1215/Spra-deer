@@ -27,30 +27,7 @@ await page.locator('[data-action="select"]').click();
 await page.screenshot({ path: 'test-results/s345-select.png', fullPage: true });
 await page.locator('[data-action="title"]').click();
 
-// 3-1: 掃除（触れると掃ける）。スタートの見た目だけ
-await open('3-1');
-await page.screenshot({ path: 'test-results/s345-3-1-start.png' });
-await back();
-
-// 4-1: 横断。ボタンなし
+// ステージ3は3D走り(/run/)、ステージ5は保留。ここでは、ステージ4(掃除・仮)のスタートの見た目だけ撮る
 await open('4-1');
-await page.keyboard.down('ArrowUp');
-await page.waitForFunction(() => window.__DEER__.player.y < 3150 || window.__DEER__.outcome !== 'playing');
-await page.keyboard.up('ArrowUp');
-await page.screenshot({ path: 'test-results/s345-4-1.png' });
-console.log('4-1 jump button hidden:', await page.evaluate(() => getComputedStyle(document.getElementById('jump')).visibility));
-await page.keyboard.press('Escape'); await page.locator('[data-action="select"]').click();
-
-// 5-1: 迷子の子鹿を見つける
-await open('5-1');
-await page.screenshot({ path: 'test-results/s345-5-1-start.png' });
-await page.keyboard.down('ArrowUp');
-await page.waitForFunction(() => window.__DEER__.player.y < 3000);
-await page.keyboard.up('ArrowUp');
-await page.keyboard.down('ArrowRight'); await page.keyboard.down('ArrowUp');
-await page.waitForFunction(() => window.__DEER__.follower?.state === 'follow' || window.__DEER__.outcome !== 'playing');
-await page.keyboard.up('ArrowRight'); await page.keyboard.up('ArrowUp');
-await page.waitForTimeout(200);
-await page.screenshot({ path: 'test-results/s345-5-1-found.png' });
-console.log('5-1 follower:', await page.evaluate(() => window.__DEER__.follower?.state), 'outcome', await page.evaluate(() => window.__DEER__.outcome));
+await page.screenshot({ path: 'test-results/s345-4-1-start.png' });
 await browser.close();

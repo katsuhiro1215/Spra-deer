@@ -1,5 +1,5 @@
-// 「春日大社へ」お試しの進行計算(見た目に依存しない)。
-import { COURSE_LENGTH, HIT_RADIUS, PLAY_HALF, obstacleState, type Course, type Obstacle } from './course.ts';
+// 3D走りゲームの進行計算(見た目に依存しない)。
+import { DEFAULT_RULES, HIT_RADIUS, PLAY_HALF, obstacleState, type Course, type Obstacle, type Rules } from './course.ts';
 
 export interface Input {
   left: boolean;
@@ -8,17 +8,15 @@ export interface Input {
 }
 
 export type Phase = 'ready' | 'running' | 'cleared' | 'failed';
-export type SimEvent = { kind: 'coin' | 'jump' | 'land' | 'hit' | 'fall' | 'slip' | 'clear' | 'fail'; id?: number };
+export type SimEvent = { kind: 'coin' | 'jump' | 'land' | 'hit' | 'fall' | 'slip' | 'slow' | 'slide' | 'clear' | 'fail'; id?: number };
 
 export const PLAYER_RADIUS = 0.45;
-const STEER_SPEED = 6.8;
-const STEER_ACCEL = 42;
 const JUMP_V = 10.5;
 const GRAVITY = 32;
 const MAX_LIVES = 3;
 
-export function baseSpeed(s: number): number {
-  return 13 + 7 * Math.min(1, s / COURSE_LENGTH);
+export function baseSpeed(s: number, length: number, rules: Rules = DEFAULT_RULES): number {
+  return rules.speed0 + (rules.speed1 - rules.speed0) * Math.min(1, s / length);
 }
 
 export class Run {
@@ -34,6 +32,8 @@ export class Run {
   coins = 0;
   invuln = 0;
   slip = 0;
+  /** こおりをふんだあと、左右がきかない残り時間。 */
+  ice = 0;
   stride = 0;
   readonly collected = new Set<number>();
   readonly consumed = new Set<number>();
@@ -42,19 +42,21 @@ export class Run {
   private prevJump = false;
 
   readonly course: Course;
+  readonly rules: Rules;
 
   constructor(course: Course) {
     this.course = course;
+    this.rules = course.rules ?? DEFAULT_RULES;
   }
 
   get speed(): number {
-    return baseSpeed(this.s) * this.speedMul;
+    return baseSpeed(this.s, this.course.length, this.rules) * this.speedMul;
   }
   get airborne(): boolean {
     return this.y > 0;
   }
   get progress(): number {
-    return Math.min(1, this.s / COURSE_LENGTH);
+    return Math.min(1, this.s / this.course.length);
   }
 
   start(): void {
@@ -75,7 +77,7 @@ export class Run {
     if (this.phase === 'cleared' || this.phase === 'failed') {
       // 停止演出
       this.speedMul = Math.max(0, this.speedMul - dt * (this.phase === 'cleared' ? 0.4 : 1.6));
-      const maxS = COURSE_LENGTH + 28;
+      const maxS = this.course.length + 28;
       this.s = Math.min(maxS, this.s + this.speed * dt);
       this.x += (0 - this.x) * Math.min(1, dt * 2);
       this.integrateVertical(dt);
@@ -84,10 +86,12 @@ export class Run {
 
     // 左右(スリップ中は逆)
     if (this.slip > 0) this.slip = Math.max(0, this.slip - dt);
+    if (this.ice > 0) this.ice = Math.max(0, this.ice - dt);
     let dir = (input.right ? 1 : 0) - (input.left ? 1 : 0);
     if (this.slip > 0) dir = -dir;
-    const target = dir * STEER_SPEED;
-    const dv = Math.max(-STEER_ACCEL * dt, Math.min(STEER_ACCEL * dt, target - this.vx));
+    const target = dir * this.rules.steerSpeed;
+    const accel = this.ice > 0 ? 2.5 : this.rules.steerAccel; // 氷の上では、ほとんど曲がれない
+    const dv = Math.max(-accel * dt, Math.min(accel * dt, target - this.vx));
     this.vx += dv;
     this.x += this.vx * dt;
     if (this.x > PLAY_HALF) { this.x = PLAY_HALF; this.vx = 0; }
@@ -115,7 +119,7 @@ export class Run {
     this.collide();
     this.pickCoins();
 
-    if (this.phase === 'running' && this.s >= COURSE_LENGTH) {
+    if (this.phase === 'running' && this.s >= this.course.length) {
       this.phase = 'cleared';
       this.events.push({ kind: 'clear' });
     }
@@ -167,6 +171,12 @@ export class Run {
           this.slip = 1.6;
           this.speedMul = Math.min(this.speedMul, 0.7);
           this.events.push({ kind: 'slip', id: o.id });
+        } else if (o.kind === 'puddle') {
+          this.speedMul = Math.min(this.speedMul, 0.6);
+          this.events.push({ kind: 'slow', id: o.id });
+        } else if (o.kind === 'ice') {
+          this.ice = 1.4;
+          this.events.push({ kind: 'slide', id: o.id });
         } else {
           this.damage('hit');
         }

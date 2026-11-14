@@ -42,7 +42,7 @@ try {
   await snap(first, '02-select-fresh');
   assert.equal(await first.locator('[data-level="1-1"]').isDisabled(), false);
   // 開発中は全面解放（src/progress.ts の UNLOCK_ALL）。公開前に false へ戻すときは、ここを「1-2 は選べない」に戻す。
-  for (const id of ['1-2', '1-10', '2-1', '3-1', '4-1', '5-1']) assert.equal(await first.locator(`[data-level="${id}"]`).isDisabled(), false, `${id} is selectable while developing`);
+  for (const id of ['1-2', '1-10', '2-1', '3-1', '4-1']) assert.equal(await first.locator(`[data-level="${id}"]`).isDisabled(), false, `${id} is selectable while developing`);
   assert.equal(await first.locator('.soon-note').count(), 0, 'every stage has at least one level');
   await fresh.close();
   console.log('Fresh visitor: every level is selectable (development unlock)');

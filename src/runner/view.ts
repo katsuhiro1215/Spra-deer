@@ -1,0 +1,1060 @@
+// 3D走りゲームの表示(Three.js)。ルールの計算は sim.ts、ここは見た目だけ。
+// 面ごとの空・光・天候・景色は RunnerLevel.theme で切り替える。
+import * as THREE from 'three';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { GOAL_GAP, ROAD_HALF, obstacleState, type Course, type Obstacle } from './course.ts';
+import type { RunnerLevel, Theme } from './levels.ts';
+import type { Run } from './sim.ts';
+
+const ASSET = '/assets';
+const RED = 0xd8381c;
+
+function rngFor(seed: number) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function canvasTexture(size: number, paint: (g: CanvasRenderingContext2D, n: number) => void, repeat = false): THREE.CanvasTexture {
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  paint(c.getContext('2d')!, size);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  if (repeat) t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.anisotropy = 8;
+  return t;
+}
+
+function noiseTexture(base: string, specks: string[], n = 900): THREE.CanvasTexture {
+  const rnd = rngFor(7);
+  return canvasTexture(256, (g, size) => {
+    g.fillStyle = base;
+    g.fillRect(0, 0, size, size);
+    for (let i = 0; i < n; i++) {
+      g.fillStyle = specks[Math.floor(rnd() * specks.length)];
+      const r = 0.8 + rnd() * 2.2;
+      g.beginPath();
+      g.arc(rnd() * size, rnd() * size, r, 0, Math.PI * 2);
+      g.fill();
+    }
+  }, true);
+}
+
+function skyTexture(theme: Theme): THREE.CanvasTexture {
+  return canvasTexture(512, (g, n) => {
+    const grd = g.createLinearGradient(0, 0, 0, n);
+    theme.sky.forEach((c, i) => grd.addColorStop([0, 0.45, 0.78, 1][i], c));
+    g.fillStyle = grd;
+    g.fillRect(0, 0, n, n);
+    const rnd = rngFor(11);
+    if (theme.night) {
+      // 星と月
+      for (let i = 0; i < 160; i++) {
+        g.fillStyle = `rgba(255,255,255,${0.4 + rnd() * 0.6})`;
+        const r = rnd() < 0.1 ? 1.8 : 1;
+        g.beginPath();
+        g.arc(rnd() * n, rnd() * n * 0.6, r, 0, Math.PI * 2);
+        g.fill();
+      }
+      g.fillStyle = '#f4f1da';
+      g.shadowColor = '#cfd8ff';
+      g.shadowBlur = 24;
+      g.beginPath();
+      g.arc(n * 0.78, n * 0.2, 22, 0, Math.PI * 2);
+      g.fill();
+      g.shadowBlur = 0;
+      return;
+    }
+    const cloud = theme.weather === 'rain' ? 'rgba(120,132,146,0.8)' : theme.weather === 'snow' ? 'rgba(255,255,255,0.8)' : theme.setting === 'town' ? 'rgba(255,200,160,0.55)' : 'rgba(255,255,255,0.7)';
+    g.fillStyle = cloud;
+    const count = theme.weather === 'rain' ? 14 : 9;
+    for (let i = 0; i < count; i++) {
+      const cx = rnd() * n;
+      const cy = n * (0.1 + rnd() * 0.32);
+      for (let k = 0; k < 6; k++) {
+        g.beginPath();
+        g.ellipse(cx + k * 22 - 60, cy + Math.sin(k) * 6, 38 + rnd() * 22, 16 + rnd() * 8, 0, 0, Math.PI * 2);
+        g.fill();
+      }
+    }
+  });
+}
+
+function glowTexture(): THREE.CanvasTexture {
+  return canvasTexture(128, (g, n) => {
+    const grd = g.createRadialGradient(n / 2, n / 2, 0, n / 2, n / 2, n / 2);
+    grd.addColorStop(0, 'rgba(255,255,255,1)');
+    grd.addColorStop(0.25, 'rgba(255,255,255,0.55)');
+    grd.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = grd;
+    g.fillRect(0, 0, n, n);
+  });
+}
+
+function loadTex(url: string): THREE.Texture {
+  const t = new THREE.TextureLoader().load(url);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 8;
+  return t;
+}
+
+interface PartDef {
+  geo: THREE.BufferGeometry;
+  mat: THREE.Material;
+  pos?: [number, number, number];
+  rotY?: number;
+}
+interface Placement { x: number; y?: number; z: number; rotY?: number; scale?: number }
+
+/** 同じ形をたくさん置くときの描画まとめ(InstancedMesh)。 */
+function addInstanced(parent: THREE.Object3D, parts: PartDef[], places: Placement[], cast = true): void {
+  if (!places.length) return;
+  const m = new THREE.Matrix4();
+  const q = new THREE.Quaternion();
+  const s = new THREE.Vector3();
+  const p = new THREE.Vector3();
+  const pq = new THREE.Quaternion();
+  for (const part of parts) {
+    const mesh = new THREE.InstancedMesh(part.geo, part.mat, places.length);
+    places.forEach((pl, i) => {
+      const sc = pl.scale ?? 1;
+      const local = new THREE.Matrix4().compose(
+        new THREE.Vector3(...(part.pos ?? [0, 0, 0])),
+        pq.setFromEuler(new THREE.Euler(0, part.rotY ?? 0, 0)),
+        new THREE.Vector3(1, 1, 1),
+      );
+      q.setFromEuler(new THREE.Euler(0, pl.rotY ?? 0, 0));
+      m.compose(p.set(pl.x, pl.y ?? 0, pl.z), q, s.set(sc, sc, sc)).multiply(local);
+      mesh.setMatrixAt(i, m);
+    });
+    mesh.instanceMatrix.needsUpdate = true;
+    mesh.castShadow = cast;
+    mesh.receiveShadow = true;
+    mesh.frustumCulled = false;
+    parent.add(mesh);
+  }
+}
+
+export class KasugaView {
+  readonly renderer: THREE.WebGLRenderer;
+  private scene = new THREE.Scene();
+  private camera: THREE.PerspectiveCamera;
+  private sun: THREE.DirectionalLight;
+  private headlight?: THREE.PointLight;
+  private deer: THREE.Mesh;
+  private deerShadow: THREE.Mesh;
+  private runTex: THREE.Texture[] = [];
+  private coinDisc!: THREE.InstancedMesh;
+  private coinRim!: THREE.InstancedMesh;
+  private obstacleObjs: { o: Obstacle; obj: THREE.Object3D; spin?: THREE.Object3D; sprite?: THREE.Mesh }[] = [];
+  private walkTex: Record<string, THREE.Texture[]> = {};
+  private lastCoinState: Uint8Array;
+  private shake = 0;
+  private camX = 0;
+  private host: HTMLElement;
+  private ro: ResizeObserver;
+  private course: Course;
+  private theme: Theme;
+  private level: RunnerLevel;
+  private end: number; // 道の終わり(ゴールの先)
+  private cine = 0;
+  private wheel?: THREE.Object3D;
+  private weather?: { pts: THREE.Object3D; pos: Float32Array; n: number; rain: boolean; seed: Float32Array };
+  private disposables: { dispose(): void }[] = [];
+
+  constructor(host: HTMLElement, course: Course, level: RunnerLevel) {
+    this.host = host;
+    this.course = course;
+    this.level = level;
+    const theme = (this.theme = level.theme);
+    this.end = course.length + GOAL_GAP;
+
+    const r = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    r.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    r.shadowMap.enabled = true;
+    r.shadowMap.type = THREE.PCFSoftShadowMap;
+    r.toneMapping = THREE.ACESFilmicToneMapping;
+    r.toneMappingExposure = theme.exposure;
+    r.domElement.className = 'ks-canvas';
+    host.appendChild(r.domElement);
+    this.renderer = r;
+
+    this.scene.background = skyTexture(theme);
+    this.scene.fog = new THREE.Fog(theme.fog, theme.fogNear, theme.fogFar);
+    const pm = new THREE.PMREMGenerator(r);
+    this.scene.environment = pm.fromScene(new RoomEnvironment(), 0.04).texture;
+    this.scene.environmentIntensity = theme.env;
+    pm.dispose();
+
+    this.camera = new THREE.PerspectiveCamera(62, 9 / 16, 0.3, 420);
+
+    this.scene.add(new THREE.HemisphereLight(theme.hemiSky, theme.hemiGround, theme.hemi));
+    this.sun = new THREE.DirectionalLight(theme.sun, theme.sunPower);
+    this.sun.castShadow = true;
+    this.sun.shadow.mapSize.set(2048, 2048);
+    const sc = this.sun.shadow.camera;
+    sc.left = -26; sc.right = 26; sc.top = 26; sc.bottom = -26; sc.near = 1; sc.far = 90;
+    this.sun.shadow.bias = -0.0004;
+    this.sun.shadow.normalBias = 0.04;
+    this.scene.add(this.sun, this.sun.target);
+    if (theme.night) {
+      // 鹿の前を、ぼんやり照らす灯り
+      this.headlight = new THREE.PointLight(0xffd9a0, 70, 22, 1.5);
+      this.scene.add(this.headlight);
+    }
+
+    this.buildGround();
+    if (theme.setting === 'sando') {
+      this.buildSandoScenery();
+      this.buildTorii();
+    } else {
+      this.buildTownScenery();
+    }
+    if (theme.goal === 'shrine') this.buildShrine();
+    else this.buildBay();
+    this.buildObstacles();
+    this.buildCoins();
+    this.buildWeather();
+    this.lastCoinState = new Uint8Array(course.coins.length).fill(2); // 2=まだ一度も配置していない
+
+    for (let i = 0; i < 4; i++) this.runTex.push(loadTex(`${ASSET}/kasuga/run_${i}.png`));
+    for (const k of ['doe_l', 'doe_r']) this.walkTex[k] = [0, 1, 2, 3].map((i) => loadTex(`${ASSET}/deer-walk/${k}_${i}.png`));
+
+    const dg = new THREE.PlaneGeometry(1.7, 2.267);
+    dg.translate(0, 1.13, 0);
+    this.deer = new THREE.Mesh(dg, new THREE.MeshBasicMaterial({ map: this.runTex[0], transparent: true, alphaTest: 0.45, toneMapped: false }));
+    // 夜と雨は、鹿の絵を少し暗くして、景色になじませる
+    (this.deer.material as THREE.MeshBasicMaterial).color.setScalar(theme.night ? 0.78 : theme.weather === 'rain' ? 0.92 : 1);
+    this.deer.renderOrder = 2;
+    this.scene.add(this.deer);
+    this.deerShadow = new THREE.Mesh(
+      new THREE.CircleGeometry(0.58, 24).rotateX(-Math.PI / 2),
+      new THREE.MeshBasicMaterial({ color: 0x1a2a14, transparent: true, opacity: 0.35, depthWrite: false }),
+    );
+    this.deerShadow.position.y = 0.02;
+    this.scene.add(this.deerShadow);
+
+    this.ro = new ResizeObserver(() => this.resize());
+    this.ro.observe(host);
+    this.resize();
+  }
+
+  // ---- 地面 ----
+  private buildGround(): void {
+    const th = this.theme;
+    const gravel = noiseTexture(th.road.base, th.road.specks, 1600);
+    const grass = noiseTexture(th.grass.base, th.grass.specks, 1400);
+    this.disposables.push(gravel, grass);
+    const matRoad = new THREE.MeshStandardMaterial({ map: gravel, roughness: th.road.rough });
+    const matGrass = new THREE.MeshStandardMaterial({ map: grass, roughness: 1 });
+    const matCurb = new THREE.MeshStandardMaterial({ color: th.setting === 'town' ? 0xb9b4aa : 0x9a968c, roughness: 0.9 });
+    const pierEnd = th.goal === 'bay' ? this.course.length + 60 : this.end - 6;
+    const holes = this.course.obstacles.filter((o) => o.kind === 'hole');
+    const spans: [number, number][] = [];
+    let cur = -30;
+    for (const h of holes) {
+      spans.push([cur, h.s]);
+      cur = h.s + h.len;
+    }
+    spans.push([cur, pierEnd]);
+    const w = ROAD_HALF * 2;
+    const dash: Placement[] = [];
+    for (const [a, b] of spans) {
+      const len = b - a;
+      const g = new THREE.PlaneGeometry(w, len);
+      const uv = g.attributes.uv;
+      for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * (w / 4), uv.getY(i) * (len / 4));
+      const road = new THREE.Mesh(g, matRoad);
+      road.rotation.x = -Math.PI / 2;
+      road.position.set(0, 0, -(a + b) / 2);
+      road.receiveShadow = true;
+      this.scene.add(road);
+      for (const sx of [-1, 1]) {
+        const curb = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.22, len), matCurb);
+        curb.position.set(sx * (ROAD_HALF + 0.2), 0.11, -(a + b) / 2);
+        curb.receiveShadow = true;
+        curb.castShadow = true;
+        this.scene.add(curb);
+      }
+      if (th.setting === 'town') for (let s = Math.ceil(a / 6) * 6; s < b - 2.5; s += 6) dash.push({ x: 0, y: 0.015, z: -(s + 1.2) });
+    }
+    if (dash.length) {
+      addInstanced(this.scene, [{ geo: new THREE.BoxGeometry(0.22, 0.02, 2.6), mat: new THREE.MeshStandardMaterial({ color: 0xf4efe0, roughness: 0.7 }) }], dash, false);
+    }
+    // 両側の芝(ゴールが海なら、岸まで)
+    const grassEnd = th.goal === 'bay' ? pierEnd : this.end + 330;
+    const L = grassEnd + 40;
+    const gs = 90;
+    for (const sx of [-1, 1]) {
+      const g = new THREE.PlaneGeometry(gs, L);
+      const uv = g.attributes.uv;
+      for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * (gs / 6), uv.getY(i) * (L / 6));
+      const m = new THREE.Mesh(g, matGrass);
+      m.rotation.x = -Math.PI / 2;
+      m.position.set(sx * (ROAD_HALF + 0.4 + gs / 2), -0.02, -(L / 2 - 40));
+      m.receiveShadow = true;
+      this.scene.add(m);
+    }
+    // 穴(のぞくと深い)
+    const pitMat = new THREE.MeshStandardMaterial({ color: 0x2a1e16, roughness: 1, side: THREE.BackSide });
+    const pylonMat = new THREE.MeshStandardMaterial({ color: 0xff6a2a, roughness: 0.5, emissive: 0x401400 });
+    const stripe = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5 });
+    for (const h of holes) {
+      const pit = new THREE.Mesh(new THREE.BoxGeometry(w + 0.8, 4, h.len), pitMat);
+      pit.position.set(0, -2, -(h.s + h.len / 2));
+      this.scene.add(pit);
+      for (const sx of [-1, 1]) {
+        for (const zz of [h.s - 1.4, h.s + h.len + 1.4]) {
+          const cone = new THREE.Mesh(new THREE.ConeGeometry(0.33, 0.9, 14), pylonMat);
+          cone.position.set(sx * (ROAD_HALF - 0.5), 0.45, -zz);
+          cone.castShadow = true;
+          const band = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.25, 0.14, 14), stripe);
+          band.position.set(sx * (ROAD_HALF - 0.5), 0.5, -zz);
+          this.scene.add(cone, band);
+        }
+      }
+    }
+  }
+
+  // ---- 参道: 灯籠と杉並木 ----
+  private buildSandoScenery(): void {
+    const th = this.theme;
+    const stone = new THREE.MeshStandardMaterial({ color: th.snowCaps ? 0xc9ccd0 : 0xaaa69b, roughness: 0.95 });
+    const glow = new THREE.MeshStandardMaterial({ color: 0xffd98a, emissive: 0xffb040, emissiveIntensity: th.lampGlow, roughness: 0.6 });
+    const snowM = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 });
+    const lanternParts: PartDef[] = [
+      { geo: new THREE.BoxGeometry(0.95, 0.25, 0.95), mat: stone, pos: [0, 0.125, 0] },
+      { geo: new THREE.CylinderGeometry(0.17, 0.2, 0.95, 10), mat: stone, pos: [0, 0.72, 0] },
+      { geo: new THREE.CylinderGeometry(0.52, 0.4, 0.14, 8), mat: stone, pos: [0, 1.26, 0] },
+      { geo: new THREE.BoxGeometry(0.42, 0.46, 0.42), mat: glow, pos: [0, 1.56, 0] },
+      { geo: new THREE.ConeGeometry(0.82, 0.5, 4), mat: th.snowCaps ? snowM : stone, pos: [0, 2.04, 0], rotY: Math.PI / 4 },
+      { geo: new THREE.SphereGeometry(0.1, 10, 8), mat: stone, pos: [0, 2.36, 0] },
+    ];
+    const lp: Placement[] = [];
+    for (let s = 10; s < this.end - 8; s += 13) {
+      for (const sx of [-1, 1]) lp.push({ x: sx * (ROAD_HALF + 1.5), z: -s, rotY: Math.PI / 4, scale: 1.3 });
+    }
+    addInstanced(this.scene, lanternParts, lp);
+    if (th.halo > 0) this.addHalos(lp.map((p) => new THREE.Vector3(p.x, 2.0, p.z)), 0xffb450, 3.6 * th.halo + 1.2, Math.min(1, th.halo));
+
+    // 杉(根もと・3段の葉)
+    const trunk = new THREE.MeshStandardMaterial({ color: 0x6b4a2e, roughness: 1 });
+    const leafA = new THREE.MeshStandardMaterial({ color: th.snowCaps ? 0x4d7a64 : 0x2f6a3a, roughness: 0.9 });
+    const leafB = new THREE.MeshStandardMaterial({ color: th.snowCaps ? 0x6a9a82 : 0x3d7d43, roughness: 0.9 });
+    const treeParts: PartDef[] = [
+      { geo: new THREE.CylinderGeometry(0.35, 0.5, 3.2, 8), mat: trunk, pos: [0, 1.6, 0] },
+      { geo: new THREE.ConeGeometry(3.0, 5.2, 9), mat: leafA, pos: [0, 5.0, 0] },
+      { geo: new THREE.ConeGeometry(2.4, 4.4, 9), mat: leafB, pos: [0, 7.8, 0] },
+      { geo: new THREE.ConeGeometry(1.7, 3.6, 9), mat: leafA, pos: [0, 10.3, 0] },
+    ];
+    if (th.snowCaps) {
+      // 葉の上に、雪をのせる(少し小さい白い円すい)
+      treeParts.push(
+        { geo: new THREE.ConeGeometry(2.9, 4.2, 9), mat: snowM, pos: [0, 5.55, 0] },
+        { geo: new THREE.ConeGeometry(2.3, 3.5, 9), mat: snowM, pos: [0, 8.3, 0] },
+        { geo: new THREE.ConeGeometry(1.6, 2.9, 9), mat: snowM, pos: [0, 10.8, 0] },
+      );
+    }
+    const rnd = rngFor(99);
+    const tp: Placement[] = [];
+    for (let s = -20; s < this.end + 60; s += 4.6) {
+      for (const sx of [-1, 1]) {
+        if (rnd() < 0.18) continue;
+        const near = 8 + rnd() * 6;
+        tp.push({ x: sx * near, z: -(s + rnd() * 3), scale: 0.8 + rnd() * 0.7, rotY: rnd() * 6 });
+        if (rnd() < 0.5) tp.push({ x: sx * (near + 9 + rnd() * 14), z: -(s + rnd() * 4), scale: 1 + rnd() * 0.9, rotY: rnd() * 6 });
+      }
+    }
+    addInstanced(this.scene, treeParts, tp);
+
+    const bushMat = new THREE.MeshStandardMaterial({ color: th.snowCaps ? 0xe9f1f7 : 0x4f9446, roughness: 1 });
+    const bp: Placement[] = [];
+    for (let s = 0; s < this.end; s += 7) {
+      for (const sx of [-1, 1]) if (rnd() < 0.7) bp.push({ x: sx * (ROAD_HALF + 3 + rnd() * 3), z: -(s + rnd() * 6), scale: 0.6 + rnd() * 0.6 });
+    }
+    addInstanced(this.scene, [{ geo: new THREE.SphereGeometry(1, 10, 8), mat: bushMat, pos: [0, 0.6, 0] }], bp);
+  }
+
+  /** 灯りのまわりの、ぼんやりした光(足し合わせ表示)。 */
+  private addHalos(points: THREE.Vector3[], color: number, size: number, opacity: number): void {
+    const geo = new THREE.BufferGeometry().setFromPoints(points);
+    const tex = glowTexture();
+    this.disposables.push(tex);
+    const mat = new THREE.PointsMaterial({ map: tex, color, size, transparent: true, opacity, depthWrite: false, blending: THREE.AdditiveBlending, sizeAttenuation: true });
+    const pts = new THREE.Points(geo, mat);
+    pts.frustumCulled = false;
+    this.scene.add(pts);
+  }
+
+  // ---- 街道: 街灯・並木・ビル ----
+  private buildTownScenery(): void {
+    const th = this.theme;
+    const rnd = rngFor(321);
+    // 街灯
+    const pole = new THREE.MeshStandardMaterial({ color: 0x3c4048, roughness: 0.6, metalness: 0.3 });
+    const bulb = new THREE.MeshStandardMaterial({ color: 0xfff0c8, emissive: 0xffc060, emissiveIntensity: th.lampGlow, roughness: 0.5 });
+    const lampParts: PartDef[] = [
+      { geo: new THREE.CylinderGeometry(0.1, 0.16, 6.4, 8), mat: pole, pos: [0, 3.2, 0] },
+      { geo: new THREE.BoxGeometry(1.5, 0.12, 0.16), mat: pole, pos: [0.7, 6.4, 0] },
+      { geo: new THREE.SphereGeometry(0.28, 12, 10), mat: bulb, pos: [1.35, 6.25, 0] },
+    ];
+    const lp: Placement[] = [];
+    const halos: THREE.Vector3[] = [];
+    for (let s = 8; s < this.course.length + 40; s += 22) {
+      lp.push({ x: -(ROAD_HALF + 1.2), z: -s, rotY: 0 });
+      lp.push({ x: ROAD_HALF + 1.2, z: -(s + 11), rotY: Math.PI });
+    }
+    addInstanced(this.scene, lampParts, lp);
+    for (const p of lp) halos.push(new THREE.Vector3(p.x + (p.rotY ? -1.35 : 1.35), 6.25, p.z));
+    if (th.halo > 0) this.addHalos(halos, 0xffc070, 4.2, Math.min(1, th.halo));
+
+    // 並木(丸い木)
+    const trunk = new THREE.MeshStandardMaterial({ color: 0x6b4a2e, roughness: 1 });
+    const leaf = new THREE.MeshStandardMaterial({ color: 0x55803a, roughness: 0.95, flatShading: true });
+    const tp: Placement[] = [];
+    for (let s = 0; s < this.course.length + 40; s += 9) {
+      for (const sx of [-1, 1]) if (rnd() < 0.75) tp.push({ x: sx * (ROAD_HALF + 2.6 + rnd() * 1.4), z: -(s + rnd() * 4), scale: 0.7 + rnd() * 0.5 });
+    }
+    addInstanced(this.scene, [
+      { geo: new THREE.CylinderGeometry(0.2, 0.28, 2.4, 8), mat: trunk, pos: [0, 1.2, 0] },
+      { geo: new THREE.IcosahedronGeometry(1.6, 1), mat: leaf, pos: [0, 3.5, 0] },
+    ], tp);
+
+    // ビル(窓があかり、ゴールが近づくと少なくなる)
+    const winTex = (wall: string, lit: string) => canvasTexture(64, (g, n) => {
+      g.fillStyle = wall;
+      g.fillRect(0, 0, n, n);
+      g.fillStyle = lit;
+      g.fillRect(14, 12, n - 28, n - 26);
+      g.fillStyle = 'rgba(0,0,0,0.18)';
+      g.fillRect(14, n / 2 - 1, n - 28, 2);
+    }, true);
+    const types: { w: number; h: number; d: number; wall: string; lit: string }[] = [
+      { w: 9, h: 16, d: 9, wall: '#c8b8a8', lit: '#ffd88a' },
+      { w: 11, h: 28, d: 10, wall: '#9aa8b8', lit: '#ffe6a8' },
+      { w: 8, h: 11, d: 8, wall: '#d6a894', lit: '#ffcf80' },
+      { w: 12, h: 21, d: 9, wall: '#b4b8a0', lit: '#fff0b8' },
+    ];
+    types.forEach((t, k) => {
+      const geo = new THREE.BoxGeometry(t.w, t.h, t.d);
+      const uv = geo.attributes.uv;
+      for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * (t.w / 2.6), uv.getY(i) * (t.h / 2.6));
+      const tex = winTex(t.wall, t.lit);
+      this.disposables.push(tex);
+      const lightMap = winTex('#000000', '#ffb050');
+      this.disposables.push(lightMap);
+      const mat = new THREE.MeshStandardMaterial({ map: tex, emissiveMap: lightMap, emissive: 0xffffff, emissiveIntensity: th.night ? 0.8 : 0.35, roughness: 0.85 });
+      const places: Placement[] = [];
+      for (let s = 30; s < this.course.length + 40; s += 11) {
+        for (const sx of [-1, 1]) {
+          if (rnd() * 4 > 1 + (k === 0 ? 1.6 : 0.5)) continue;
+          const nearEnd = s > this.course.length - 80;
+          if (nearEnd && rnd() < 0.85) continue; // 海が見えるよう、ゴール近くは開ける
+          const x = sx * (ROAD_HALF + 8 + t.w / 2 + rnd() * 22);
+          places.push({ x, y: t.h / 2, z: -(s + rnd() * 9) });
+        }
+      }
+      addInstanced(this.scene, [{ geo, mat }], places);
+    });
+  }
+
+  // ---- 鳥居 ----
+  private torii(z: number, scale = 1): THREE.Group {
+    const g = new THREE.Group();
+    const red = new THREE.MeshStandardMaterial({ color: RED, roughness: 0.55, emissive: 0x200600 });
+    const black = new THREE.MeshStandardMaterial({ color: 0x2a2523, roughness: 0.6 });
+    for (const sx of [-1, 1]) {
+      const p = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.46, 7, 14), red);
+      p.position.set(sx * 4.9, 3.5, 0);
+      p.castShadow = true;
+      const base = new THREE.Mesh(new THREE.CylinderGeometry(0.58, 0.62, 0.5, 14), black);
+      base.position.set(sx * 4.9, 0.25, 0);
+      g.add(p, base);
+    }
+    const nuki = new THREE.Mesh(new THREE.BoxGeometry(11, 0.42, 0.5), red);
+    nuki.position.set(0, 5.2, 0);
+    const shimaki = new THREE.Mesh(new THREE.BoxGeometry(13.2, 0.4, 0.8), black);
+    shimaki.position.set(0, 7.15, 0);
+    const kasagi = new THREE.Mesh(new THREE.BoxGeometry(14, 0.55, 1.2), red);
+    kasagi.position.set(0, 7.55, 0);
+    const top = new THREE.Mesh(new THREE.BoxGeometry(14.4, 0.2, 1.4), black);
+    top.position.set(0, 7.9, 0);
+    for (const m of [nuki, shimaki, kasagi, top]) m.castShadow = true;
+    g.add(nuki, shimaki, kasagi, top);
+    g.position.z = -z;
+    g.scale.setScalar(scale);
+    return g;
+  }
+
+  private buildTorii(): void {
+    const L = this.course.length;
+    for (const f of [0.09, 0.23, 0.38, 0.52, 0.65, 0.76, 0.85, 0.92]) this.scene.add(this.torii(Math.round(L * f)));
+    this.scene.add(this.torii(L, 1.35)); // ゴールの大鳥居
+  }
+
+  // ---- 春日大社 ----
+  private buildShrine(): void {
+    const th = this.theme;
+    const g = new THREE.Group();
+    const red = new THREE.MeshStandardMaterial({ color: RED, roughness: 0.5, emissive: 0x240700 });
+    const white = new THREE.MeshStandardMaterial({ color: th.snowCaps ? 0xffffff : 0xf6f0e2, roughness: 0.85 });
+    const roof = new THREE.MeshStandardMaterial({ color: th.snowCaps ? 0xe8eef4 : 0x6f5a45, roughness: 0.95 });
+    const roofEdge = new THREE.MeshStandardMaterial({ color: th.snowCaps ? 0xcfd8e2 : 0x4a3b2d, roughness: 0.9 });
+    const stoneM = new THREE.MeshStandardMaterial({ color: th.snowCaps ? 0xe6edf3 : 0xcdc5b4, roughness: 0.95 });
+    const gold = new THREE.MeshStandardMaterial({ color: 0xffd36a, metalness: 0.6, roughness: 0.3, emissive: 0x6a4410, emissiveIntensity: 0.6 });
+    const lampM = new THREE.MeshStandardMaterial({ color: 0xffe2a0, emissive: 0xffa830, emissiveIntensity: th.lampGlow + 0.4 });
+    const lampPts: THREE.Vector3[] = [];
+
+    for (let i = 0; i < 5; i++) {
+      const st = new THREE.Mesh(new THREE.BoxGeometry(18 + i * 1.5, 0.5, 2.2), stoneM);
+      st.position.set(0, 0.25 + i * 0.5, 17 - i * 1.6 - 6);
+      st.receiveShadow = true;
+      st.castShadow = true;
+      g.add(st);
+    }
+    const plat = new THREE.Mesh(new THREE.BoxGeometry(46, 2.5, 34), stoneM);
+    plat.position.set(0, 1.25, -8);
+    plat.receiveShadow = true;
+    g.add(plat);
+
+    const building = (x: number, z: number, w: number, d: number, h: number, y0: number, pillarN: number) => {
+      const b = new THREE.Group();
+      const body = new THREE.Mesh(new THREE.BoxGeometry(w - 1, h, d - 1), white);
+      body.position.y = h / 2;
+      body.castShadow = true;
+      b.add(body);
+      for (let i = 0; i < pillarN; i++) {
+        const px = -w / 2 + 0.5 + (i * (w - 1)) / (pillarN - 1);
+        for (const pz of [d / 2 - 0.3, -d / 2 + 0.3]) {
+          const p = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.4, h, 12), red);
+          p.position.set(px, h / 2, pz);
+          p.castShadow = true;
+          b.add(p);
+        }
+      }
+      const beam = new THREE.Mesh(new THREE.BoxGeometry(w + 0.4, 0.7, d + 0.4), red);
+      beam.position.y = h + 0.35;
+      b.add(beam);
+      const r1 = new THREE.Mesh(new THREE.ConeGeometry(Math.hypot(w, d) * 0.82, h * 0.8, 4), roof);
+      r1.rotation.y = Math.PI / 4;
+      r1.scale.set((w / Math.hypot(w, d)) * 1.0, 1, (d / Math.hypot(w, d)) * 1.0);
+      r1.position.y = h + 0.7 + h * 0.4;
+      r1.castShadow = true;
+      const eave = new THREE.Mesh(new THREE.BoxGeometry(w + 3.4, 0.5, d + 3.4), roofEdge);
+      eave.position.y = h + 0.95;
+      eave.castShadow = true;
+      b.add(r1, eave);
+      const n = Math.max(3, Math.floor(w / 2.4));
+      for (let i = 0; i < n; i++) {
+        const lx = -w / 2 + 0.8 + (i * (w - 1.6)) / (n - 1);
+        const lamp = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.7, 10), lampM);
+        lamp.position.set(lx, h - 0.5, d / 2 + 0.9);
+        const cap = new THREE.Mesh(new THREE.ConeGeometry(0.34, 0.2, 10), gold);
+        cap.position.set(lx, h - 0.05, d / 2 + 0.9);
+        b.add(lamp, cap);
+        lampPts.push(new THREE.Vector3(x + lx, y0 + h - 0.5, z + d / 2 + 0.9));
+      }
+      b.position.set(x, y0, z);
+      g.add(b);
+    };
+    building(0, 5, 14, 7, 7.5, 2.5, 4);
+    building(-15.5, 2, 13, 5, 5.2, 2.5, 4);
+    building(15.5, 2, 13, 5, 5.2, 2.5, 4);
+    building(0, -10, 18, 10, 8.5, 2.5, 5);
+    building(-9, -22, 9, 7, 7, 2.5, 3);
+    building(9, -22, 9, 7, 7, 2.5, 3);
+    const hill = new THREE.Mesh(
+      new THREE.SphereGeometry(60, 28, 16),
+      new THREE.MeshStandardMaterial({ color: th.snowCaps ? 0xdfe9f1 : th.night ? 0x2a5538 : 0x4d8a47, roughness: 1 }),
+    );
+    hill.scale.set(1.6, 0.62, 0.9);
+    hill.position.set(0, -6, -80);
+    g.add(hill);
+    const rnd = rngFor(5);
+    const treeMat = new THREE.MeshStandardMaterial({ color: th.snowCaps ? 0x6a9a82 : 0x2f6a3a, roughness: 0.95 });
+    const cone = new THREE.ConeGeometry(3.2, 11, 8);
+    for (let i = 0; i < 26; i++) {
+      const t = new THREE.Mesh(cone, treeMat);
+      t.position.set((rnd() - 0.5) * 120, 5 + rnd() * 3, -34 - rnd() * 30);
+      t.scale.setScalar(0.9 + rnd() * 0.8);
+      g.add(t);
+    }
+    const SC = 1.2;
+    g.position.set(0, 0, -this.end);
+    g.scale.setScalar(SC);
+    this.scene.add(g);
+    if (th.halo > 0) {
+      // 吊り灯籠の光を、社殿の位置に合わせて置く
+      this.addHalos(lampPts.map((p) => new THREE.Vector3(p.x * SC, p.y * SC, p.z * SC - this.end)), 0xffb450, 5.5 * th.halo + 1.5, Math.min(1, th.halo));
+    }
+  }
+
+  // ---- 大阪湾: 海・観覧車・夕日・ゴールゲート ----
+  private buildBay(): void {
+    const L = this.course.length;
+    const pier = L + 60;
+    // 海
+    const sea = new THREE.Mesh(
+      new THREE.PlaneGeometry(1400, 900),
+      new THREE.MeshStandardMaterial({ color: 0x2c6c9c, roughness: 0.16, metalness: 0.15 }),
+    );
+    sea.rotation.x = -Math.PI / 2;
+    sea.position.set(0, -1.1, -(pier + 420));
+    this.scene.add(sea);
+    // 岸のへり
+    const quay = new THREE.Mesh(new THREE.BoxGeometry(200, 1.2, 1.2), new THREE.MeshStandardMaterial({ color: 0x8a8a90, roughness: 0.9 }));
+    quay.position.set(0, -0.5, -(pier + 0.5));
+    quay.receiveShadow = true;
+    this.scene.add(quay);
+    // 夕日のきらめく道
+    const glint = new THREE.Mesh(
+      new THREE.PlaneGeometry(46, 380),
+      new THREE.MeshBasicMaterial({ map: this.glintTexture(), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }),
+    );
+    glint.rotation.x = -Math.PI / 2;
+    glint.position.set(-34, -1.0, -(pier + 215));
+    this.scene.add(glint);
+    // 夕日
+    const sunDisc = new THREE.Mesh(new THREE.CircleGeometry(30, 40), new THREE.MeshBasicMaterial({ color: 0xffd48a, fog: false }));
+    sunDisc.position.set(-44, 26, -(pier + 400));
+    this.scene.add(sunDisc);
+    // 遠くの山
+    const mtn = new THREE.MeshStandardMaterial({ color: 0x5a4a78, roughness: 1, flatShading: true });
+    for (let i = 0; i < 9; i++) {
+      const h = 28 + ((i * 37) % 30);
+      const m = new THREE.Mesh(new THREE.ConeGeometry(55 + (i % 3) * 14, h, 6), mtn);
+      m.position.set(-300 + i * 76, h / 2 - 2, -(pier + 560 + (i % 2) * 30));
+      this.scene.add(m);
+    }
+    // 観覧車
+    const wheel = new THREE.Group();
+    const R = 24;
+    const rimM = new THREE.MeshStandardMaterial({ color: 0xf6f2ea, roughness: 0.4, emissive: 0xffa060, emissiveIntensity: 0.5 });
+    wheel.add(new THREE.Mesh(new THREE.TorusGeometry(R, 0.5, 8, 72), rimM));
+    wheel.add(new THREE.Mesh(new THREE.TorusGeometry(R * 0.55, 0.3, 8, 48), rimM));
+    for (let i = 0; i < 24; i++) {
+      const a = (i / 24) * Math.PI * 2;
+      const spoke = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, R, 5), rimM);
+      spoke.position.set(Math.cos(a) * R * 0.5, Math.sin(a) * R * 0.5, 0);
+      spoke.rotation.z = a + Math.PI / 2;
+      wheel.add(spoke);
+      const gon = new THREE.Mesh(
+        new THREE.BoxGeometry(2.4, 2.4, 2.4),
+        new THREE.MeshStandardMaterial({ color: [0xff6a6a, 0xffd24a, 0x5ac8fa, 0x7ee08a][i % 4], roughness: 0.5, emissive: 0x401800, emissiveIntensity: 0.4 }),
+      );
+      gon.position.set(Math.cos(a) * R, Math.sin(a) * R - 1.6, 0);
+      wheel.add(gon);
+    }
+    wheel.position.set(-62, R + 8, -(pier + 150));
+    this.wheel = wheel;
+    this.scene.add(wheel);
+    for (const sx of [-1, 1]) {
+      const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.9, R + 10, 8), new THREE.MeshStandardMaterial({ color: 0xe8e4dc, roughness: 0.6 }));
+      leg.position.set(-62 + sx * 7, (R + 8) / 2, -(pier + 150));
+      leg.rotation.z = -sx * 0.22;
+      this.scene.add(leg);
+    }
+    // ゴールゲート(アーチ)
+    const gate = new THREE.Group();
+    const post = new THREE.MeshStandardMaterial({ color: 0xf5f2ea, roughness: 0.5 });
+    const beam = new THREE.MeshStandardMaterial({ color: 0x1f8fd6, roughness: 0.4, emissive: 0x0a3a60, emissiveIntensity: 0.5 });
+    for (const sx of [-1, 1]) {
+      const p = new THREE.Mesh(new THREE.BoxGeometry(1.2, 9, 1.2), post);
+      p.position.set(sx * 5.6, 4.5, 0);
+      p.castShadow = true;
+      gate.add(p);
+    }
+    const top = new THREE.Mesh(new THREE.BoxGeometry(13.6, 2.6, 1.0), beam);
+    top.position.set(0, 9.6, 0);
+    top.castShadow = true;
+    gate.add(top);
+    const banner = new THREE.Mesh(
+      new THREE.PlaneGeometry(12.4, 2.2),
+      new THREE.MeshBasicMaterial({ map: this.bannerTexture(this.level.goalName), transparent: true, toneMapped: false }),
+    );
+    banner.position.set(0, 9.6, 0.52);
+    gate.add(banner);
+    gate.position.z = -L;
+    gate.scale.setScalar(1.15);
+    this.scene.add(gate);
+    // 岸の手すり
+    const rail = new THREE.MeshStandardMaterial({ color: 0xe9e6de, roughness: 0.6 });
+    const posts: Placement[] = [];
+    for (let x = -ROAD_HALF - 2; x <= ROAD_HALF + 2; x += 1.6) posts.push({ x, z: -(pier - 0.6) });
+    addInstanced(this.scene, [{ geo: new THREE.CylinderGeometry(0.1, 0.1, 1.1, 8), mat: rail, pos: [0, 0.55, 0] }], posts);
+  }
+
+  private glintTexture(): THREE.CanvasTexture {
+    return canvasTexture(128, (g, n) => {
+      const grd = g.createLinearGradient(0, 0, n, 0);
+      grd.addColorStop(0, 'rgba(255,200,120,0)');
+      grd.addColorStop(0.5, 'rgba(255,214,150,0.9)');
+      grd.addColorStop(1, 'rgba(255,200,120,0)');
+      g.fillStyle = grd;
+      g.fillRect(0, 0, n, n);
+      g.fillStyle = 'rgba(40,90,140,0.55)';
+      const rnd = rngFor(3);
+      for (let i = 0; i < 60; i++) g.fillRect(rnd() * n, rnd() * n, 14 + rnd() * 26, 2);
+    });
+  }
+
+  private bannerTexture(text: string): THREE.CanvasTexture {
+    const c = document.createElement('canvas');
+    c.width = 512;
+    c.height = 96;
+    const g = c.getContext('2d')!;
+    g.fillStyle = '#fff';
+    g.font = '900 64px "M PLUS Rounded 1c", sans-serif';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText(`${text}  GOAL`, 256, 52);
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  }
+
+  // ---- 障害物 ----
+  private buildObstacles(): void {
+    const town = this.theme.setting === 'town';
+    const poopMat = new THREE.MeshPhysicalMaterial({ color: 0x7b4a24, roughness: 0.5, clearcoat: 0.6, clearcoatRoughness: 0.35 });
+    const white = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3 });
+    const black = new THREE.MeshStandardMaterial({ color: 0x1b1210, roughness: 0.3 });
+    const wood = new THREE.MeshStandardMaterial({ color: 0xb4814b, roughness: 0.85 });
+    const redM = new THREE.MeshStandardMaterial({ color: 0xe63a2a, roughness: 0.5 });
+    const stoneM = new THREE.MeshStandardMaterial({ color: 0x8e8a83, roughness: 0.95, flatShading: true });
+    const barrelM = new THREE.MeshStandardMaterial({ color: 0xb87a3e, roughness: 0.7 });
+    const bandM = new THREE.MeshStandardMaterial({ color: 0x3a3a40, roughness: 0.4, metalness: 0.5 });
+    const waterM = new THREE.MeshPhysicalMaterial({ color: 0x5c8fb8, roughness: 0.03, metalness: 0, transparent: true, opacity: 0.85, clearcoat: 1 });
+    const iceM = new THREE.MeshPhysicalMaterial({ color: 0xcdeaff, roughness: 0.05, metalness: 0.1, clearcoat: 1, transparent: true, opacity: 0.92 });
+    const sphere = new THREE.SphereGeometry(1, 20, 14);
+    for (const o of this.course.obstacles) {
+      if (o.kind === 'hole') continue;
+      const obj = new THREE.Group();
+      let spin: THREE.Object3D | undefined;
+      let sprite: THREE.Mesh | undefined;
+      if (o.kind === 'poop') {
+        const tiers: [number, number][] = [[0.62, 0.34], [0.45, 0.7], [0.28, 1.0]];
+        for (const [r, y] of tiers) {
+          const m = new THREE.Mesh(sphere, poopMat);
+          m.scale.set(r, r * 0.72, r);
+          m.position.y = y;
+          m.castShadow = true;
+          obj.add(m);
+        }
+        const tip = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.34, 12), poopMat);
+        tip.position.y = 1.28;
+        tip.rotation.z = 0.35;
+        obj.add(tip);
+        for (const ex of [-0.17, 0.17]) {
+          const e = new THREE.Mesh(new THREE.SphereGeometry(0.1, 12, 10), white);
+          e.position.set(ex, 0.78, 0.38);
+          const pu = new THREE.Mesh(new THREE.SphereGeometry(0.05, 10, 8), black);
+          pu.position.set(ex, 0.78, 0.46);
+          obj.add(e, pu);
+        }
+      } else if (o.kind === 'fence') {
+        const w = o.halfW * 2;
+        const n = Math.max(2, Math.round(w / 1.1) + 1);
+        for (let i = 0; i < n; i++) {
+          const p = new THREE.Mesh(new THREE.BoxGeometry(0.22, 1.15, 0.22), town ? redM : wood);
+          p.position.set(-o.halfW + (i * w) / (n - 1), 0.575, 0);
+          p.castShadow = true;
+          obj.add(p);
+        }
+        for (const y of [0.42, 0.86]) {
+          if (town) {
+            // 赤白のバリケード
+            const segs = Math.max(2, Math.round(w / 0.7));
+            for (let i = 0; i < segs; i++) {
+              const sgm = new THREE.Mesh(new THREE.BoxGeometry(w / segs, 0.2, 0.13), i % 2 ? white : redM);
+              sgm.position.set(-o.halfW + ((i + 0.5) * w) / segs, y, 0.05);
+              sgm.castShadow = true;
+              obj.add(sgm);
+            }
+          } else {
+            const rail = new THREE.Mesh(new THREE.BoxGeometry(w, 0.15, 0.13), wood);
+            rail.position.set(0, y, 0.05);
+            rail.castShadow = true;
+            obj.add(rail);
+          }
+        }
+      } else if (o.kind === 'stone') {
+        if (town) {
+          // 街道では、ころがる樽
+          const barrel = new THREE.Group();
+          const body = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 0.8, 1.3, 20).rotateZ(Math.PI / 2), barrelM);
+          body.castShadow = true;
+          barrel.add(body);
+          for (const bx of [-0.45, 0.45]) {
+            const band = new THREE.Mesh(new THREE.CylinderGeometry(0.83, 0.83, 0.12, 20).rotateZ(Math.PI / 2), bandM);
+            band.position.x = bx;
+            barrel.add(band);
+          }
+          barrel.position.y = 0.8;
+          spin = barrel;
+          obj.add(barrel);
+        } else {
+          const rock = new THREE.Mesh(new THREE.IcosahedronGeometry(0.85, 1), stoneM);
+          rock.position.y = 0.85;
+          rock.castShadow = true;
+          spin = rock;
+          obj.add(rock);
+        }
+      } else if (o.kind === 'deer') {
+        const m = new THREE.Mesh(
+          new THREE.PlaneGeometry(1.5, 1.78).translate(0, 0.89, 0),
+          new THREE.MeshBasicMaterial({ transparent: true, alphaTest: 0.45, toneMapped: false }),
+        );
+        (m.material as THREE.MeshBasicMaterial).color.setScalar(this.theme.night ? 0.78 : 1);
+        sprite = m;
+        obj.add(m);
+        const sh = new THREE.Mesh(
+          new THREE.CircleGeometry(0.7, 20).rotateX(-Math.PI / 2),
+          new THREE.MeshBasicMaterial({ color: 0x1a2a14, transparent: true, opacity: 0.3, depthWrite: false }),
+        );
+        sh.position.y = 0.02;
+        obj.add(sh);
+      } else if (o.kind === 'puddle') {
+        const pd = new THREE.Mesh(new THREE.CircleGeometry(1.2, 28).rotateX(-Math.PI / 2), waterM);
+        pd.scale.set(1, 1, 0.8);
+        pd.position.y = 0.03;
+        obj.add(pd);
+      } else if (o.kind === 'ice') {
+        const ic = new THREE.Mesh(new THREE.CircleGeometry(1.55, 7).rotateX(-Math.PI / 2), iceM);
+        ic.position.y = 0.035;
+        ic.rotation.y = o.id;
+        obj.add(ic);
+        for (let k = 0; k < 4; k++) {
+          const crack = new THREE.Mesh(new THREE.PlaneGeometry(0.05, 1.2).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.8 }));
+          crack.position.set(0, 0.045, 0);
+          crack.rotation.y = k * 0.8 + o.id;
+          obj.add(crack);
+        }
+      }
+      obj.position.set(o.x, 0, -o.s);
+      this.scene.add(obj);
+      this.obstacleObjs.push({ o, obj, spin, sprite });
+    }
+  }
+
+  // ---- コイン ----
+  private buildCoins(): void {
+    const n = this.course.coins.length;
+    const glow = this.theme.night ? 1.1 : 0.55;
+    const gold = new THREE.MeshStandardMaterial({ color: 0xffc83a, metalness: 0.85, roughness: 0.28, emissive: 0x7a4a00, emissiveIntensity: glow });
+    const rimM = new THREE.MeshStandardMaterial({ color: 0xffe28a, metalness: 0.9, roughness: 0.2, emissive: 0x7a5200, emissiveIntensity: glow });
+    this.coinDisc = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.4, 0.4, 0.1, 28).rotateX(Math.PI / 2), gold, n);
+    this.coinRim = new THREE.InstancedMesh(new THREE.TorusGeometry(0.4, 0.06, 10, 28), rimM, n);
+    for (const m of [this.coinDisc, this.coinRim]) {
+      m.frustumCulled = false;
+      m.castShadow = true;
+      this.scene.add(m);
+    }
+  }
+
+  // ---- 雨・雪 ----
+  private buildWeather(): void {
+    const w = this.theme.weather;
+    if (w === 'none') return;
+    const rain = w === 'rain';
+    const n = rain ? 1300 : 1700;
+    const pos = new Float32Array(n * (rain ? 6 : 3));
+    const seed = new Float32Array(n * 4);
+    const rnd = rngFor(77);
+    for (let i = 0; i < n; i++) {
+      seed[i * 4] = (rnd() - 0.5) * 34; // x
+      seed[i * 4 + 1] = rnd() * 16; // 落ちはじめのずれ
+      seed[i * 4 + 2] = -rnd() * 56 + 6; // z(カメラからの相対)
+      seed[i * 4 + 3] = rnd();
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    let obj: THREE.Object3D;
+    if (rain) {
+      obj = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: 0xcfe0f2, transparent: true, opacity: 0.45, depthWrite: false }));
+    } else {
+      const tex = glowTexture();
+      this.disposables.push(tex);
+      obj = new THREE.Points(geo, new THREE.PointsMaterial({ map: tex, color: 0xffffff, size: 0.42, transparent: true, opacity: 0.95, depthWrite: false, sizeAttenuation: true }));
+    }
+    obj.frustumCulled = false;
+    this.scene.add(obj);
+    this.weather = { pts: obj, pos, n, rain, seed };
+  }
+
+  private updateWeather(t: number): void {
+    const wd = this.weather;
+    if (!wd) return;
+    const { pos, n, rain, seed } = wd;
+    const cx = this.camera.position.x;
+    const cz = this.camera.position.z;
+    for (let i = 0; i < n; i++) {
+      const sx = seed[i * 4];
+      const sz = seed[i * 4 + 2];
+      const r = seed[i * 4 + 3];
+      if (rain) {
+        // 速く落ちて地面でもどる(カメラのまわりに降り続ける)
+        const y = 16 - ((t * (22 + r * 8) + seed[i * 4 + 1]) % 16);
+        const k = i * 6;
+        pos[k] = cx + sx;
+        pos[k + 1] = y;
+        pos[k + 2] = cz + sz;
+        pos[k + 3] = cx + sx + 0.18;
+        pos[k + 4] = y + 0.85;
+        pos[k + 5] = cz + sz - 0.08;
+      } else {
+        const y = 15 - ((t * (1.6 + r * 1.4) + seed[i * 4 + 1]) % 15);
+        const k = i * 3;
+        pos[k] = cx + sx + Math.sin(t * 0.6 + i) * 0.7;
+        pos[k + 1] = y;
+        pos[k + 2] = cz + sz + Math.cos(t * 0.5 + i * 1.3) * 0.5;
+      }
+    }
+    (wd.pts as THREE.Mesh).geometry.attributes.position.needsUpdate = true;
+  }
+
+  private resize(): void {
+    const w = this.host.clientWidth || 360;
+    const h = this.host.clientHeight || 640;
+    this.renderer.setSize(w, h, false);
+    this.camera.aspect = w / h;
+    this.camera.fov = w / h < 0.6 ? 62 : 62 - Math.min(14, (w / h - 0.6) * 24);
+    this.camera.updateProjectionMatrix();
+  }
+
+  /** ぶつかったときの揺れ。 */
+  bump(power = 0.35): void {
+    this.shake = power;
+  }
+
+  private tmpM = new THREE.Matrix4();
+  private tmpQ = new THREE.Quaternion();
+  private tmpS = new THREE.Vector3();
+  private tmpP = new THREE.Vector3();
+  private tmpE = new THREE.Euler();
+  private clock = 0;
+
+  render(run: Run, dt: number): void {
+    const t = run.t;
+    this.clock += dt;
+    const px = run.x;
+    const pz = -run.s;
+    const waving = run.phase === 'cleared' ? Math.sin(t * 9) * 0.06 : 0;
+
+    // 鹿
+    const frame = run.airborne ? 1 : Math.floor(run.stride / 0.85) % 4;
+    const mat = this.deer.material as THREE.MeshBasicMaterial;
+    if (mat.map !== this.runTex[frame]) mat.map = this.runTex[frame];
+    const bob = run.airborne ? 0 : Math.abs(Math.sin(run.stride * 1.9)) * 0.1;
+    this.deer.position.set(px, run.y + bob, pz);
+    this.deer.rotation.z = -run.vx * 0.022 + waving;
+    const squash = run.airborne ? 1 + Math.min(0.1, run.y * 0.04) : 1;
+    this.deer.scale.set(1 / squash, squash, 1);
+    this.deer.visible = run.invuln > 0 ? Math.floor(t * 16) % 2 === 0 : true;
+    this.deerShadow.position.set(px, 0.03, pz);
+    const ss = Math.max(0.5, 1 - run.y * 0.18);
+    this.deerShadow.scale.set(ss, 1, ss);
+
+    // カメラ(鹿の少しうしろ・上から。左右はゆるく追う)
+    this.camX += (px * 0.72 - this.camX) * Math.min(1, dt * 6);
+    let sx = 0;
+    let sy = 0;
+    if (this.shake > 0) {
+      this.shake = Math.max(0, this.shake - dt);
+      sx = (Math.random() - 0.5) * this.shake * 0.7;
+      sy = (Math.random() - 0.5) * this.shake * 0.5;
+    }
+    const lift = run.y * 0.25;
+    // クリア後は少し引いて、ゴールの景色の全体が見えるようにする
+    this.cine += ((run.phase === 'cleared' ? 1 : 0) - this.cine) * Math.min(1, dt * 1.6);
+    const c = this.cine;
+    this.camera.position.set(this.camX + sx, 3.5 + lift + sy + c * 2.2, pz + 6.4 + c * 3.2);
+    this.camera.lookAt(this.camX * 0.95, 1.5 + lift * 0.5 + c * 2.6, pz - 9 - c * 14);
+
+    // 太陽(月)の影は鹿のまわりだけ
+    const sp = this.theme.sunPos;
+    this.sun.position.set(px + sp[0], sp[1], pz + sp[2]);
+    this.sun.target.position.set(px, 0, pz - 6);
+    this.sun.target.updateMatrixWorld();
+    this.headlight?.position.set(px, 2.6, pz - 4);
+
+    // コイン
+    const coins = this.course.coins;
+    const spin = t * 2.6;
+    for (let i = 0; i < coins.length; i++) {
+      const cn = coins[i];
+      const near = cn.s - run.s < 170 && cn.s - run.s > -1.5; // 取りそこねて後ろに行ったコインはカメラの前を通らないよう消す
+      const alive = !run.collected.has(cn.id) && near;
+      if (!alive && this.lastCoinState[i] === 0) continue;
+      this.lastCoinState[i] = alive ? 1 : 0;
+      const k = alive ? 1 : 0;
+      this.tmpQ.setFromEuler(this.tmpE.set(0, spin + i * 0.7, 0));
+      this.tmpM.compose(this.tmpP.set(cn.x, cn.y + Math.sin(t * 3 + i) * 0.06, -cn.s), this.tmpQ, this.tmpS.set(k, k, k));
+      this.coinDisc.setMatrixAt(i, this.tmpM);
+      this.coinRim.setMatrixAt(i, this.tmpM);
+    }
+    this.coinDisc.instanceMatrix.needsUpdate = true;
+    this.coinRim.instanceMatrix.needsUpdate = true;
+
+    // 動く障害物
+    for (const e of this.obstacleObjs) {
+      if (e.o.s - run.s > 170 || e.o.s - run.s < -3.5) {
+        e.obj.visible = false;
+        continue;
+      }
+      e.obj.visible = true;
+      if (e.o.kind === 'stone' || e.o.kind === 'deer') {
+        const st = obstacleState(e.o, t);
+        e.obj.position.x = st.x;
+        if (e.spin) {
+          if (this.theme.setting === 'town') {
+            e.spin.rotation.z -= st.dir * dt * 2.6; // 樽は横にころがる
+          } else {
+            e.spin.rotation.x -= (run.speed * dt) / 0.85;
+            e.spin.rotation.z -= st.dir * dt * 2.4;
+          }
+        }
+        if (e.sprite) {
+          const arr = this.walkTex[st.dir < 0 ? 'doe_l' : 'doe_r'];
+          const m = e.sprite.material as THREE.MeshBasicMaterial;
+          const f = arr[Math.floor(t * 9) % 4];
+          if (m.map !== f) {
+            m.map = f;
+            m.needsUpdate = true;
+          }
+          e.sprite.position.y = Math.abs(Math.sin((t * 9 * Math.PI) / 4)) * 0.08;
+        }
+      }
+    }
+
+    if (this.wheel) this.wheel.rotation.z -= dt * 0.05;
+    this.updateWeather(this.clock);
+    this.renderer.toneMappingExposure = this.theme.exposure + this.cine * 0.15;
+    this.renderer.render(this.scene, this.camera);
+  }
+
+  dispose(): void {
+    this.ro.disconnect();
+    this.scene.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (m.geometry) m.geometry.dispose();
+      const mats = Array.isArray(m.material) ? m.material : m.material ? [m.material] : [];
+      for (const mm of mats) {
+        const tex = (mm as THREE.MeshBasicMaterial).map;
+        if (tex) tex.dispose();
+        mm.dispose();
+      }
+    });
+    for (const t of this.runTex) t.dispose();
+    for (const arr of Object.values(this.walkTex)) for (const t of arr) t.dispose();
+    for (const d of this.disposables) d.dispose();
+    this.renderer.dispose();
+    this.renderer.domElement.remove();
+  }
+}

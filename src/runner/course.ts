@@ -1,12 +1,13 @@
-// 「春日大社へ」お試しコースの定義(見た目に依存しない)。
-// 前へ進む向きを s(メートル)、左右を x で表す。同じ種(seed)なら必ず同じコースになる。
+// 3D走りゲームのコース定義(見た目に依存しない)。
+// 前へ進む向きを s(メートル)、左右を x で表す。同じ設定(seed)なら必ず同じコースになる。
 
-export const ROAD_HALF = 3.6; // 参道の幅の半分
+export const ROAD_HALF = 3.6; // 参道・道路の幅の半分
 export const PLAY_HALF = 3.0; // 鹿が動ける範囲の半分
-export const COURSE_LENGTH = 1000; // ゴール(大鳥居)までの距離
-export const SHRINE_S = COURSE_LENGTH + 75; // 春日大社の位置
+export const COURSE_LENGTH = 1000; // 既定の長さ
+/** ゴールの先、背景の建物(社殿・港)までの距離。 */
+export const GOAL_GAP = 75;
 
-export type ObstacleKind = 'hole' | 'poop' | 'fence' | 'stone' | 'deer';
+export type ObstacleKind = 'hole' | 'poop' | 'fence' | 'stone' | 'deer' | 'puddle' | 'ice';
 
 export interface Obstacle {
   id: number;
@@ -28,15 +29,25 @@ export interface Coin {
   y: number; // 地面からの高さ(ジャンプで取るコインは高い)
 }
 
+/** 走りの手ごたえ。面ごとに変える(雨や雪では、左右がすべる)。 */
+export interface Rules {
+  speed0: number; // 出だしの秒速
+  speed1: number; // ゴール手前の秒速
+  steerAccel: number; // 左右の動きだしのよさ(小さいほどすべる)
+  steerSpeed: number; // 左右の最高速度
+}
+export const DEFAULT_RULES: Rules = { speed0: 13, speed1: 20, steerAccel: 42, steerSpeed: 6.8 };
+
 export interface Course {
   obstacles: Obstacle[];
   coins: Coin[];
   length: number;
+  rules?: Rules;
 }
 
 /** 各障害物の当たりの大きさ(半径)。 */
-export const HIT_RADIUS: Record<ObstacleKind, number> = { hole: 0, poop: 0.6, fence: 0.35, stone: 0.85, deer: 0.8 };
-export const OBSTACLE_HEIGHT: Record<ObstacleKind, number> = { hole: 0, poop: 0.55, fence: 1.05, stone: 1.15, deer: 1.25 };
+export const HIT_RADIUS: Record<ObstacleKind, number> = { hole: 0, poop: 0.6, fence: 0.35, stone: 0.85, deer: 0.8, puddle: 1.1, ice: 1.5 };
+export const OBSTACLE_HEIGHT: Record<ObstacleKind, number> = { hole: 0, poop: 0.55, fence: 1.05, stone: 1.15, deer: 1.25, puddle: 0.3, ice: 0.3 };
 
 const DEER_RANGE = (PLAY_HALF + 1.2) * 2;
 
@@ -66,9 +77,25 @@ function mulberry32(seed: number) {
   };
 }
 
-type PatternName = 'hole' | 'poop' | 'fenceGap' | 'stones' | 'deerCross' | 'holePoop' | 'fenceHole' | 'coinSnake';
+export type PatternName = 'hole' | 'poop' | 'fenceGap' | 'stones' | 'deerCross' | 'holePoop' | 'fenceHole' | 'coinSnake' | 'puddle' | 'ice';
 
-export function buildCourse(seed = 20261114): Course {
+export interface CourseOptions {
+  seed?: number;
+  length?: number;
+  /** 0〜1。大きいほど、仕掛けの間隔がつまる。 */
+  difficulty?: number;
+  /** この面だけの罠(雨=みずたまり、雪=こおり)。 */
+  extra?: PatternName[];
+  /** 最初に順番に出す仕掛け(練習用)。 */
+  opening?: PatternName[];
+  rules?: Rules;
+}
+
+export function buildCourse(opts: CourseOptions = {}): Course {
+  const seed = opts.seed ?? 20261114;
+  const length = opts.length ?? COURSE_LENGTH;
+  const difficulty = opts.difficulty ?? 0;
+  const extra = opts.extra ?? [];
   const rand = mulberry32(seed);
   const obstacles: Obstacle[] = [];
   const coins: Coin[] = [];
@@ -150,6 +177,26 @@ export function buildCourse(seed = 20261114): Course {
     for (let i = 0; i < 12; i++) coin(s + i * 2.0, Math.sin(i * 0.7) * 2.2 * f);
     return s + 24;
   };
+  // みずたまり(雨): ふむと、おそくなる。広くて、よけやすい
+  const puddlePattern = (s: number) => {
+    const f = sign();
+    const xs = [-1.5, 1.1, -0.2];
+    xs.forEach((x, i) => add({ kind: 'puddle', s: s + i * 7, x: x * f }));
+    line(s - 6, 0.2 * f, 3, 2.0);
+    coin(s + 3.5, 2.2 * f);
+    coin(s + 10.5, -2.2 * f);
+    return s + 16;
+  };
+  // こおり(雪): ふむと、しばらく左右がきかずに、すべる
+  const icePattern = (s: number) => {
+    const f = sign();
+    add({ kind: 'ice', s, x: -1.0 * f });
+    add({ kind: 'ice', s: s + 10, x: 1.2 * f });
+    line(s - 7, 0.3 * f, 3, 2.0);
+    coin(s + 5, 0.2 * f, 1.5);
+    line(s + 14, -0.4 * f, 3, 2.0);
+    return s + 16;
+  };
 
   const run = (name: PatternName, s: number, p: number) => {
     switch (name) {
@@ -161,34 +208,37 @@ export function buildCourse(seed = 20261114): Course {
       case 'holePoop': return holePoopPattern(s, p);
       case 'fenceHole': return fenceHolePattern(s, p);
       case 'coinSnake': return snakePattern(s);
+      case 'puddle': return puddlePattern(s);
+      case 'ice': return icePattern(s);
     }
   };
 
   line(18, 0, 6, 2.4);
   let s = 62;
-  const opening: PatternName[] = ['hole', 'coinSnake', 'poop', 'fenceGap'];
+  const opening: PatternName[] = opts.opening ?? ['hole', 'coinSnake', 'poop', 'fenceGap'];
   for (const name of opening) s = run(name, s, 0) + 30;
 
-  let prev: PatternName = 'fenceGap';
-  const END_OBSTACLES = 925;
-  while (s < END_OBSTACLES) {
-    const p = s / COURSE_LENGTH;
-    const pool: PatternName[] = ['hole', 'poop', 'fenceGap', 'coinSnake'];
-    if (p > 0.25) pool.push('stones', 'deerCross');
+  let prev: PatternName = opening[opening.length - 1] ?? 'fenceGap';
+  const endObstacles = length - 75;
+  while (s < endObstacles) {
+    const p = s / length;
+    const pool: PatternName[] = ['hole', 'poop', 'fenceGap', 'coinSnake', ...extra];
+    if (p > 0.25) pool.push('stones', 'deerCross', ...extra);
     if (p > 0.5) pool.push('holePoop', 'fenceHole', 'stones', 'deerCross');
     let name = pool[Math.floor(rand() * pool.length)];
     if (name === prev) name = pool[Math.floor(rand() * pool.length)];
     prev = name;
-    s = run(name, s, p) + Math.max(22, 38 - 14 * p);
+    s = run(name, s, p) + Math.max(22, 38 - 14 * p - 6 * difficulty);
   }
 
   // ゴール前のコインシャワー(障害物なし)
+  const shower = length - 50;
   for (let i = 0; i < 18; i++) {
-    const ss = 950 + i * 2.6;
+    const ss = shower + i * 2.6;
     coin(ss, -2.2);
     coin(ss, 0, 0.75 + 0.8 * Math.sin(i * 0.5));
     coin(ss, 2.2);
   }
   obstacles.sort((a, b) => a.s - b.s);
-  return { obstacles, coins, length: COURSE_LENGTH };
+  return { obstacles, coins, length, rules: opts.rules };
 }

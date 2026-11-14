@@ -1,6 +1,6 @@
 import * as Phaser from 'phaser';
 import { VIEW, GOAL, RULES } from './game/stage.ts';
-import { PLAYABLE, STAGES, levelById, type LevelDefinition } from './game/levels.ts';
+import { ALL_PLAYABLE_SLOTS, PLAYABLE, STAGES, levelById, type LevelDefinition } from './game/levels.ts';
 import { createWorld, step, type World, type Event } from './game/world.ts';
 import { Progress } from './progress.ts';
 import { ParkView, walkKey, deerKey } from './view.ts';
@@ -119,11 +119,15 @@ class Park extends Phaser.Scene {
       const action = button?.dataset.action, target = levelById(button?.dataset.level ?? '');
       if (action === 'select') this.select();
       if ((action === 'start' || action === 'next') && target && progress.isUnlocked(target.id)) this.begin(target);
+      // 3D走りゲームの面(ステージ3)は、別のページ(/run/)で遊ぶ
+      const runId = button?.dataset.level ?? '';
+      if ((action === 'run' || (action === 'next' && !target)) && runId && progress.isUnlocked(runId)) location.href = `/run/?level=${runId}`;
       if (action === 'retry') this.begin(this.level);
       if (action === 'resume') this.resume();
       if (action === 'title') this.title();
     });
-    this.title();
+    // 走りゲームのページから「面えらびへ」で戻ってきたときは、面えらびから始める
+    if (location.hash === '#select') this.select(); else this.title();
     if (process.env.NODE_ENV !== 'production') Object.defineProperty(window, '__DEER__', { configurable: true, get: () => JSON.parse(JSON.stringify({ mode: this.mode, ...this.world, record: progress.get(this.level.id), canSave: progress.canSave })) });
   }
   private idle(mode: 'title' | 'select') {
@@ -138,14 +142,14 @@ class Park extends Phaser.Scene {
   private select() {
     this.idle('select');
     const groups = STAGES.map(group => {
-      const cleared = progress.clearedCount(group.stage), total = group.slots.filter(s => s.level).length;
-      const head = `<header><span class="eyebrow">STAGE ${group.stage}</span><h3>${group.title}</h3>${total ? `<span class="count">${cleared} / ${group.slots.length}</span>` : ''}</header>`;
+      const cleared = progress.clearedCount(group.stage), total = group.slots.filter(s => s.level || s.runnerId).length;
+      const head = `<header><span class="eyebrow">STAGE ${group.stage}</span><h3>${group.title}</h3>${total ? `<span class="count">${cleared} / ${total}</span>` : ''}</header>`;
       if (!group.slots.length) return `<section class="stage-group">${head}<p class="soon-note">準備中です。</p></section>`;
       const cards = group.slots.map(slot => {
-        if (!slot.level) return `<div class="level-card soon"><b>${slot.id}</b><span class="lv-name">${slot.title}<small>準備中</small></span></div>`;
+        if (!slot.level && !slot.runnerId) return `<div class="level-card soon"><b>${slot.id}</b><span class="lv-name">${slot.title}<small>準備中</small></span></div>`;
         const record = progress.get(slot.id), open = progress.isUnlocked(slot.id);
         const status = !open ? 'ロック中' : record.best !== null ? `ベスト ${record.best.toFixed(1)}秒` : '未クリア';
-        return `<button class="level-card${record.clears ? ' done' : ''}" data-action="start" data-level="${slot.id}"${open ? '' : ' disabled'}><b>${slot.id}</b><span class="lv-name">${slot.title}<small>${slot.summary}</small></span><span class="lv-best">${status}</span></button>`;
+        return `<button class="level-card${record.clears ? ' done' : ''}" data-action="${slot.runnerId ? 'run' : 'start'}" data-level="${slot.id}"${open ? '' : ' disabled'}><b>${slot.id}</b><span class="lv-name">${slot.title}<small>${slot.summary}</small></span><span class="lv-best">${status}</span></button>`;
       }).join('');
       return `<section class="stage-group">${head}<div class="levels">${cards}</div></section>`;
     }).join('');
@@ -191,12 +195,14 @@ class Park extends Phaser.Scene {
     this.mode = 'result'; const w = this.world, level = this.level, clear = w.outcome === 'clear';
     const newBest = clear && progress.clear(level.id, w.time);
     sound.music(clear ? 'clear' : 'fail');
-    const index = PLAYABLE.indexOf(level), next = clear ? PLAYABLE[index + 1] : undefined;
+    // 次の面は、通常の面と3D走りの面をまとめた順で決める(2-5の次は、3D走りの3-1)
+    const order = ALL_PLAYABLE_SLOTS, nextSlot = clear ? order[order.findIndex(x => x.id === level.id) + 1] : undefined;
+    const next = nextSlot ? { id: nextSlot.id, runner: nextSlot.runner } : undefined;
     const attempts = progress.get(level.id).attempts;
     const stat: [string, number, string] = level.delivery ? ['つかったせんべい', w.baits.length, '個'] : level.sweep ? ['掃いたうんこ', w.swept, '個'] : level.cross ? ['わたった道', new Set(level.cross.crossers.map(c => c.y)).size, '本'] : level.rescue ? ['つれていった鹿', 1, '頭'] : ['ジャンプ', w.jumps, '回'];
     const title = clear ? (level.delivery ? '無事に、お届け。' : level.sweep ? '公園が、ぴかぴか！' : level.cross ? '無事に、横断。' : level.rescue ? '無事に、救出！' : '無事に、おさんぽ。') : w.outcome === 'dirty' ? '公園が、うんこだらけ…！' : w.outcome === 'hit' ? 'ぶつかった！' : w.outcome === 'lost' ? 'はぐれちゃった…！' : w.outcome === 'stolen' ? 'せんべい、取られた！' : w.outcome === 'fall' ? '地面まで、いたずら。' : w.outcome === 'wall' ? 'ぐえっ、壁…！' : w.outcome === 'caught' ? 'つかまった！' : 'あっ、足元…！';
     const copy = clear ? (level.delivery ? 'せんべいは、無事に届いた。\n鹿は、もぐもぐ満足そう。' : level.sweep ? '奈良公園は、きれいになった。\n鹿は、また落とす気まんまん。' : level.cross ? '動物たちの動きを、見事に読んだ。' : level.rescue ? '子鹿は、ほっと一安心。\nSpraの後ろで、ご機嫌。' : '数々のしかけを、見事に突破。\n鹿は、何も知らない顔。') : (w.outcome === 'dirty' || w.outcome === 'hit' || w.outcome === 'lost') ? (level.hints.caught ?? CAUGHT_HINT) : w.outcome === 'stolen' ? (level.hints.caught ?? STOLEN_DEFAULT) : w.outcome === 'fall' ? level.hints.fall : w.outcome === 'wall' ? level.hints.wall : w.outcome === 'caught' ? (level.hints.caught ?? CAUGHT_HINT) : level.hints.poop;
-    const primary = next ? `<button class="primary" data-action="next" data-level="${next.id}">次の面へ（${next.id}） <span>▶</span></button>` : `<button class="primary" data-action="retry">${clear ? 'もう一度あそぶ' : 'すぐに、もう一回'} <span>▶</span></button>`;
+    const primary = next ? `<button class="primary" data-action="${next.runner ? 'run' : 'next'}" data-level="${next.id}">次の面へ（${next.id}） <span>▶</span></button>` : `<button class="primary" data-action="retry">${clear ? 'もう一度あそぶ' : 'すぐに、もう一回'} <span>▶</span></button>`;
     const secondary = `<div class="secondary-row">${next ? '<button class="secondary" data-action="retry">もう一度あそぶ</button>' : ''}<button class="secondary" data-action="select">面選択へ</button></div>`;
     el('overlay').innerHTML = `<div class="screen modal-screen result-screen"><div class="modal-card"><span class="eyebrow">${clear ? newBest ? '自己ベスト更新！' : `${level.id} クリア` : `${attempts}回目の挑戦`}</span><img class="result-spru" src="/assets/${clear ? 'spru-clear' : 'spru-oops'}.png" alt="${clear ? '喜ぶSpra' : '困ったSpra'}"><h2>${title}</h2><p class="result-copy">${copy.replaceAll('\n', '<br>')}</p><div class="result-stats"><div><span>${clear ? 'クリアタイム' : 'ここまでの時間'}</span><strong>${w.time.toFixed(1)}<small>秒</small></strong></div><div><span>${clear ? stat[0] : 'ゴールへの進み具合'}</span><strong>${clear ? stat[1] : this.progress()}<small>${clear ? stat[2] : '%'}</small></strong></div></div>${primary}${secondary}<p class="save-note">${clear ? progress.canSave ? '自己ベストはこのブラウザに保存されます。' : 'この環境では記録を保存できません。' : 'Rキーでも再挑戦。しかけの場所は同じです。'}</p></div></div>`;
     el('overlay').querySelector<HTMLButtonElement>('.primary')?.focus({ preventScroll: true }); this.hud();

@@ -1,4 +1,5 @@
 import { FIELD } from './stage.ts';
+import { RUNNER_LEVELS } from '../runner/levels.ts';
 import type { ChaserDefinition, CrosserDefinition, CrossDefinition, DeliveryDefinition, RescueDefinition, SweepDefinition, GoalDefinition, Point, RainDefinition, SliderDefinition, TrapDefinition, WallDefinition } from './stage.ts';
 
 /** 画面上の位置（Y）がこの値より下にいる間、text を案内として表示する。上から順に判定する。 */
@@ -48,8 +49,8 @@ export type LevelDefinition = {
   hints: { poop: string; fall: string; wall: string; caught?: string };
 };
 
-/** 一覧に出す枠。level が無い枠は「準備中」として表示する。 */
-export type LevelSlot = { id: string; title: string; summary: string; level?: LevelDefinition };
+/** 一覧に出す枠。level も runnerId も無い枠は「準備中」として表示する。 */
+export type LevelSlot = { id: string; title: string; summary: string; level?: LevelDefinition; /** 3D走りゲーム(/run/)の面。runner/levels.ts の id */ runnerId?: string };
 
 /** 8個のうんこが一列に並び、gap の近くだけが空く。 */
 const row = (y: number, gap: number): Point[] =>
@@ -656,9 +657,9 @@ export const LEVEL_2_5: LevelDefinition = {
   hints: { poop: 'うんこが、上から降ってきた…！\n影が出たら、動いて避けよう。', fall: FALL_HINT, wall: WALL_HINT, caught: STOLEN_HINT },
 };
 
-/** 3-1: はじめての大掃除。うんこに触れると、掃ける。通り過ぎて残すと「見逃し」。見逃しが溜まると失敗。 */
-export const LEVEL_3_1: LevelDefinition = {
-  id: '3-1', stage: 3, title: 'はじめての大掃除',
+/** 4-1: はじめての大掃除(仮。作り直し予定)。うんこに触れると、掃ける。通り過ぎて残すと「見逃し」。見逃しが溜まると失敗。 */
+export const LEVEL_4_1: LevelDefinition = {
+  id: '4-1', stage: 4, title: 'はじめての大掃除',
   intro: 'うんこに触れると、掃除できる！',
   start: { x: 360, y: 3400 },
   poops: [{ x: 170, y: 3150 }, { x: 440, y: 3150 }, { x: 280, y: 2980 }, { x: 550, y: 2980 }, { x: 190, y: 2810 }, { x: 500, y: 2810 }, { x: 250, y: 2640 }, { x: 560, y: 2640 }, { x: 170, y: 2470 }, { x: 440, y: 2470 }, { x: 280, y: 2300 }, { x: 550, y: 2300 }, { x: 190, y: 2130 }, { x: 500, y: 2130 }, { x: 250, y: 1960 }, { x: 560, y: 1960 }, { x: 170, y: 1790 }, { x: 440, y: 1790 }, { x: 280, y: 1620 }, { x: 550, y: 1620 }, { x: 190, y: 1450 }, { x: 500, y: 1450 }, { x: 250, y: 1280 }, { x: 560, y: 1280 }, { x: 170, y: 1110 }, { x: 440, y: 1110 }, { x: 280, y: 940 }, { x: 550, y: 940 }],
@@ -677,37 +678,6 @@ export const LEVEL_3_1: LevelDefinition = {
   hints: {
     poop: POOP_HINT, fall: FALL_HINT, wall: WALL_HINT,
     caught: '見逃しが、溜まりすぎた…！\nうんこに、近づいて触れよう。\n左右に動いて、拾いにいこう。',
-  },
-};
-
-/** 道を、同じ間隔で行き交う動物。 */
-const lane = (id: string, y: number, speed: number, count: number, kind: CrosserDefinition['kind'], offset = 0): CrosserDefinition[] =>
-  Array.from({ length: count }, (_, i) => ({ id: `${id}-${i}`, kind, y, x0: offset + i * ((FIELD.right - FIELD.left + 280) / count), speed }));
-
-/** 4-1: はじめての横断。動物が行き交う道を、すきまを読んで渡る。ボタンはない。 */
-export const LEVEL_4_1: LevelDefinition = {
-  id: '4-1', stage: 4, title: 'はじめての横断',
-  intro: '動物の動きを読んで、道を渡ろう。',
-  start: { x: 360, y: 3400 },
-  poops: [], deers: [], traps: [], walls: [], sliders: [], chasers: [], rain: [],
-  cross: {
-    crossers: [
-      ...lane('a', 3000, 110, 3, 'stag', 0), ...lane('b', 2740, -160, 3, 'doe', 100), ...lane('c', 2480, 200, 2, 'doe', 50),
-      ...lane('d', 2220, -130, 4, 'stag', 200), ...lane('e', 1960, 250, 2, 'fawn', 0), ...lane('f', 1700, -180, 3, 'doe', 300),
-      ...lane('g', 1440, 150, 3, 'stag', 150), ...lane('h', 1180, -240, 2, 'fawn', 60), ...lane('i', 920, 170, 3, 'doe', 0),
-      ...lane('j', 660, -210, 3, 'fawn', 250),
-    ],
-  },
-  chapters: [
-    { above: 3250, text: '動物の動きを読んで、道を渡ろう。' },
-    { above: 2900, text: '同じ道は、同じ速さで動いている。' },
-    { above: 2000, text: '小さい鹿ほど、速い。' },
-    { above: 1000, text: 'まだまだ、続く。' },
-    { above: -Infinity, text: 'あと少し。ゴールへ！' },
-  ],
-  hints: {
-    poop: POOP_HINT, fall: FALL_HINT, wall: WALL_HINT,
-    caught: '動物に、ぶつかった…！\n慌てずに、すきまを待とう。\n小さい鹿ほど、速く走る。',
   },
 };
 
@@ -772,11 +742,22 @@ export const STAGES: { stage: number; title: string; slots: LevelSlot[] }[] = [
       { id: '2-5', title: LEVEL_2_5.title, summary: '群れを、抜ける', level: LEVEL_2_5 },
     ],
   },
-  { stage: 3, title: '奈良公園大掃除', slots: [{ id: '3-1', title: LEVEL_3_1.title, summary: 'ボタンで、うんこを掃く', level: LEVEL_3_1 }] },
-  { stage: 4, title: 'どうぶつ横断パニック', slots: [{ id: '4-1', title: LEVEL_4_1.title, summary: '動物の動きを読んで渡る', level: LEVEL_4_1 }] },
-  { stage: 5, title: '森のなかま救出', slots: [{ id: '5-1', title: LEVEL_5_1.title, summary: '迷子を、出口へ連れて行く', level: LEVEL_5_1 }] },
+  {
+    // ステージ3は、Three.js の3D走りゲーム(/run/)。面の並びは runner/levels.ts の順。3-5〜3-9は、これから作る枠。
+    stage: 3, title: '鹿の大脱走', slots: [
+      ...RUNNER_LEVELS.filter(r => r.id !== '3-10').map(r => ({ id: r.id, title: r.title, summary: r.summary, runnerId: r.id })),
+      ...['3-5', '3-6', '3-7', '3-8', '3-9'].map(id => ({ id, title: 'これから、作ります', summary: '' })),
+      ...RUNNER_LEVELS.filter(r => r.id === '3-10').map(r => ({ id: r.id, title: r.title, summary: r.summary, runnerId: r.id })),
+    ],
+  },
+  // ステージ4は掃除(仮の面。遊び方は、これから決める)
+  { stage: 4, title: '奈良公園大掃除', slots: [{ id: '4-1', title: LEVEL_4_1.title, summary: 'うんこを掃く(作り直し予定)', level: LEVEL_4_1 }] },
+  // ステージ5は保留(5-1の定義は残してある)
+  { stage: 5, title: '森のなかま救出', slots: [{ id: '5-1', title: LEVEL_5_1.title, summary: '保留中' }] },
 ];
 
 /** 遊べる面だけを、遊ぶ順に並べたもの。 */
 export const PLAYABLE: LevelDefinition[] = STAGES.flatMap(s => s.slots.flatMap(slot => (slot.level ? [slot.level] : [])));
+/** 遊べる枠(通常の面と3D走りの面)を、遊ぶ順に並べたもの。記録・解放の順に使う。 */
+export const ALL_PLAYABLE_SLOTS: { id: string; stage: number; runner: boolean }[] = STAGES.flatMap(g => g.slots.filter(s => s.level || s.runnerId).map(s => ({ id: s.id, stage: g.stage, runner: !!s.runnerId })));
 export const levelById = (id: string): LevelDefinition | undefined => PLAYABLE.find(l => l.id === id);

@@ -95,9 +95,20 @@ Ownerの試遊で「簡単すぎる」と判断。旧 1-1〜1-4 は不採用（G
 
 ## 2026-11-14 3D走りゲームのお試し「春日大社へ」
 
-- `/kasuga/` で遊べる(`npm run dev:mobile` 後、`http://<PCのIP>:5180/kasuga/`)。Three.js 0.181 を追加
-- 構成: `src/kasuga/course.ts`(コース定義・同じ種で同じコース)、`sim.ts`(ルール・固定刻み1/120)、`view.ts`(Three.js)、`game.ts`(入力・HUD・効果音)、`src/app/kasuga/`(ページとCSS)
+- `/run/` で遊べる(`npm run dev:mobile` 後、`http://<PCのIP>:5180/run/`)。Three.js 0.181 を追加
+- 構成: `src/runner/course.ts`(コース定義・同じ種で同じコース)、`sim.ts`(ルール・固定刻み1/120)、`view.ts`(Three.js)、`game.ts`(入力・HUD・効果音)、`src/app/run/`(ページとCSS)
 - 操作: 画面下の左右パッド+ジャンプ。キーボードは ←→ とスペース
-- テスト: `npm test`(`tests/kasuga.test.ts` を含む)
-- 画像: `public/assets/kasuga/run_0..3.png`(`rooms/Spra/assets/deer` の後ろ姿4コマを切り出し、縁のにじみを除去・360px幅に縮小)
+- テスト: `npm test`(`tests/runner.test.ts` を含む)
+- 画像: `public/assets/run/run_0..3.png`(`rooms/Spra/assets/deer` の後ろ姿4コマを切り出し、縁のにじみを除去・360px幅に縮小)
 - 未確認: 実機の操作感・負荷、音。デバッグ用に `window.__kasuga` で状態を読める
+
+## 2026-11-14 ステージ構成の変更(ステージ3=3D走りゲームのシリーズ)
+
+- ステージ3「鹿の大脱走」= Three.js の3D走りゲーム(`/run/?level=3-1` のように面を指定)。面の設定は `src/runner/levels.ts` に1つ書くだけ(空・光・天候・景色=theme、手ごたえ=rules、罠=extra)
+  - 3-1 春日大社へ(昼) / 3-2 夜の参道 / 3-3 雨の参道(すべる・みずたまり) / 3-4 雪の参道(氷でつるつる) / 3-10 大阪湾をめざせ！(最長の最終面。夕焼けの街→海・観覧車)。3-5〜3-9は枠だけ(準備中)
+  - 面の番号・並びは `STAGES`(`src/game/levels.ts`)と `RUNNER_LEVELS` で決まり、後から入れ替えられる
+- ステージ4 = 掃除。今の4-1は旧3-1(触れて掃く)を仮置き。遊び方はこれから考え直す
+- 旧4-1(動物横断)は廃止(定義を削除。`cross` の仕組み自体は `world.ts` に残っている)
+- ステージ5 = 保留(一覧では「準備中」。`LEVEL_5_1` の定義は残してある)
+- 記録は既存の `Progress` に3D走りの面も保存(クリアタイム)。面選択は `/#select` で直接開ける
+- テスト: `tests/runner.test.ts`(全面を、ジャンプ+よけだけのボットでクリアできることも確認)

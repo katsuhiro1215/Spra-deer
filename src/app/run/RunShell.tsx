@@ -1,18 +1,20 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import './kasuga.css';
+import './run.css';
 
-export function KasugaShell() {
+export function RunShell() {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let stop: (() => void) | undefined;
     let cancelled = false;
-    // three.js はブラウザ側でだけ読み込む
-    import('../../kasuga/game.ts').then((m) => {
+    // three.js はブラウザ側でだけ読み込む。面は /run/?level=3-2 のように指定する(無ければ3-1)
+    Promise.all([import('../../runner/game.ts'), import('../../runner/levels.ts')]).then(([game, levels]) => {
       if (cancelled || !ref.current) return;
-      stop = m.startKasuga(ref.current);
+      const id = new URLSearchParams(window.location.search).get('level') ?? '3-1';
+      const level = levels.runnerById(id) ?? levels.RUNNER_LEVELS[0];
+      stop = game.startRunner(ref.current, level);
     });
     return () => {
       cancelled = true;
@@ -31,6 +33,10 @@ export function KasugaShell() {
               <span className="ks-coin-icon" />
               <b data-ks="coins">0</b>
             </div>
+            <div className="ks-chip ks-level">
+              <small data-ks="lv-id" />
+              <span data-ks="lv-title" />
+            </div>
             <div className="ks-chip ks-hearts" data-ks="hearts">♥♥♥</div>
           </div>
           <div className="ks-progress">
@@ -38,7 +44,7 @@ export function KasugaShell() {
               <div className="ks-progress-fill" data-ks="fill" />
               <span className="ks-progress-mark" data-ks="mark" />
             </div>
-            <span className="ks-progress-goal">春日大社</span>
+            <span className="ks-progress-goal" data-ks="lv-goal" />
           </div>
           <div className="ks-toast" data-ks="toast" />
         </div>
@@ -55,15 +61,9 @@ export function KasugaShell() {
 
         <div className="ks-overlay on" data-ks="start">
           <div className="ks-card">
-            <p className="ks-badge">お試し版</p>
-            <h1>
-              春日大社へ<small>Spraと鹿。</small>
-            </h1>
-            <p className="ks-lead">
-              石灯籠の参道を かけぬけて、赤い春日大社を めざそう。
-              <br />
-              穴・柵・ころがる岩・ふん に ご用心。コインも あつめよう！
-            </p>
+            <p className="ks-badge">鹿の大脱走</p>
+            <h1 data-ks="s-title" />
+            <p className="ks-lead" data-ks="s-lead" />
             <ul className="ks-how">
               <li>
                 <b>◀ ▶</b> 左右にうごく(キーボードは ← →)
@@ -71,12 +71,15 @@ export function KasugaShell() {
               <li>
                 <b>ジャンプ</b> あなや 柵を こえる(スペース)
               </li>
+              <li>
+                <b>コイン</b> たくさん あつめよう
+              </li>
             </ul>
             <button type="button" className="ks-btn" data-ks="go">
               はじめる
             </button>
-            <a className="ks-link" href="/">
-              ← Spraと鹿。にもどる
+            <a className="ks-link" href="/#select">
+              ← 面えらびへ
             </a>
           </div>
         </div>
@@ -89,12 +92,16 @@ export function KasugaShell() {
               <div><dt>コイン</dt><dd data-ks="r-coins" /></div>
               <div><dt>のこりハート</dt><dd data-ks="r-hearts" /></div>
               <div><dt>きろく</dt><dd data-ks="r-time" /></div>
+              <div><dt>ベスト</dt><dd data-ks="r-best" /></div>
             </dl>
-            <button type="button" className="ks-btn" data-ks="retry">
+            <a className="ks-btn ks-btn-next" data-ks="next" href="/run/" hidden>
+              次の面へ
+            </a>
+            <button type="button" className="ks-btn ks-btn-sub" data-ks="retry">
               もういちど
             </button>
-            <a className="ks-link" href="/">
-              ← Spraと鹿。にもどる
+            <a className="ks-link" href="/#select">
+              ← 面えらびへ
             </a>
           </div>
         </div>
