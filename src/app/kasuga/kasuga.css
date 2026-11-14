@@ -1,0 +1,332 @@
+/* 「春日大社へ」お試し版の画面。クラス名は ks- で始め、メインのゲームと混ざらないようにする */
+.ks-root {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  justify-content: center;
+  background: #10281d;
+  font-family: 'M PLUS Rounded 1c', 'Zen Maru Gothic', system-ui, sans-serif;
+  color: #fff;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.ks-frame {
+  position: relative;
+  height: 100dvh;
+  width: min(100vw, calc(100dvh * 9 / 16));
+  overflow: hidden;
+  touch-action: none;
+  background: #9fd3f2;
+}
+.ks-stage,
+.ks-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* 上の表示 */
+.ks-hud {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  padding: max(12px, env(safe-area-inset-top)) 14px 0;
+}
+.ks-hud-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+.ks-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 84px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgba(20, 40, 28, 0.55);
+  backdrop-filter: blur(4px);
+  font-weight: 800;
+  font-size: 22px;
+  line-height: 1.1;
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.18);
+}
+.ks-hearts {
+  color: #ff6b81;
+  letter-spacing: 2px;
+  min-width: 0;
+}
+.ks-coin-icon {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #fff2a8, #ffc83a 55%, #c98a10);
+  box-shadow: inset 0 0 0 3px #ffe28a;
+}
+.ks-chip b {
+  display: inline-block;
+  min-width: 2ch;
+  text-align: left;
+}
+.ks-pop {
+  animation: ks-pop 0.18s ease-out;
+}
+@keyframes ks-pop {
+  50% { transform: scale(1.18); }
+}
+
+/* 進みぐあい */
+.ks-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+}
+.ks-progress-bar {
+  position: relative;
+  flex: 1;
+  height: 12px;
+  border-radius: 999px;
+  background: rgba(20, 40, 28, 0.5);
+}
+.ks-progress-fill {
+  height: 100%;
+  width: 0;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #ffe08a, #ff8a3d);
+}
+.ks-progress-mark {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 22px;
+  height: 22px;
+  margin: -11px 0 0 -11px;
+  border-radius: 50%;
+  background: #fff url('/assets/kasuga/run_0.png') center 20% / 150% no-repeat;
+  box-shadow: 0 0 0 3px #ff8a3d;
+}
+.ks-progress-goal {
+  padding: 2px 10px;
+  border-radius: 8px;
+  background: #d8381c;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.ks-toast {
+  position: absolute;
+  left: 50%;
+  top: 150px;
+  max-width: 88%;
+  transform: translate(-50%, -8px);
+  padding: 10px 20px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #3a2a1a;
+  font-weight: 800;
+  font-size: 18px;
+  text-align: center;
+  opacity: 0;
+  transition: opacity 0.2s, transform 0.2s;
+}
+.ks-toast.on {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+/* 操作 */
+.ks-controls {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 0 14px max(18px, env(safe-area-inset-bottom));
+}
+.ks-pad {
+  position: relative;
+  flex: 1;
+  max-width: 62%;
+  height: 112px;
+  border-radius: 56px;
+  background: rgba(255, 255, 255, 0.28);
+  border: 3px solid rgba(255, 255, 255, 0.6);
+  backdrop-filter: blur(3px);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 28px;
+  font-size: 40px;
+  touch-action: none;
+}
+.ks-arrow {
+  opacity: 0.75;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.25);
+  transition: transform 0.08s, opacity 0.08s;
+}
+.ks-pad[data-dir='left'] .l,
+.ks-pad[data-dir='right'] .r {
+  opacity: 1;
+  transform: scale(1.3);
+}
+.ks-jump {
+  flex: none;
+  width: 124px;
+  height: 124px;
+  border-radius: 50%;
+  border: 4px solid #fff;
+  background: radial-gradient(circle at 35% 30%, #ffb05a, #ff7a2a);
+  color: #fff;
+  font: inherit;
+  font-size: 20px;
+  font-weight: 900;
+  box-shadow: 0 6px 0 #c94d0c, 0 8px 14px rgba(0, 0, 0, 0.25);
+  touch-action: none;
+  cursor: pointer;
+}
+.ks-jump.down {
+  transform: translateY(4px);
+  box-shadow: 0 2px 0 #c94d0c;
+}
+
+/* はじめ・おわりの画面 */
+.ks-overlay {
+  position: absolute;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: linear-gradient(180deg, rgba(16, 40, 29, 0.55), rgba(16, 40, 29, 0.78));
+}
+.ks-overlay.on {
+  display: flex;
+}
+.ks-card {
+  width: 100%;
+  max-width: 420px;
+  padding: 28px 22px 22px;
+  border-radius: 28px;
+  background: rgba(255, 252, 244, 0.97);
+  color: #3a2a1a;
+  text-align: center;
+  box-shadow: 0 10px 0 rgba(0, 0, 0, 0.15);
+}
+.ks-badge {
+  display: inline-block;
+  margin: 0 0 8px;
+  padding: 2px 12px;
+  border-radius: 999px;
+  background: #ffb02e;
+  color: #fff;
+  font-weight: 800;
+  font-size: 14px;
+}
+.ks-card h1,
+.ks-card h2 {
+  margin: 4px 0 10px;
+  font-size: 40px;
+  line-height: 1.15;
+  color: #d8381c;
+  font-weight: 900;
+}
+.ks-card h2 {
+  font-size: 28px;
+}
+.ks-card h1,
+.ks-card h2,
+.ks-lead,
+.ks-how,
+.ks-toast {
+  text-wrap: balance;
+  word-break: auto-phrase;
+}
+.ks-card h1 small {
+  display: block;
+  margin-top: 4px;
+  font-size: 18px;
+  color: #3b7f26;
+}
+.ks-lead {
+  margin: 0 0 14px;
+  font-size: 17px;
+  line-height: 1.6;
+  font-weight: 700;
+}
+.ks-how {
+  margin: 0 0 18px;
+  padding: 10px 14px;
+  list-style: none;
+  border-radius: 14px;
+  background: #f1ead8;
+  text-align: left;
+  font-size: 16px;
+  line-height: 1.8;
+}
+.ks-how b {
+  display: inline-block;
+  min-width: 5.5em;
+  color: #ff7a2a;
+}
+.ks-btn {
+  display: block;
+  width: 100%;
+  padding: 14px 0;
+  border: 0;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #ffa14a, #ff7a2a);
+  color: #fff;
+  font: inherit;
+  font-size: 24px;
+  font-weight: 900;
+  box-shadow: 0 6px 0 #c94d0c;
+  cursor: pointer;
+}
+.ks-btn:active {
+  transform: translateY(3px);
+  box-shadow: 0 3px 0 #c94d0c;
+}
+.ks-link {
+  display: inline-block;
+  margin-top: 14px;
+  color: #3b7f26;
+  font-weight: 800;
+  font-size: 16px;
+}
+.ks-stars {
+  margin: 0 0 6px;
+  font-size: 40px;
+  color: #ffb02e;
+  letter-spacing: 6px;
+  min-height: 1em;
+}
+.ks-stats {
+  margin: 0 0 18px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: #f1ead8;
+}
+.ks-stats div {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 0;
+  font-size: 18px;
+  font-weight: 800;
+}
+.ks-stats dt {
+  font-weight: 700;
+}
+.ks-stats dd {
+  margin: 0;
+  color: #d8381c;
+}
+.ks-overlay.fail .ks-card h2 {
+  color: #6c5a48;
+}
