@@ -97,3 +97,5 @@ $rounded: 'M PLUS Rounded 1c', 'Zen Maru Gothic', 'Hiragino Maru Gothic ProN', '
 // 面選択も同じ空の色に合わせる
 .select-screen { background: linear-gradient(#cdeaf7 0%, #e6f5e4 55%, #d0ecb8 100%) !important; }
 .select-head h2, .stage-group header h3 { font-family: $rounded; font-weight: 900; }
+
+.legal-links { display: flex; justify-content: center; gap: 5cqw; margin: 3cqw 0 0; font-family: $rounded; font-weight: 700; font-size: max(12px, 2.8cqw); a { color: #fffff0; text-decoration: underline; text-shadow: 0 .3cqw .8cqw #2f5a1f; } }

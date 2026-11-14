@@ -1,4 +1,4 @@
-import Phaser from 'phaser';
+import * as Phaser from 'phaser';
 import { GOAL, VIEW, type Point } from './game/stage.ts';
 import type { LevelDefinition } from './game/levels.ts';
 import { dropSpot, wallRect, type World, type Trap, type Event } from './game/world.ts';

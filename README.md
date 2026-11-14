@@ -74,3 +74,14 @@ Ownerの試遊で「簡単すぎる」と判断。旧 1-1〜1-4 は不採用（G
 - 5-1 まいごの子鹿: ボタンなし。迷子の子鹿に近づくと、Spruが通った道を90px遅れてついてくる。連れている鹿がうんこ・穴・壁に当たると失敗。子鹿が近くにいないとゴールは開かない。
 - 動物の絵は、仮に鹿の画像を使っている（横断の動物、迷子の鹿）。101〜200の動物や1〜100の仲間の画像を使うには、背景を透過した素材が要る。
 - ソルバー（tests/solver.ts）は、掃除の面では「うんこの残り数」で進み具合を測る。
+
+## 2026-11-14 Next.js へ移行（GitHub: katsuhiro1215/Spra-deer、private）
+
+- 技術: **Next.js 16 + React 19 + Phaser 3.90 + TypeScript + Sass**（静的書き出し `output: 'export'`。Tane・Spra Go と同じ方式）。Vite は廃止。
+- 画面: `/` がゲーム（`src/app/GameShell.tsx` が、ゲーム本体 `src/main.ts` の `start()` を呼ぶ）、`/terms/` 利用規約、`/privacy/` プライバシーポリシー（どちらも下書き。【要入力】はOwnerが埋める）。
+- 起動: `npm run dev`（127.0.0.1:5180）／`npm run dev:mobile`（0.0.0.0:5180、スマホ確認用）。初回表示は Phaser のコンパイルで、少し待つ。
+- 検証: `npm test`（ルール36件）、`npm run build`（`out/` に静的ファイル）、`GAME_URL=http://127.0.0.1:5180/ npm run test:browser`。
+- ゲームの計算（`src/game/`）は画面に依存しないまま。Phaser は `import * as Phaser from 'phaser'`。
+- ゲームから規約ページへは、普通のリンク（ページ全体の移動）。ゲーム側がページを離れるときに後始末をしないため、Next の `Link`（画面の差し替え）は使わない。
+- アカウント（セーブ）は、Spra Go のアカウントを使う予定（`X-Spra-App: deer`、`deer_` 表）。Tane の方式（ログイン・登録、プロフィールごとの記録をサーバーと同期、ゲストの記録の引き継ぎ）を参考にする。ログイン画面は `/account/login/`・`/account/register/` に置く予定。Spra Go 側の改修は別チャットで。
+- 未対応: Tailwind（ゲームのSassと衝突しないよう、ログイン画面を作るときに導入を検討）。

@@ -1,4 +1,4 @@
-import Phaser from 'phaser';
+import * as Phaser from 'phaser';
 import { VIEW, GOAL, RULES } from './game/stage.ts';
 import { PLAYABLE, STAGES, levelById, type LevelDefinition } from './game/levels.ts';
 import { createWorld, step, type World, type Event } from './game/world.ts';
@@ -9,6 +9,8 @@ import walk from './game/spru-walk.json';
 import type { Facing } from './game/facing.ts';
 import { Controls } from './input.ts';
 import './styles.scss';
+
+// Next.js の静的書き出し（ルートは /）。アセットは絶対パスで読む。
 
 const el = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const progress = new Progress();
@@ -30,7 +32,7 @@ class Sound {
     if (target && this.current !== target) {
       let audio = this.tracks.get(target);
       if (!audio) {
-        audio = new Audio(`assets/audio/${target}.mp3`);
+        audio = new Audio(`/assets/audio/${target}.mp3`);
         audio.loop = target === 'home' || target === 'play'; audio.volume = target === 'play' ? .55 : .7;
         this.tracks.set(target, audio);
       }
@@ -68,10 +70,10 @@ class Boot extends Phaser.Scene {
   private failed = false;
   constructor() { super('Boot'); }
   preload() {
-    for (const name of ['spru', 'spru-clear', 'spru-oops', 'deer']) this.load.image(name, `assets/${name}.png`);
-    for (const name of ['start', 'goal']) this.load.image(`gate-${name}`, `assets/gate/${name}.png`);
-    for (const facing of Object.keys(walk).filter(k => k !== 'referenceHeight') as Facing[]) walk[facing].frames.forEach((f, i) => this.load.image(walkKey(facing, i), `assets/spru-walk/${f.file}`));
-    for (const kind of Object.keys(deerWalk) as (keyof typeof deerWalk)[]) for (const side of ['r', 'l'] as const) deerWalk[kind][side].frames.forEach((f, i) => this.load.image(deerKey(kind, side, i), `assets/deer-walk/${f.file}`));
+    for (const name of ['spru', 'spru-clear', 'spru-oops', 'deer']) this.load.image(name, `/assets/${name}.png`);
+    for (const name of ['start', 'goal']) this.load.image(`gate-${name}`, `/assets/gate/${name}.png`);
+    for (const facing of Object.keys(walk).filter(k => k !== 'referenceHeight') as Facing[]) walk[facing].frames.forEach((f, i) => this.load.image(walkKey(facing, i), `/assets/spru-walk/${f.file}`));
+    for (const kind of Object.keys(deerWalk) as (keyof typeof deerWalk)[]) for (const side of ['r', 'l'] as const) deerWalk[kind][side].frames.forEach((f, i) => this.load.image(deerKey(kind, side, i), `/assets/deer-walk/${f.file}`));
     this.load.on('loaderror', () => { this.failed = true; el('fatal').hidden = false; });
   }
   create() {
@@ -122,7 +124,7 @@ class Park extends Phaser.Scene {
       if (action === 'title') this.title();
     });
     this.title();
-    if (import.meta.env.DEV) Object.defineProperty(window, '__DEER__', { configurable: true, get: () => JSON.parse(JSON.stringify({ mode: this.mode, ...this.world, record: progress.get(this.level.id), canSave: progress.canSave })) });
+    if (process.env.NODE_ENV !== 'production') Object.defineProperty(window, '__DEER__', { configurable: true, get: () => JSON.parse(JSON.stringify({ mode: this.mode, ...this.world, record: progress.get(this.level.id), canSave: progress.canSave })) });
   }
   private idle(mode: 'title' | 'select') {
     this.mode = mode; this.controls.enable(false); this.world = createWorld(this.level); this.view.reset(); sound.music('home');
@@ -131,7 +133,7 @@ class Park extends Phaser.Scene {
   private title() {
     this.idle('title');
     // 構成は tane.spra.jp に合わせる（空→丘、キャラ3体、極太の丸ゴシックのロゴ、丘の上の大きなボタン）。
-    el('overlay').innerHTML = `<div class="screen title-screen"><div class="title-head"><p class="brand-line"><b>S</b>spra</p><h2 class="wordmark" aria-label="Spruと鹿。"><span class="w-spru">Spru</span><span class="w-to">と</span><span class="w-deer">鹿</span><span class="w-dot">。</span></h2><p class="subtitle">足元には、ご用心。</p></div><div class="hero"><img class="hero-fawn" src="assets/hero/fawn.png" alt="子鹿"><img class="hero-spru" src="assets/hero/spru.png" alt="Spru"><img class="hero-stag" src="assets/hero/stag.png" alt="雄鹿"><span class="speech">こっち、空いてるよ。</span></div><div class="hill"><button class="play" data-action="select">あそぶ</button><p class="howto">ドラッグで移動、ボタンでジャンプ。<br>鹿に、悪気はありません。たぶん。</p></div></div>`;
+    el('overlay').innerHTML = `<div class="screen title-screen"><div class="title-head"><p class="brand-line"><b>S</b>spra</p><h2 class="wordmark" aria-label="Spraと鹿。"><span class="w-spru">Spra</span><span class="w-to">と</span><span class="w-deer">鹿</span><span class="w-dot">。</span></h2><p class="subtitle">足元には、ご用心。</p></div><div class="hero"><img class="hero-fawn" src="/assets/hero/fawn.png" alt="子鹿"><img class="hero-spru" src="/assets/hero/spru.png" alt="Spra"><img class="hero-stag" src="/assets/hero/stag.png" alt="雄鹿"><span class="speech">こっち、空いてるよ。</span></div><div class="hill"><button class="play" data-action="select">あそぶ</button><p class="howto">ドラッグで移動、ボタンでジャンプ。<br>鹿に、悪気はありません。たぶん。</p><nav class="legal-links"><a href="/terms/">利用規約</a><a href="/privacy/">プライバシーポリシー</a></nav></div></div>`;
   }
   private select() {
     this.idle('select');
@@ -193,10 +195,10 @@ class Park extends Phaser.Scene {
     const attempts = progress.get(level.id).attempts;
     const stat: [string, number, string] = level.delivery ? ['つかったせんべい', w.baits.length, '個'] : level.sweep ? ['掃いたうんこ', w.swept, '個'] : level.cross ? ['わたった道', new Set(level.cross.crossers.map(c => c.y)).size, '本'] : level.rescue ? ['つれていった鹿', 1, '頭'] : ['ジャンプ', w.jumps, '回'];
     const title = clear ? (level.delivery ? '無事に、お届け。' : level.sweep ? '公園が、ぴかぴか！' : level.cross ? '無事に、横断。' : level.rescue ? '無事に、救出！' : '無事に、おさんぽ。') : w.outcome === 'dirty' ? '公園が、うんこだらけ…！' : w.outcome === 'hit' ? 'ぶつかった！' : w.outcome === 'lost' ? 'はぐれちゃった…！' : w.outcome === 'stolen' ? 'せんべい、取られた！' : w.outcome === 'fall' ? '地面まで、いたずら。' : w.outcome === 'wall' ? 'ぐえっ、壁…！' : w.outcome === 'caught' ? 'つかまった！' : 'あっ、足元…！';
-    const copy = clear ? (level.delivery ? 'せんべいは、無事に届いた。\n鹿は、もぐもぐ満足そう。' : level.sweep ? '奈良公園は、きれいになった。\n鹿は、また落とす気まんまん。' : level.cross ? '動物たちの動きを、見事に読んだ。' : level.rescue ? '子鹿は、ほっと一安心。\nSpruの後ろで、ご機嫌。' : '数々のしかけを、見事に突破。\n鹿は、何も知らない顔。') : (w.outcome === 'dirty' || w.outcome === 'hit' || w.outcome === 'lost') ? (level.hints.caught ?? CAUGHT_HINT) : w.outcome === 'stolen' ? (level.hints.caught ?? STOLEN_DEFAULT) : w.outcome === 'fall' ? level.hints.fall : w.outcome === 'wall' ? level.hints.wall : w.outcome === 'caught' ? (level.hints.caught ?? CAUGHT_HINT) : level.hints.poop;
+    const copy = clear ? (level.delivery ? 'せんべいは、無事に届いた。\n鹿は、もぐもぐ満足そう。' : level.sweep ? '奈良公園は、きれいになった。\n鹿は、また落とす気まんまん。' : level.cross ? '動物たちの動きを、見事に読んだ。' : level.rescue ? '子鹿は、ほっと一安心。\nSpraの後ろで、ご機嫌。' : '数々のしかけを、見事に突破。\n鹿は、何も知らない顔。') : (w.outcome === 'dirty' || w.outcome === 'hit' || w.outcome === 'lost') ? (level.hints.caught ?? CAUGHT_HINT) : w.outcome === 'stolen' ? (level.hints.caught ?? STOLEN_DEFAULT) : w.outcome === 'fall' ? level.hints.fall : w.outcome === 'wall' ? level.hints.wall : w.outcome === 'caught' ? (level.hints.caught ?? CAUGHT_HINT) : level.hints.poop;
     const primary = next ? `<button class="primary" data-action="next" data-level="${next.id}">次の面へ（${next.id}） <span>▶</span></button>` : `<button class="primary" data-action="retry">${clear ? 'もう一度あそぶ' : 'すぐに、もう一回'} <span>▶</span></button>`;
     const secondary = `<div class="secondary-row">${next ? '<button class="secondary" data-action="retry">もう一度あそぶ</button>' : ''}<button class="secondary" data-action="select">面選択へ</button></div>`;
-    el('overlay').innerHTML = `<div class="screen modal-screen result-screen"><div class="modal-card"><span class="eyebrow">${clear ? newBest ? '自己ベスト更新！' : `${level.id} クリア` : `${attempts}回目の挑戦`}</span><img class="result-spru" src="assets/${clear ? 'spru-clear' : 'spru-oops'}.png" alt="${clear ? '喜ぶSpru' : '困ったSpru'}"><h2>${title}</h2><p class="result-copy">${copy.replaceAll('\n', '<br>')}</p><div class="result-stats"><div><span>${clear ? 'クリアタイム' : 'ここまでの時間'}</span><strong>${w.time.toFixed(1)}<small>秒</small></strong></div><div><span>${clear ? stat[0] : 'ゴールへの進み具合'}</span><strong>${clear ? stat[1] : this.progress()}<small>${clear ? stat[2] : '%'}</small></strong></div></div>${primary}${secondary}<p class="save-note">${clear ? progress.canSave ? '自己ベストはこのブラウザに保存されます。' : 'この環境では記録を保存できません。' : 'Rキーでも再挑戦。しかけの場所は同じです。'}</p></div></div>`;
+    el('overlay').innerHTML = `<div class="screen modal-screen result-screen"><div class="modal-card"><span class="eyebrow">${clear ? newBest ? '自己ベスト更新！' : `${level.id} クリア` : `${attempts}回目の挑戦`}</span><img class="result-spru" src="/assets/${clear ? 'spru-clear' : 'spru-oops'}.png" alt="${clear ? '喜ぶSpra' : '困ったSpra'}"><h2>${title}</h2><p class="result-copy">${copy.replaceAll('\n', '<br>')}</p><div class="result-stats"><div><span>${clear ? 'クリアタイム' : 'ここまでの時間'}</span><strong>${w.time.toFixed(1)}<small>秒</small></strong></div><div><span>${clear ? stat[0] : 'ゴールへの進み具合'}</span><strong>${clear ? stat[1] : this.progress()}<small>${clear ? stat[2] : '%'}</small></strong></div></div>${primary}${secondary}<p class="save-note">${clear ? progress.canSave ? '自己ベストはこのブラウザに保存されます。' : 'この環境では記録を保存できません。' : 'Rキーでも再挑戦。しかけの場所は同じです。'}</p></div></div>`;
     el('overlay').querySelector<HTMLButtonElement>('.primary')?.focus({ preventScroll: true }); this.hud();
   }
   private progress() {
@@ -241,10 +243,14 @@ class Park extends Phaser.Scene {
     }
   }
 }
-el('reload').addEventListener('click', () => window.location.reload());
-new Phaser.Game({
-  type: Phaser.AUTO, parent: 'game', width: VIEW.width, height: VIEW.height,
-  backgroundColor: '#c3d397', antialias: true, audio: { noAudio: true },
-  scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
-  input: { activePointers: 3 }, scene: [Boot, Park],
-});
+/** ゲームを起動する。戻り値で止める。 */
+export function start() {
+  el('reload').addEventListener('click', () => window.location.reload());
+  const game = new Phaser.Game({
+    type: Phaser.AUTO, parent: 'game', width: VIEW.width, height: VIEW.height,
+    backgroundColor: '#c3d397', antialias: true, audio: { noAudio: true },
+    scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
+    input: { activePointers: 3 }, scene: [Boot, Park],
+  });
+  return () => game.destroy(true);
+}
