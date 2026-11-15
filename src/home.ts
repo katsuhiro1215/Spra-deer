@@ -74,7 +74,7 @@ export function homeHTML(p: Progress, w: Wallet): string {
     const state = needs > 0 ? `🔒 前のワールドを あと${needs}面` : `${cleared} / ${slots.length} クリア`;
     return `<button class="hs-world${needs > 0 ? ' locked' : ''}${cleared === slots.length ? ' done' : ''}" style="--wc:${wd.color}" data-action="world" data-stage="${wd.stage}"${needs > 0 ? ' aria-disabled="true"' : ''}><span class="hs-wno">WORLD ${wd.no}</span><b>${wd.name}</b><small>${wd.play}</small><span class="hs-wstate">${state}</span></button>`;
   }).join('');
-  const story = `<button class="hs-story" data-action="story"><span class="hs-wno">STORY</span><b>闇の鹿王と、色をなくした森</b><small>準備中 ── 十二星座の鹿たちが、待っている。</small></button>`;
+  const story = `<button class="hs-story" data-action="story"><span class="hs-wno">STORY</span><b>ストーリー</b><small>準備中 ── Spraと鹿の、ぼうけんの物語。</small></button>`;
   return shell(w, 'home', `${story}<div class="hs-worlds">${cards}</div>`);
 }
 

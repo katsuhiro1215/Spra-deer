@@ -45,9 +45,9 @@ test('こうもり: 動かないと当たる。横へよけるか、跳べば当
   assert.equal(play(batCourse(), (run) => ({ left: false, right: false, jump: run.s > 54 && run.s < 55 }), 70).lives, 3, "跳んでかわした(すれちがう0.3秒ほど前に跳ぶ)");
 });
 
-test('ラムガの子分が出る面: 3-3・3-7〜3-10', () => {
-  const has = (id: string, k: Obstacle['kind']) => courseOf(RUNNER_LEVELS.find((l) => l.id === id)!).obstacles.some((o) => o.kind === k);
-  assert.ok(has('3-3', 'bat') && has('3-8', 'bat') && has('3-10', 'bat'));
-  assert.ok(has('3-7', 'bomb') && has('3-9', 'bomb') && has('3-10', 'bomb'));
-  for (const id of ['3-1', '3-2', '3-4', '3-5', '3-6']) assert.ok(!has(id, 'bomb') && !has(id, 'bat'), `${id}には出ない`);
+test('ラムガの子分は、まだ試作なので、どの面にも出ない(2026-11-15 Owner)', () => {
+  for (const l of RUNNER_LEVELS) {
+    const c = courseOf(l);
+    assert.ok(!c.obstacles.some((o) => o.kind === 'bomb' || o.kind === 'bat'), `${l.id}には出さない`);
+  }
 });
