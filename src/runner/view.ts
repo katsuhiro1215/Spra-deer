@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { BRIDGE_HALF, FISH_X0, FISH_X1, GOAL_GAP, RAMP_DROP, ROAD_HALF, bridgeSway, hillY, roadHeading, roadX, roadY, type Course, type Obstacle } from './course.ts';
 import { CRITTERS, type CritterDef } from './critters.ts';
+import { LANDMARK_ASPECT } from './landmarks.ts';
 import type { Landmark, RunnerLevel, Theme } from './levels.ts';
 import type { Run } from './sim.ts';
 
@@ -156,7 +157,7 @@ export class KasugaView {
   private coinRim!: THREE.InstancedMesh;
   private obstacleObjs: { o: Obstacle; obj: THREE.Object3D; spin?: THREE.Object3D; sprite?: THREE.Mesh; crit?: { def: CritterDef; tex: Record<'normal' | 'angry' | 'sleep' | 'dizzy', THREE.Texture>; pose: string } }[] = [];
   private critterTex = new Map<string, THREE.Texture>();
-  private daibutsu?: { mesh: THREE.Mesh; open: THREE.Texture; wake: THREE.Texture; light: THREE.PointLight; eyes: THREE.Points };
+  private daibutsu?: { mesh: THREE.Mesh; open: THREE.Texture; wake: THREE.Texture; light: THREE.PointLight; eyes: THREE.Points; hall: THREE.Mesh };
   private potionObjs: { id: number; s: number; x: number; y: number; obj: THREE.Group }[] = [];
   private awake = false;
   private walkTex: Record<string, THREE.Texture[]> = {};
@@ -346,6 +347,57 @@ export class KasugaView {
     const w = this.roadW(s, x);
     const g = !this.hilly ? 0 : Math.abs(x) < 9 && !this.nearBridge(s) ? hillY(this.course, s) : this.terrainAt(w.x, w.z, s).h;
     return { x: w.x, z: w.z, y: (o.y ?? 0) + g, rotY: -w.psi + (o.rotY ?? 0), scale: o.scale };
+  }
+
+  /** 絵の色あい(夜は暗く、雨は少しくすませ、夕方は暖かく)。景色になじませる */
+  private themeTint(): THREE.Color {
+    const th = this.theme;
+    if (th.night) return new THREE.Color(0x7a80a0);
+    if (th.weather === 'rain') return new THREE.Color(0xd2d7dd);
+    return new THREE.Color(0xffffff).lerp(new THREE.Color(th.sun), 0.25);
+  }
+
+  /**
+   * 名所・アイテムの絵の板(public/assets/runner/landmarks/<name>.webp)。下の辺のまんなかが原点。
+   * height=高さ[m]。横幅は絵の縦横比から決める
+   */
+  private board(name: string, height: number, o: { fog?: boolean; tint?: THREE.Color; cast?: boolean } = {}): THREE.Mesh {
+    const aspect = LANDMARK_ASPECT[name] ?? 1;
+    const tex = loadTex(`${ASSET}/runner/landmarks/${name}.webp`);
+    const m = new THREE.Mesh(
+      new THREE.PlaneGeometry(height * aspect, height).translate(0, height / 2, 0),
+      new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: 0.35, toneMapped: false, fog: o.fog ?? true, side: THREE.DoubleSide }),
+    );
+    (m.material as THREE.MeshBasicMaterial).color.copy(o.tint ?? this.themeTint());
+    return m;
+  }
+
+  /** 木の絵を、十字に組んだ2枚の板で、たくさん置く(どの向きからも木に見える)。 */
+  private imageTrees(name: string, places: Placement[], height = 9): void {
+    if (!places.length) return;
+    const aspect = LANDMARK_ASPECT[name] ?? 0.8;
+    const geo = new THREE.PlaneGeometry(height * aspect, height).translate(0, height / 2, 0);
+    const mat = new THREE.MeshBasicMaterial({ map: loadTex(`${ASSET}/runner/landmarks/${name}.webp`), alphaTest: 0.5, toneMapped: false, side: THREE.DoubleSide });
+    mat.color.copy(this.themeTint());
+    // 影は四角くなるので落とさない
+    addInstanced(this.scene, [{ geo, mat, rotY: Math.PI / 4 }, { geo, mat, rotY: -Math.PI / 4 }], places, false);
+  }
+
+  /** 遠景(生駒山・大阪の街): カメラの前方、遠くに置く絵。s が範囲の中のときだけ、ふわっと見える */
+  private backdrops: { mesh: THREE.Mesh; from: number; to: number }[] = [];
+  private addBackdrop(name: string, width: number, from: number, to: number): void {
+    const aspect = LANDMARK_ASPECT[name] ?? 3;
+    const m = new THREE.Mesh(
+      new THREE.PlaneGeometry(width, width / aspect).translate(0, width / aspect / 2, 0),
+      new THREE.MeshBasicMaterial({ map: loadTex(`${ASSET}/runner/landmarks/${name}.webp`), transparent: true, opacity: 0, depthWrite: false, toneMapped: false, fog: false }),
+    );
+    // 遠くのかすみ: 少し明るく、空の色に寄せる
+    (m.material as THREE.MeshBasicMaterial).color.copy(new THREE.Color(0xffffff).lerp(new THREE.Color(this.theme.fog), 0.25));
+    m.renderOrder = -1;
+    m.frustumCulled = false;
+    m.visible = false;
+    this.scene.add(m);
+    this.backdrops.push({ mesh: m, from, to });
   }
 
   /** 坂の高さ(ジャンプ台を除く。置き物や門を立てる高さ)。 */
@@ -713,26 +765,13 @@ export class KasugaView {
     const trunk = new THREE.MeshStandardMaterial({ color: 0x6b4a2e, roughness: 1 });
     const leafA = new THREE.MeshStandardMaterial({ color: th.snowCaps ? 0x4d7a64 : 0x2f6a3a, roughness: 0.9 });
     const leafB = new THREE.MeshStandardMaterial({ color: th.snowCaps ? 0x6a9a82 : 0x3d7d43, roughness: 0.9 });
-    const round = th.foliage === 'maple' || th.foliage === 'sakura';
-    const blobColors = th.foliage === 'maple' ? [0xd9452a, 0xf08a2a, 0xf2c043] : [0xf7b8cc, 0xfbd3e0, 0xf29ab6];
-    let treeParts: PartDef[] = [
+    const round = th.foliage === 'maple' || th.foliage === 'sakura'; // 紅葉・桜は、木の絵
+    const treeParts: PartDef[] = [
       { geo: new THREE.CylinderGeometry(0.35, 0.5, 3.2, 8), mat: trunk, pos: [0, 1.6, 0] },
       { geo: new THREE.ConeGeometry(3.0, 5.2, 9), mat: leafA, pos: [0, 5.0, 0] },
       { geo: new THREE.ConeGeometry(2.4, 4.4, 9), mat: leafB, pos: [0, 7.8, 0] },
       { geo: new THREE.ConeGeometry(1.7, 3.6, 9), mat: leafA, pos: [0, 10.3, 0] },
     ];
-    // 丸い木は、色ちがいを3種類つくって、まぜて置く
-    const roundParts = (k: number): PartDef[] => {
-      const m1 = new THREE.MeshStandardMaterial({ color: blobColors[k % 3], roughness: 0.85, flatShading: true });
-      const m2 = new THREE.MeshStandardMaterial({ color: blobColors[(k + 1) % 3], roughness: 0.85, flatShading: true });
-      return [
-        { geo: new THREE.CylinderGeometry(0.28, 0.42, 3.4, 8), mat: trunk, pos: [0, 1.7, 0] },
-        { geo: new THREE.IcosahedronGeometry(2.6, 1), mat: m1, pos: [0, 4.6, 0] },
-        { geo: new THREE.IcosahedronGeometry(1.8, 1), mat: m2, pos: [1.4, 5.6, 0.6] },
-        { geo: new THREE.IcosahedronGeometry(1.7, 1), mat: m1, pos: [-1.3, 5.3, -0.5] },
-      ];
-    };
-    if (round) treeParts = roundParts(0);
     if (th.snowCaps) {
       // 葉の上に、雪をのせる(少し小さい白い円すい)
       treeParts.push(
@@ -752,8 +791,7 @@ export class KasugaView {
       }
     }
     if (round) {
-      // 3種類に分けて置く(紅葉は赤・橙・黄、桜は濃い・うすいピンク)
-      for (let k = 0; k < 3; k++) addInstanced(this.scene, k === 0 ? treeParts : roundParts(k), tp.filter((_, i) => i % 3 === k));
+      this.imageTrees(th.foliage === 'maple' ? 'maple-tree' : 'sakura-tree', tp, 8.5);
     } else {
       addInstanced(this.scene, treeParts, tp);
     }
@@ -817,7 +855,7 @@ export class KasugaView {
       }
       this.scene.add(this.signboard('生駒山', sTop - 6, -1));
     }
-    // 大阪: 鉄の展望塔と、遠くの大阪城
+    // 大阪: 鉄の展望塔(道ばた)
     const city = scenes.find((sc) => sc.setting === 'city');
     if (city) {
       const s1 = city.at * L + (L - city.at * L) * 0.35;
@@ -825,13 +863,11 @@ export class KasugaView {
       const tower = this.latticeTower();
       tower.position.set(w.x, this.gy(s1), w.z);
       this.scene.add(tower);
-      const s2 = city.at * L + (L - city.at * L) * 0.6;
-      const cw = this.roadW(s2, -120);
-      const keep = this.castleKeep();
-      keep.scale.setScalar(1.4);
-      keep.position.set(cw.x, this.gy(s2), cw.z);
-      this.scene.add(keep);
     }
+    // 遠景の絵: 奈良の街からは生駒山、生駒山を下りはじめると大阪の街並み(通天閣・大阪城)
+    if (ikoma) this.addBackdrop('ikoma', 380, 0, ikoma.at * L + 40);
+    const sTop = this.level.checkpoints?.[0]?.at;
+    if (city && sTop !== undefined) this.addBackdrop('osaka-skyline', 400, sTop * L - 10, city.at * L + 60);
     // チェックポイントの門(青いアーチ)
     for (const cp of this.level.checkpoints ?? []) this.scene.add(this.checkpointGate(cp.at * L, cp.name));
   }
@@ -1201,52 +1237,6 @@ export class KasugaView {
   }
 
   // ---- 塔・堂・門(東大寺・法隆寺・名所で使う部品) ----
-  /** 五重塔など。tiers=層の数、w=いちばん下の幅 */
-  private pagoda(tiers: number, w: number): THREE.Group {
-    const g = new THREE.Group();
-    const white = new THREE.MeshStandardMaterial({ color: this.theme.snowCaps ? 0xf4f7fa : 0xf1e8d6, roughness: 0.85 });
-    const red = new THREE.MeshStandardMaterial({ color: RED, roughness: 0.5, emissive: 0x200600 });
-    const roof = new THREE.MeshStandardMaterial({ color: this.theme.snowCaps ? 0xe3eaf1 : 0x57493c, roughness: 0.95 });
-    const gold = new THREE.MeshStandardMaterial({ color: 0xffd36a, metalness: 0.6, roughness: 0.3, emissive: 0x6a4410, emissiveIntensity: 0.5 });
-    const base = new THREE.Mesh(new THREE.BoxGeometry(w + 3, 0.8, w + 3), new THREE.MeshStandardMaterial({ color: 0xcfc8b8, roughness: 0.95 }));
-    base.position.y = 0.4;
-    base.receiveShadow = true;
-    g.add(base);
-    let y = 0.8;
-    const hT = w * 0.5;
-    for (let i = 0; i < tiers; i++) {
-      const tw = w * (1 - i * 0.13);
-      const body = new THREE.Mesh(new THREE.BoxGeometry(tw, hT, tw), white);
-      body.position.y = y + hT / 2;
-      body.castShadow = true;
-      g.add(body);
-      for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
-        const pil = new THREE.Mesh(new THREE.BoxGeometry(0.28, hT, 0.28), red);
-        pil.position.set((sx * tw) / 2, y + hT / 2, (sz * tw) / 2);
-        g.add(pil);
-      }
-      const eave = tw + 3.6;
-      const cone = new THREE.Mesh(new THREE.ConeGeometry((eave / 2) * Math.SQRT2, hT * 0.5, 4), roof);
-      cone.rotation.y = Math.PI / 4;
-      cone.position.y = y + hT + hT * 0.2;
-      cone.castShadow = true;
-      const lip = new THREE.Mesh(new THREE.BoxGeometry(eave, 0.3, eave), roof);
-      lip.position.y = y + hT + 0.1;
-      g.add(cone, lip);
-      y += hT + hT * 0.42;
-    }
-    const spire = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.16, w * 0.9, 8), gold);
-    spire.position.y = y + (w * 0.9) / 2 - 0.4;
-    g.add(spire);
-    for (let r = 0; r < 5; r++) {
-      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.34 - r * 0.04, 0.05, 6, 14), gold);
-      ring.rotation.x = Math.PI / 2;
-      ring.position.y = y + 0.5 + r * (w * 0.14);
-      g.add(ring);
-    }
-    return g;
-  }
-
   /** 金堂のような、屋根の大きな堂。 */
   private hall(w: number, d: number, h: number, stories = 1, colors: { body?: number; pillar?: number; roof?: number } = {}): THREE.Group {
     const g = new THREE.Group();
@@ -1355,120 +1345,73 @@ export class KasugaView {
 
   private buildLandmark(lm: Landmark): void {
     const s = lm.at * this.course.length;
-    const model = lm.kind === 'pagoda' ? this.pagoda(3, 6.2) : lm.kind === 'pagoda5' ? this.pagoda(5, 6.6) : this.hall(15, 9, 5);
-    const w = this.roadW(s, lm.side * (ROAD_HALF + (lm.kind === 'hall' ? 12 : 9)));
-    model.position.set(w.x, this.terrainAt(w.x, w.z, s).h, w.z);
-    model.rotation.y = -w.psi;
-    this.scene.add(model);
+    // 名所の絵(薬師寺の塔・興福寺の五重塔・唐招提寺の金堂)。道から少し離して、道のほうへ少し向ける
+    const [name, h, off]: [string, number, number] =
+      lm.kind === 'pagoda' ? ['yakushiji-pagoda', 26, 10] : lm.kind === 'pagoda5' ? ['kofukuji-pagoda', 30, 11] : ['toshodaiji-hall', 14, 19];
+    const w = this.roadW(s, lm.side * (ROAD_HALF + off));
+    const b = this.board(name, h);
+    b.position.set(w.x, this.terrainAt(w.x, w.z, s).h - 0.3, w.z);
+    b.rotation.y = -w.psi - lm.side * 0.25;
+    this.scene.add(b);
     this.scene.add(this.signboard(lm.name, s - 4, lm.side));
   }
 
   // ---- 東大寺: 南大門・大仏殿・大仏 ----
   private buildTodaiji(): void {
     const L = this.course.length;
-    // 南大門(道のとちゅうに、大きな門)
-    const gate = this.bigGate();
+    const end = L + GOAL_GAP;
+    // 南大門(道のとちゅうに、大きな門。まんなかの通り道は、絵でも透明)
+    const gate = this.board('nandaimon', 30);
     const gw = this.roadW(L * 0.42, 0);
     gate.position.set(gw.x, this.gy(L * 0.42), gw.z);
-    gate.userData.placed = true; // 高さは合わせ済み(ゴールの高さに、さらに上げない)
     gate.rotation.y = -gw.psi;
+    gate.userData.placed = true; // 高さは合わせ済み(ゴールの高さに、さらに上げない)
     this.scene.add(gate);
 
-    // 大仏殿
+    // 大仏殿(絵)。夜の霧に隠れないよう霧なしで、暗く。大仏の目が光ると明るくなる
     const hall = new THREE.Group();
-    const wood = new THREE.MeshStandardMaterial({ color: 0x7c3b24, roughness: 0.75, emissive: 0x150500 });
-    const roof = new THREE.MeshStandardMaterial({ color: 0x40362e, roughness: 0.95 });
-    const stone = new THREE.MeshStandardMaterial({ color: 0xcfc8b8, roughness: 0.95 });
-    const dark = new THREE.MeshStandardMaterial({ color: 0x120c08, roughness: 1 });
-    for (let i = 0; i < 6; i++) {
-      const st = new THREE.Mesh(new THREE.BoxGeometry(40 + i * 3, 0.7, 2.6), stone);
-      st.position.set(0, 0.35 + i * 0.7, 24 - i * 1.8);
-      st.receiveShadow = true;
-      hall.add(st);
-    }
-    const plat = new THREE.Mesh(new THREE.BoxGeometry(84, 4.2, 50), stone);
-    plat.position.set(0, 2.1, 0);
-    plat.receiveShadow = true;
-    hall.add(plat);
-    // 左右の壁(まんなかは、大仏が見えるよう開ける)
-    for (const sx of [-1, 1]) {
-      const wall = new THREE.Mesh(new THREE.BoxGeometry(26, 24, 36), wood);
-      wall.position.set(sx * 27, 4.2 + 12, 0);
-      wall.castShadow = true;
-      hall.add(wall);
-    }
-    const back = new THREE.Mesh(new THREE.BoxGeometry(30, 30, 2), dark);
-    back.position.set(0, 4.2 + 15, -17);
-    hall.add(back);
-    for (let i = -3; i <= 3; i++) {
-      if (Math.abs(i) < 2) continue; // 大仏の顔が見えるよう、まんなかの柱はなし
-      const pil = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 1.0, 24, 12), wood);
-      pil.position.set(i * 5.2, 4.2 + 12, 18.5);
-      pil.castShadow = true;
-      hall.add(pil);
-    }
-    const lower = new THREE.Mesh(new THREE.BoxGeometry(90, 1.2, 56), roof);
-    lower.position.set(0, 4.2 + 25, 0);
-    const lowerCone = new THREE.Mesh(new THREE.ConeGeometry(52, 9, 4), roof);
-    lowerCone.rotation.y = Math.PI / 4;
-    lowerCone.scale.set(1, 1, 0.62);
-    lowerCone.position.set(0, 4.2 + 29.5, 0);
-    lowerCone.castShadow = true;
-    const upper = new THREE.Mesh(new THREE.BoxGeometry(58, 5, 34), wood);
-    upper.position.set(0, 4.2 + 33, 0);
-    const upperCone = new THREE.Mesh(new THREE.ConeGeometry(36, 11, 4), roof);
-    upperCone.rotation.y = Math.PI / 4;
-    upperCone.scale.set(1, 1, 0.62);
-    upperCone.position.set(0, 4.2 + 40.5, 0);
-    upperCone.castShadow = true;
-    hall.add(lower, lowerCone, upper, upperCone);
-    // 大仏(目が閉じた絵と、光る絵を、切りかえる)
+    const hb = this.board('todaiji-hall', 46, { fog: false, tint: new THREE.Color(0x3a3a50) });
+    hb.position.set(0, 0, -16);
+    hall.add(hb);
+    // 大仏(目が閉じた絵と、光る絵を、切りかえる)。大仏殿の前に座る
     const open = loadTex(`${ASSET}/runner/daibutsu_0.png`);
     const wake = loadTex(`${ASSET}/runner/daibutsu_1.png`);
     const dh = 20;
+    const dz = -6;
     const dm = new THREE.Mesh(
       new THREE.PlaneGeometry(dh * (640 / 590), dh).translate(0, dh / 2, 0),
       new THREE.MeshBasicMaterial({ map: open, transparent: true, alphaTest: 0.4, toneMapped: false, fog: false, color: 0x666666 }),
     );
-    dm.position.set(0, 4.2, -12);
+    dm.position.set(0, 0, dz);
     hall.add(dm);
     const glow = new THREE.PointLight(0xffa830, 0, 60, 1.4);
-    glow.position.set(0, 4.2 + dh * 0.72, -6);
+    glow.position.set(0, dh * 0.72, dz + 6);
     hall.add(glow);
     // 光る目(霧にかくれず、暗闇の遠くから見える)
-    const eyeY = 4.2 + dh * 0.775;
-    const eyeGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-1.55, eyeY, -(L + 75) - 11.6), new THREE.Vector3(1.55, eyeY, -(L + 75) - 11.6)]);
+    const eyeY = dh * 0.775;
+    const eyeGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-1.55, eyeY, -end + dz + 0.4), new THREE.Vector3(1.55, eyeY, -end + dz + 0.4)]);
     const eyeTex = glowTexture();
     this.disposables.push(eyeTex);
     const eyes = new THREE.Points(eyeGeo, new THREE.PointsMaterial({ map: eyeTex, color: 0xffb040, size: 46, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, sizeAttenuation: false, fog: false }));
     eyes.frustumCulled = false;
     this.scene.add(eyes);
-    this.daibutsu = { mesh: dm, open, wake, light: glow, eyes };
-    hall.position.set(0, 0, -(L + 75));
+    this.daibutsu = { mesh: dm, open, wake, light: glow, eyes, hall: hb };
+    hall.position.set(0, 0, -end);
     this.scene.add(hall);
     // 奥の山(春日山)
     const hill = new THREE.Mesh(new THREE.SphereGeometry(70, 24, 14), new THREE.MeshStandardMaterial({ color: this.theme.night ? 0x1d3a2a : 0x3f7a40, roughness: 1 }));
     hill.scale.set(1.8, 0.55, 0.9);
-    hill.position.set(0, -8, -(L + 75 + 85));
+    hill.position.set(0, -8, -(end + 85));
     this.scene.add(hill);
   }
 
-  // ---- 法隆寺: 五重塔・金堂・中門 ----
+  // ---- 法隆寺: 五重塔と金堂(絵)・中門 ----
   private buildHoryuji(): void {
     const L = this.course.length;
-    const end = L + 75;
-    const tower = this.pagoda(5, 9);
-    tower.position.set(-17, 0, -(end - 4));
-    this.scene.add(tower);
-    const kondo = this.hall(22, 14, 7, 2);
-    kondo.position.set(17, 0, -(end - 4));
-    this.scene.add(kondo);
-    // 回廊(白い壁と屋根)
-    const wall = new THREE.Mesh(new THREE.BoxGeometry(64, 4, 1.2), new THREE.MeshStandardMaterial({ color: this.theme.snowCaps ? 0xf4f7fa : 0xf1e8d6, roughness: 0.9 }));
-    wall.position.set(0, 2.5, -(end + 14));
-    const wroof = new THREE.Mesh(new THREE.BoxGeometry(66, 0.8, 4.2), new THREE.MeshStandardMaterial({ color: 0x57493c, roughness: 0.95 }));
-    wroof.position.set(0, 5, -(end + 14));
-    this.scene.add(wall, wroof);
+    const end = L + GOAL_GAP;
+    const pic = this.board('horyuji', 34);
+    pic.position.set(0, 0, -(end + 2));
+    this.scene.add(pic);
     // 中門(ゴール)
     const gate = this.bigGate();
     gate.scale.setScalar(0.62);
@@ -1480,50 +1423,24 @@ export class KasugaView {
     this.scene.add(hill);
   }
 
-  // ---- 大神神社: 大鳥居と、神体山の三輪山 ----
+  // ---- 大神神社: ゴールの大鳥居と、雪の三輪山(絵) ----
   private buildOmiwa(): void {
     const L = this.course.length;
+    const end = L + GOAL_GAP;
     this.scene.add(this.torii(L, 2.6)); // ゴールの大鳥居
-    const snow = this.theme.snowCaps;
-    const mtn = new THREE.Mesh(new THREE.ConeGeometry(120, 110, 18), new THREE.MeshStandardMaterial({ color: snow ? 0x5d8470 : 0x2f6a3a, roughness: 1, flatShading: true }));
-    mtn.position.set(0, 50, -(L + 200));
-    this.scene.add(mtn);
-    if (snow) {
-      const cap = new THREE.Mesh(new THREE.ConeGeometry(52, 44, 18), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 }));
-      cap.position.set(0, 82, -(L + 200));
-      this.scene.add(cap);
-    }
-    // 三輪山の手前に、杉の森
-    const rnd = rngFor(21);
-    const leaf = new THREE.MeshStandardMaterial({ color: snow ? 0x6a9a82 : 0x2f6a3a, roughness: 0.95 });
-    const cone = new THREE.ConeGeometry(4, 14, 8);
-    for (let i = 0; i < 40; i++) {
-      const t = new THREE.Mesh(cone, leaf);
-      t.position.set((rnd() - 0.5) * 180, 7, -(L + 90 + rnd() * 60));
-      t.scale.setScalar(0.9 + rnd() * 0.9);
-      this.scene.add(t);
-    }
+    const pic = this.board('omiwa-snow', 74);
+    pic.position.set(0, -1, -(end + 30));
+    this.scene.add(pic);
   }
 
-  // ---- 平城宮跡: 朱色の朱雀門(ゴール)・広い原っぱ・奥の大極殿 ----
+  // ---- 平城宮跡: 朱色の朱雀門(絵・ゴール)・奥の大極殿 ----
   private buildHeijo(): void {
     const L = this.course.length;
     // 朱雀門は、ゴールの少し先(ゴールした鹿は、門の手前で止まって見上げる)
     const gz = -(L + 48);
-    const gate = this.bigGate(0xd0462a);
-    gate.scale.setScalar(0.8);
-    gate.position.set(0, 0, gz);
+    const gate = this.board('suzakumon', 34);
+    gate.position.set(0, -0.3, gz);
     this.scene.add(gate);
-    // 門の左右にのびる、築地塀(白い壁と屋根)
-    const wallM = new THREE.MeshStandardMaterial({ color: 0xefe6d2, roughness: 0.9 });
-    const roofM = new THREE.MeshStandardMaterial({ color: 0x4a3d33, roughness: 0.95 });
-    for (const sx of [-1, 1]) {
-      const wall = new THREE.Mesh(new THREE.BoxGeometry(120, 4.2, 1.6), wallM);
-      wall.position.set(sx * 75, 2.1, gz);
-      const cap = new THREE.Mesh(new THREE.BoxGeometry(122, 0.7, 3), roofM);
-      cap.position.set(sx * 75, 4.5, gz);
-      this.scene.add(wall, cap);
-    }
     // 奥の大極殿
     const hall = this.hall(44, 20, 9);
     hall.position.set(0, 0, -(L + 220));
@@ -1543,17 +1460,9 @@ export class KasugaView {
     }
   }
 
-  /** ゴールの景色のまわりに置く、丸い木(紅葉・桜)。 */
-  private roundTrees(colors: number[], spots: { x: number; z: number; s: number }[]): void {
-    const trunk = new THREE.MeshStandardMaterial({ color: 0x6b4a2e, roughness: 1 });
-    colors.forEach((c, k) => {
-      const m = new THREE.MeshStandardMaterial({ color: c, roughness: 0.85, flatShading: true });
-      addInstanced(this.scene, [
-        { geo: new THREE.CylinderGeometry(0.3, 0.45, 3.4, 8), mat: trunk, pos: [0, 1.7, 0] },
-        { geo: new THREE.IcosahedronGeometry(2.6, 1), mat: m, pos: [0, 4.6, 0] },
-        { geo: new THREE.IcosahedronGeometry(1.8, 1), mat: m, pos: [1.4, 5.6, 0.6] },
-      ], spots.filter((_, i) => i % colors.length === k).map((p) => ({ x: p.x, z: p.z, scale: p.s })));
-    });
+  /** ゴールの景色のまわりに置く木(紅葉・桜の絵)。 */
+  private roundTrees(kind: 'maple' | 'sakura', spots: { x: number; z: number; s: number }[]): void {
+    this.imageTrees(kind === 'maple' ? 'maple-tree' : 'sakura-tree', spots.map((p) => ({ x: p.x, z: p.z, scale: p.s })), 9);
   }
 
   /** 遠くの山なみ(重なるほど、うすい色)。 */
@@ -1568,77 +1477,28 @@ export class KasugaView {
     }
   }
 
-  // ---- 金峯山寺の蔵王堂(吉野): 黒っぽい大きな二重屋根の堂と、紅葉 ----
+  // ---- 金峯山寺の蔵王堂(吉野・絵)と、紅葉 ----
   private buildZaodo(): void {
     const end = this.course.length + GOAL_GAP;
-    const hall = this.hall(30, 22, 10, 2, { body: 0x6e4a32, pillar: 0x3d2a1c, roof: 0x4a3326 });
-    hall.position.set(0, 0, -(end + 6));
-    hall.scale.setScalar(1.15);
-    this.scene.add(hall);
-    // 石段
-    const stone = new THREE.MeshStandardMaterial({ color: 0xb8b0a0, roughness: 0.95 });
-    for (let i = 0; i < 5; i++) {
-      const st = new THREE.Mesh(new THREE.BoxGeometry(16 - i, 0.45, 2.2), stone);
-      st.position.set(0, 0.22 + i * 0.45, -(end - 22 + i * 2));
-      st.receiveShadow = true;
-      this.scene.add(st);
-    }
+    const pic = this.board('zaodo', 40);
+    pic.position.set(0, -0.3, -(end + 4));
+    this.scene.add(pic);
     const rnd = rngFor(17);
     const spots: { x: number; z: number; s: number }[] = [];
     for (let i = 0; i < 30; i++) {
       const sx = rnd() < 0.5 ? -1 : 1;
-      spots.push({ x: sx * (22 + rnd() * 50), z: -(end - 30 + rnd() * 80), s: 1 + rnd() * 0.8 });
+      spots.push({ x: sx * (34 + rnd() * 45), z: -(end - 30 + rnd() * 80), s: 1 + rnd() * 0.8 });
     }
-    this.roundTrees([0xd9452a, 0xf08a2a, 0xf2c043], spots);
+    this.roundTrees('maple', spots);
     this.ranges(end + 200, [0x9a5a3a, 0xc08a5a, 0xd8b896]);
   }
 
-  // ---- 郡山城: 石垣の上の白い天守と、桜・堀 ----
+  // ---- 郡山城(絵): 石垣の上の天守と桜。手前に堀 ----
   private buildCastle(): void {
     const end = this.course.length + GOAL_GAP;
-    const g = this.castleKeep();
-    g.position.set(0, 0, -(end + 20));
-    this.scene.add(g);
-    this.castleGrounds(end);
-  }
-
-  /** 石垣の上の、白い天守(郡山城・大阪城で使う)。 */
-  private castleKeep(): THREE.Group {
-    const g = new THREE.Group();
-    const stone = new THREE.MeshStandardMaterial({ color: 0x9c968a, roughness: 0.95, flatShading: true });
-    const white = new THREE.MeshStandardMaterial({ color: 0xf4f1e8, roughness: 0.8 });
-    const roof = new THREE.MeshStandardMaterial({ color: 0x55606c, roughness: 0.8 });
-    const gold = new THREE.MeshStandardMaterial({ color: 0xffd36a, metalness: 0.6, roughness: 0.3, emissive: 0x6a4410, emissiveIntensity: 0.5 });
-    // 石垣(すそが広い)
-    const base = new THREE.Mesh(new THREE.CylinderGeometry(15, 20, 9, 4, 1), stone);
-    base.rotation.y = Math.PI / 4;
-    base.position.y = 4.5;
-    base.receiveShadow = true;
-    g.add(base);
-    let y = 9;
-    const tiers: [number, number, number][] = [[16, 6.5, 13], [12, 5.5, 10], [8, 5, 7]];
-    for (const [w, h, d] of tiers) {
-      const body = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), white);
-      body.position.y = y + h / 2;
-      body.castShadow = true;
-      const r = new THREE.Mesh(new THREE.ConeGeometry(Math.hypot(w + 4, d + 4) / 2, h * 0.55, 4), roof);
-      r.rotation.y = Math.PI / 4;
-      r.scale.set((w + 4) / Math.hypot(w + 4, d + 4) * 1.41, 1, (d + 4) / Math.hypot(w + 4, d + 4) * 1.41);
-      r.position.y = y + h + h * 0.2;
-      r.castShadow = true;
-      g.add(body, r);
-      y += h + h * 0.3;
-    }
-    for (const sx of [-1, 1]) {
-      const fish = new THREE.Mesh(new THREE.ConeGeometry(0.4, 1.4, 8), gold); // しゃちほこ(小さな金の飾り)
-      fish.position.set(sx * 3.2, y + 0.8, 0);
-      g.add(fish);
-    }
-    return g;
-  }
-
-  /** 郡山城のまわり: 堀・橋・桜・山なみ。 */
-  private castleGrounds(end: number): void {
+    const pic = this.board('koriyama-castle', 50);
+    pic.position.set(0, -0.5, -(end + 22));
+    this.scene.add(pic);
     // 堀
     const moat = new THREE.Mesh(new THREE.PlaneGeometry(140, 10).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x3f8aa8, roughness: 0.1 }));
     moat.position.set(0, 0.02, -(end - 8));
@@ -1651,13 +1511,13 @@ export class KasugaView {
     const spots: { x: number; z: number; s: number }[] = [];
     for (let i = 0; i < 26; i++) {
       const sx = rnd() < 0.5 ? -1 : 1;
-      spots.push({ x: sx * (12 + rnd() * 55), z: -(end - 26 + rnd() * 70), s: 0.9 + rnd() * 0.7 });
+      spots.push({ x: sx * (40 + rnd() * 40), z: -(end - 26 + rnd() * 70), s: 0.9 + rnd() * 0.7 });
     }
-    this.roundTrees([0xf7b8cc, 0xfbd3e0, 0xf29ab6], spots);
+    this.roundTrees('sakura', spots);
     this.ranges(end + 220, [0x5f8f5a, 0x7fa87a, 0xa6c5a3]);
   }
 
-  // ---- 奈良公園: 大きな鳥居・芝生の鹿たち・興福寺の五重塔・若草山 ----
+  // ---- 奈良公園: 大きな鳥居・芝生の鹿たち・興福寺の五重塔(絵)・若草山 ----
   private buildPark(): void {
     const L = this.course.length;
     const end = L + GOAL_GAP;
@@ -1672,7 +1532,7 @@ export class KasugaView {
       m.scale.setScalar(1.1 + rnd() * 0.3);
       this.scene.add(m);
     }
-    const tower = this.pagoda(5, 8);
+    const tower = this.board('kofukuji-pagoda', 40);
     tower.position.set(-46, 0, -(end + 70));
     this.scene.add(tower);
     const hill = new THREE.Mesh(new THREE.SphereGeometry(70, 24, 14), new THREE.MeshStandardMaterial({ color: 0x7fb85a, roughness: 1 }));
@@ -1684,7 +1544,7 @@ export class KasugaView {
       const sx = rnd() < 0.5 ? -1 : 1;
       spots.push({ x: sx * (14 + rnd() * 50), z: -(L - 10 + rnd() * 110), s: 0.9 + rnd() * 0.6 });
     }
-    this.roundTrees([0xf7b8cc, 0xfbd3e0, 0xf29ab6], spots);
+    this.roundTrees('sakura', spots);
   }
 
   // ---- 若草山の山頂: 木のゴールゲート・山なみ ----
@@ -2186,20 +2046,11 @@ export class KasugaView {
     // 回復薬(ハートが1つふえる)
     for (const c of this.course.coins) {
       if (c.kind !== 'potion') continue;
+      // 回復薬の絵(いつもカメラのほうを向く)。夜も見えるよう、色はそのまま
       const g = new THREE.Group();
-      const glass = new THREE.MeshPhysicalMaterial({ color: 0xff5a86, roughness: 0.08, clearcoat: 1, transparent: true, opacity: 0.9, emissive: 0xff2a60, emissiveIntensity: 0.5 });
-      const body = new THREE.Mesh(new THREE.SphereGeometry(0.46, 20, 16), glass);
-      body.scale.set(1, 0.92, 1);
-      const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.2, 0.34, 12), glass);
-      neck.position.y = 0.52;
-      const cork = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.15, 0.16, 12), new THREE.MeshStandardMaterial({ color: 0xc49a5a, roughness: 0.9 }));
-      cork.position.y = 0.76;
-      const cross = new THREE.MeshBasicMaterial({ color: 0xffffff });
-      const h1 = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.1, 0.06), cross);
-      const h2 = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.34, 0.06), cross);
-      h1.position.z = h2.position.z = 0.44;
-      g.add(body, neck, cork, h1, h2);
-      g.scale.setScalar(1.5);
+      const b = this.board('potion', 2.0, { tint: new THREE.Color(0xffffff) });
+      b.position.y = -0.7;
+      g.add(b);
       this.scene.add(g);
       this.potionObjs.push({ id: c.id, s: c.s, x: c.x, y: c.y, obj: g });
     }
@@ -2214,6 +2065,7 @@ export class KasugaView {
     (this.daibutsu.mesh.material as THREE.MeshBasicMaterial).needsUpdate = true;
     this.daibutsu.light.intensity = on ? 600 : 0;
     (this.daibutsu.eyes.material as THREE.PointsMaterial).opacity = on ? 1 : 0;
+    (this.daibutsu.hall.material as THREE.MeshBasicMaterial).color.set(on ? 0x9a8a88 : 0x3a3a50);
   }
 
   // ---- 雨・雪 ----
@@ -2423,7 +2275,7 @@ export class KasugaView {
       if (!near) continue;
       const pw = this.roadW(po.s, po.x);
       po.obj.position.set(pw.x, pw.y + po.y + Math.sin(t * 3) * 0.12, pw.z);
-      po.obj.rotation.y = t * 1.8 - pw.psi;
+      po.obj.rotation.y = -this.camPsi;
     }
     // 大仏の目が光る
     const awakeNow = this.course.wake !== undefined && run.progress >= this.course.wake;
@@ -2531,6 +2383,18 @@ export class KasugaView {
       sg.lamps.forEach((l, i) => {
         (l.material as THREE.MeshStandardMaterial).emissiveIntensity = on && i % 2 === phase ? 3.2 : 0;
       });
+    }
+    // 遠景の絵: カメラの前方 300m に置き、範囲の出入りで、ふわっと出し入れする
+    for (const bd of this.backdrops) {
+      const fade = Math.min(1, (run.s - bd.from + 30) / 30, (bd.to - run.s) / 40);
+      const m = bd.mesh;
+      m.visible = fade > 0;
+      if (!m.visible) continue;
+      (m.material as THREE.MeshBasicMaterial).opacity = fade;
+      const D = 300;
+      // 高さは海抜(出発地点)を基準にする: 生駒山の上からは、大阪の街を見下ろす
+      m.position.set(this.camera.position.x + Math.sin(this.camPsi) * D, -24, this.camera.position.z - Math.cos(this.camPsi) * D);
+      m.rotation.y = -this.camPsi;
     }
     if (this.wheel) this.wheel.rotation.z -= dt * 0.05;
     this.updateWeather(this.clock);
