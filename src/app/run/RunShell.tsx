@@ -62,7 +62,7 @@ export function RunShell() {
 
         <div className="ks-overlay on" data-ks="start">
           <div className="ks-card">
-            <p className="ks-badge">鹿の大脱走</p>
+            <p className="ks-badge">WORLD 3 鹿、走る。</p>
             <h1 data-ks="s-title" />
             <p className="ks-lead" data-ks="s-lead" />
             <ul className="ks-how">
@@ -77,6 +77,9 @@ export function RunShell() {
               </li>
             </ul>
             <p className="ks-stamina" data-ks="s-stamina" />
+            <button type="button" className="ks-sound" data-ks="snd-s" aria-pressed="true">
+              ♪ 音 ON
+            </button>
             <button type="button" className="ks-btn" data-ks="go">
               はじめる
             </button>
@@ -104,6 +107,9 @@ export function RunShell() {
               途中から つづける
             </button>
             <p className="ks-stamina" data-ks="r-stamina" />
+            <button type="button" className="ks-sound" data-ks="snd-r" aria-pressed="true">
+              ♪ 音 ON
+            </button>
             <button type="button" className="ks-btn ks-btn-sub" data-ks="retry">
               もういちど
             </button>

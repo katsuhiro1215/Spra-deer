@@ -6,6 +6,7 @@ import { CRITTERS } from './critters.ts';
 import { RUNNER_LEVELS, courseOf, type RunnerLevel } from './levels.ts';
 import { Run, type Input, type SimEvent } from './sim.ts';
 import { KasugaView } from './view.ts';
+import { RunnerAudio } from './audio.ts';
 
 const STEP = 1 / 120;
 
@@ -64,7 +65,8 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
   const byId = new Map(course.obstacles.map((o) => [o.id, o]));
   const input: Input = { left: false, right: false, jump: false };
 
-  // ---- 効果音(WebAudio。最初のタップで有効化) ----
+  // ---- 音(WebAudio。最初のタップで有効化)。BGM・ジングル・効果音のファイルは audio.ts、短い合成音はここ ----
+  const audio = new RunnerAudio();
   let ac: AudioContext | null = null;
   const tone = (f0: number, f1: number, dur: number, type: OscillatorType = 'sine', vol = 0.09, delay = 0) => {
     if (!ac) return;
@@ -76,24 +78,25 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
     o.frequency.exponentialRampToValueAtTime(Math.max(1, f1), t0 + dur);
     g.gain.setValueAtTime(vol, t0);
     g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-    o.connect(g).connect(ac.destination);
+    o.connect(g).connect(audio.out ?? ac.destination);
     o.start(t0);
     o.stop(t0 + dur + 0.02);
   };
   const sound = (e: SimEvent) => {
     switch (e.kind) {
       case 'coin': tone(1180, 1760, 0.13, 'triangle', 0.08); break;
-      case 'heal': [660, 880, 1100, 1320].forEach((f, i) => tone(f, f * 1.02, 0.22, 'sine', 0.09, i * 0.08)); break;
-      case 'jump': tone(360, 700, 0.16, 'sine', 0.08); break;
-      case 'launch': tone(280, 980, 0.3, 'triangle', 0.08); break;
+      case 'heal': audio.sfx('heal'); break;
+      case 'jump': audio.sfx('jump'); break;
+      // ジャンプ台のダッシュは、きらきら。坂の頂上で浮いただけなら、短い合成音
+      case 'launch': if (run.boost > 0) audio.sfx('dash'); else tone(280, 980, 0.3, 'triangle', 0.08); break;
       case 'land': tone(160, 90, 0.08, 'sine', 0.05); break;
-      case 'hit': tone(200, 60, 0.3, 'sawtooth', 0.1); break;
+      case 'hit': audio.sfx('hit'); tone(200, 60, 0.3, 'sawtooth', 0.06); break;
       case 'fall': tone(520, 50, 0.6, 'triangle', 0.1); break;
       case 'slip': tone(760, 220, 0.35, 'square', 0.05); break;
       case 'slow': tone(300, 140, 0.25, 'sine', 0.08); break;
       case 'slide': tone(1500, 900, 0.4, 'triangle', 0.05); break;
-      case 'clear': [523, 659, 784, 1047].forEach((f, i) => tone(f, f * 1.01, 0.3, 'triangle', 0.1, i * 0.12)); break;
-      case 'fail': tone(330, 80, 0.8, 'sawtooth', 0.08); break;
+      case 'clear': audio.stopMusic(); audio.jingle('clear'); break;
+      case 'fail': audio.stopMusic(); audio.jingle('fail'); break;
       // 踏切の「カンカン」(2つの音を交互に、約4秒)
       case 'bell': for (let i = 0; i < 9; i++) tone(i % 2 ? 760 : 900, i % 2 ? 750 : 890, 0.22, 'square', 0.035, i * 0.45); break;
       case 'warn': tone(1400, 1600, 0.12, 'sine', 0.04); break;
@@ -117,7 +120,7 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
     f.frequency.value = freq;
     const g = ac.createGain();
     g.gain.value = vol;
-    src.connect(f).connect(g).connect(ac.destination);
+    src.connect(f).connect(g).connect(audio.out ?? ac.destination);
     src.start();
   };
 
@@ -137,7 +140,7 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
     filter.frequency.value = 3200;
     const gain = ac.createGain();
     gain.gain.value = 0.05;
-    src.connect(filter).connect(gain).connect(ac.destination);
+    src.connect(filter).connect(gain).connect(audio.out ?? ac.destination);
     src.start();
     rainNode = src;
   };
@@ -240,15 +243,11 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
     }
     charged = false;
     q('r-reward').textContent = '';
-    if (!ac) {
-      try {
-        const Ctor = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-        ac = new Ctor();
-      } catch {
-        ac = null;
-      }
-    }
-    void ac?.resume();
+    audio.ensure();
+    ac = audio.ctx;
+    // BGM: 最初から・もういちどは頭から。チェックポイントから続けるときも、頭(前奏)から流す
+    audio.stopMusic(0);
+    audio.startMusic();
     window.clearTimeout(resultTimer);
     run = new Run(course);
     hinted = new Set();
@@ -283,6 +282,20 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
     toast(from ? `${from.name}から 再スタート！` : level.intro, 3600);
   };
 
+  const paintSound = () => {
+    for (const k of ['snd-s', 'snd-r']) {
+      const b = q<HTMLButtonElement>(k);
+      b.textContent = audio.enabled ? '♪ 音 ON' : '♪ 音 OFF';
+      b.setAttribute('aria-pressed', String(audio.enabled));
+    }
+  };
+  const toggleSound = () => {
+    audio.setEnabled(!audio.enabled);
+    paintSound();
+  };
+  q('snd-s').addEventListener('click', toggleSound);
+  q('snd-r').addEventListener('click', toggleSound);
+  paintSound();
   q('go').addEventListener('click', () => begin());
   q('retry').addEventListener('click', () => begin());
   q('cont').addEventListener('click', () => begin(saved));
@@ -382,7 +395,12 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
   window.addEventListener('keydown', kd);
   window.addEventListener('keyup', ku);
   // 画面を離れたとき(別のウィンドウ・タブ)は、キーの「離した」が届かないので、全部離した扱いにする
-  const onHidden = () => releaseAll();
+  const onHidden = () => {
+    releaseAll();
+    // 別のタブ・アプリへ行ったら、音も止める(もどったら再開)
+    if (document.hidden) audio.suspend();
+    else audio.resume();
+  };
   window.addEventListener('blur', onHidden);
   document.addEventListener('visibilitychange', onHidden);
   const noMenu = (e: Event) => e.preventDefault();
@@ -483,7 +501,7 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
         if (run.s >= c.s && (!saved || saved.s < c.s)) {
           saved = { s: c.s, name: c.name, coins: run.coins, collected: new Set(run.collected), t: run.t };
           cpEls[i].classList.add('passed');
-          [784, 988, 1175].forEach((f, k) => tone(f, f, 0.16, 'triangle', 0.08, k * 0.09));
+          audio.sfx('checkpoint');
           toast(`チェックポイント！ ${c.name}`, 2200);
         }
       });
@@ -513,6 +531,7 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
     input,
     level,
     view,
+    audio,
   };
 
   paintStamina();
@@ -533,7 +552,7 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
     root.removeEventListener('contextmenu', noMenu);
     delete (window as unknown as { __kasuga?: unknown }).__kasuga;
     try { rainNode?.stop(); } catch { /* 止まっていたら何もしない */ }
-    void ac?.close();
+    audio.close();
     view.dispose();
   };
 }

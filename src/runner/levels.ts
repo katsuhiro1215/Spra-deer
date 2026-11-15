@@ -1,4 +1,4 @@
-// ステージ3「鹿の大脱走」の面の一覧(3D走りゲームのシリーズ)。
+// WORLD 3「鹿、走る。」(旧名: 鹿の大脱走)の面の一覧(3D走りゲームのシリーズ)。
 // 面を足すときは、ここに1つ書くだけ。見た目は theme、手ごたえは rules、仕掛けは seed/extra で変える。
 import { buildCourse, type Course, type Curve, type HillPoint, type PatternName, type Rules } from './course.ts';
 

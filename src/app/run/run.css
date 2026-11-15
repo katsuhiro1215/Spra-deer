@@ -433,3 +433,21 @@
 .ks-reward.lose {
   color: #b0563a;
 }
+
+/* 音の ON/OFF */
+.ks-sound {
+  display: block;
+  margin: 0 auto 10px;
+  padding: 6px 16px;
+  border: 2px solid #d8cfb4;
+  border-radius: 999px;
+  background: #fffdf3;
+  color: #5a6a4a;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.ks-sound[aria-pressed='false'] {
+  color: #a09a88;
+}

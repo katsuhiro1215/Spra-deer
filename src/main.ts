@@ -21,8 +21,13 @@ const STOLEN_DEFAULT = 'せんべいを、取られた…！\n鹿は、せんべ
 const CAUGHT_HINT = '鹿が追いかけてきた…！\n止まると追いつかれる。\nジャンプで鹿を越えるのもアリ。';
 
 type Track = 'home' | 'play' | 'clear' | 'fail';
+/** 音の ON/OFF の保存先(3D走りと同じ。src/runner/audio.ts の SOUND_KEY) */
+const SOUND_KEY = 'spra-deer:sound:v1';
 class Sound {
-  enabled = false;
+  // 2Dの面は、はじめは音なし。前にONにした人は、ONのまま(最初のタップで鳴りはじめる)
+  enabled = (() => { try { return localStorage.getItem(SOUND_KEY) === 'on'; } catch { return false; } })();
+  /** ブラウザの決まりで鳴らせなかった曲を、タップのあとで鳴らし直す */
+  retry() { const want = this.want; this.current = null; this.want = null; this.syncMusic(); this.want = want; this.syncMusic(); }
   private context?: AudioContext;
   // BGM（SpraTheme/assets/deer の書き出し）。ブラウザの制約で、音をONにするまで鳴らさない。
   private tracks = new Map<Track, HTMLAudioElement>();
@@ -62,13 +67,23 @@ class Sound {
 }
 const sound = new Sound();
 const soundButton = document.createElement('button');
-soundButton.id = 'sound'; soundButton.textContent = '音 OFF'; soundButton.setAttribute('aria-label', '効果音をオンにする'); soundButton.setAttribute('aria-pressed', 'false');
+soundButton.id = 'sound';
 el('game-wrap').append(soundButton);
-const toggleSound = () => {
-  sound.enabled = !sound.enabled; sound.unlock(); sound.syncMusic(); soundButton.textContent = sound.enabled ? '音 ON' : '音 OFF';
+const paintSoundButton = () => {
+  soundButton.textContent = sound.enabled ? '音 ON' : '音 OFF';
   soundButton.setAttribute('aria-pressed', String(sound.enabled)); soundButton.setAttribute('aria-label', sound.enabled ? '効果音をオフにする' : '効果音をオンにする');
 };
+paintSoundButton();
+const toggleSound = () => {
+  sound.enabled = !sound.enabled; sound.unlock(); sound.syncMusic(); paintSoundButton();
+  try { localStorage.setItem(SOUND_KEY, sound.enabled ? 'on' : 'off'); } catch { /* 保存できなくても鳴らし分けはできる */ }
+};
 soundButton.addEventListener('click', toggleSound);
+// 前回ONだった人: 最初のタップで、音を有効にして曲を鳴らし直す(ボタン自体のタップは、ボタンの処理にまかせる)
+document.addEventListener('pointerdown', e => {
+  if (!sound.enabled || (e.target as HTMLElement).closest('#sound, [data-action="sound"]')) return;
+  sound.unlock(); sound.retry();
+}, { once: true });
 
 class Boot extends Phaser.Scene {
   private failed = false;

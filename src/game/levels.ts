@@ -747,7 +747,7 @@ export const STAGES: { stage: number; title: string; slots: LevelSlot[] }[] = [
   },
   {
     // ステージ3は、Three.js の3D走りゲーム(/run/)。作った面は runner/levels.ts、まだの面は行き先だけ書いた「準備中」
-    stage: 3, title: '鹿の大脱走', slots: Array.from({ length: 10 }, (_, i) => `3-${i + 1}`).map(id => {
+    stage: 3, title: '鹿、走る。', slots: Array.from({ length: 10 }, (_, i) => `3-${i + 1}`).map(id => {
       const r = RUNNER_LEVELS.find(x => x.id === id);
       return r ? { id, title: r.title, summary: r.summary, runnerId: id } : { id, ...PLANNED[id] };
     }),
