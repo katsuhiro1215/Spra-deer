@@ -7,12 +7,10 @@ body { margin: 0; }
 button { font: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; color: inherit; touch-action: manipulation; }
 button:focus-visible, #game:focus-visible { outline: 3px solid #e7b755; outline-offset: 3px; }
 [hidden] { display: none !important; }
-#shell { display: flex; min-height: 100dvh; align-items: center; justify-content: center; gap: clamp(25px, 6vw, 100px); padding: 22px; background: radial-gradient(ellipse at 20% 20%, #42664c, transparent 65%), #244b3b; }
-.side-note { color: $paper; width: 290px; .brand { display: flex; align-items: center; gap: 9px; font-size: 27px; letter-spacing: -.05em; .brand-mark { font-family: Georgia, serif; font-style: italic; font-weight: bold; color: #becd95; font-size: 41px; } .brand-dot { display: inline-block; margin: 7px 0 0 10px; width: 7px; height: 7px; background: $gold; border-radius: 50%; } } .eyebrow { color: #b9caa4; font-size: 12px; letter-spacing: .13em; margin-top: 45px; } h1 { font-size: 48px; font-weight: 750; letter-spacing: -.03em; line-height: 1.55; margin: 15px 0 22px; em { color: #e0bb76; font-style: normal; } } > p { font-size: 15px; line-height: 2; color: #d5dfc5; } .edition { font-size: 12px; color: #b1c5aa; margin: 50px 0 0; } }
+// 画面の土台: Spra Go・Tane と同じく、縦長の画面を高さいっぱいに真ん中へ置く。外は、ホームと同じ空〜芝の色
+#shell { display: flex; min-height: 100dvh; align-items: center; justify-content: center; background: linear-gradient(#bfe7f7 0%, #e3f5f2 50%, #d4efc0 100%); }
 .keyboard-guide { display: grid; gap: 10px; font-size: 12px; margin-top: 30px; color: #d5dfc5; kbd { font: inherit; border: 1px solid #9cb08c55; border-radius: 5px; padding: 4px 6px; } }
-.chapter-note { width: 180px; color: #c8d4b9; align-self: center; padding-top: 110px; > span { font-size: 11px; letter-spacing: .2em; } p { font-size: 13px; line-height: 2; } }
-.trail-decoration { border-left: 2px dashed #9fb58477; height: 140px; margin: 35px 0 25px 50px; transform: rotate(15deg); display: flex; flex-direction: column; justify-content: space-between; i { width: 10px; height: 10px; border-radius: 50%; background: #b6c890; margin-left: -6px; &:nth-child(2) { background: $gold; } } }
-#game-wrap { position: relative; isolation: isolate; height: min(calc(100dvh - 44px), 940px); aspect-ratio: 9 / 16; max-width: 100%; overflow: hidden; border-radius: 24px; background: #c3d397; box-shadow: 0 28px 65px #102e3070, 0 0 0 1px #ffffdf50; container-type: inline-size; touch-action: none; user-select: none; }
+#game-wrap { position: relative; isolation: isolate; height: 100dvh; width: min(100vw, calc(100dvh * 9 / 16)); overflow: hidden; background: #c3d397; container-type: inline-size; touch-action: none; user-select: none; }
 #game { position: absolute; inset: 0; outline: none; touch-action: none; canvas { display: block; } }
 .shade { position: absolute; inset: 0; pointer-events: none; background: linear-gradient(#dfe8b590, transparent 28%, transparent 70%, #dfe8b580); }
 #hud { position: absolute; top: 4cqw; left: 5cqw; right: 5cqw; pointer-events: none; }
@@ -42,8 +40,6 @@ button:focus-visible, #game:focus-visible { outline: 3px solid #e7b755; outline-
 #sound { position: absolute; z-index: 7; bottom: 2cqw; right: 3cqw; border: 0; background: transparent; font-size: 2.8cqw; padding: 1cqw 2cqw; color: #61754e; min-height: 26px; }
 #fatal { position: absolute; z-index: 20; inset: 0; display: flex; flex-direction: column; justify-content: center; padding: 25px; background: $paper; text-align: center; h2 { font-size: 20px; } button { padding: 15px; background: #345e45; color: white; border: none; border-radius: 12px; } }
 // Keep the portrait UI readable even when the canvas scales down to a small phone.
-.side-note > p { font-size: 16px; }
-.chapter-note > span { font-size: 12px; }
 .hud-heading .eyebrow, .stat-label, .screen .eyebrow, .title-art .speech,
 .control-note, #jump > span, .result-stats span, .modal-card .save-note,
 .hud-stats b small, .result-stats strong small, .primary > span { font-size: max(12px, 2.9cqw); }
@@ -55,8 +51,7 @@ button:focus-visible, #game:focus-visible { outline: 3px solid #e7b755; outline-
 #controls { bottom: 7cqw; }
 #sound { font-size: max(12px, 2.8cqw); min-height: 36px; bottom: 0; }
 .modal-card .result-copy { line-height: 1.8; }
-@media (max-width: 1100px) { .chapter-note { display: none; } }
-@media (max-width: 800px) { #shell { padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom); } .side-note { display: none; } #game-wrap { height: min(calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom)), 177.7778vw); border-radius: 0; box-shadow: none; } }
+@media (max-width: 800px) { #shell { padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom); } #game-wrap { height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom)); width: 100vw; } }
 @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto; } }
 // 面選択
 .select-screen { justify-content: flex-start; gap: 3cqw; overflow-y: auto; padding: 5cqw 5cqw 8cqw; background: linear-gradient(#ecf0d5f2, #e8ecc9f5); -webkit-overflow-scrolling: touch;
