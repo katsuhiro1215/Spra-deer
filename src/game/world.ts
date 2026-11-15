@@ -1,4 +1,4 @@
-import { FIELD, GOAL, RULES, type CoinDefinition, type HedgeDefinition, type HungryDefinition, type StoneDefinition, type CrosserDefinition, type RescueDefinition, type ThiefDefinition, type ChaserDefinition, type GoalDefinition, type Point, type TrapDefinition, type WallDefinition, type SliderDefinition } from './stage.ts';
+import { FIELD, GOAL, RULES, type CoinDefinition, type HedgeDefinition, type HungryDefinition, type LineDefinition, type StoneDefinition, type CrosserDefinition, type RescueDefinition, type ThiefDefinition, type ChaserDefinition, type GoalDefinition, type Point, type TrapDefinition, type WallDefinition, type SliderDefinition } from './stage.ts';
 import type { DeerDefinition, LevelDefinition } from './levels.ts';
 import { facingOf, type Facing } from './facing.ts';
 /** throw: せんべいを投げる(向いている方へ)。 */
@@ -35,6 +35,8 @@ export type Stone = StoneDefinition & { cx: number; stand: number; sunk: boolean
 export type Hungry = { id: string; kind: HungryDefinition['kind']; mode: HungryDefinition['mode']; x: number; y: number; dir: 1 | -1; state: 'idle' | 'chase' | 'go' | 'eat' | 'back'; timer: number; walked: number; target: number };
 /** 投げたせんべい。fly=飛んでいる(t は 0→1), ground=落ちている, eaten=食べられた, lost=池に落ちた。by=食べに来る鹿。 */
 export type Thrown = Point & { fx: number; fy: number; tx: number; ty: number; t: number; state: 'fly' | 'ground' | 'eaten' | 'lost'; by: number };
+/** 横切る列の1台(1頭)。line は level.lines の番号。 */
+export type LineWalker = { id: string; line: number; kind: LineDefinition['kind']; x: number; y: number; dir: 1 | -1; walked: number };
 /** コイン。taken=取った。 */
 export type Coin = CoinDefinition & { taken: boolean };
 /** 迷子の鹿。lost=まだ見つけていない, follow=ついてくる（Spruが通った道を、少し遅れてたどる）。 */
@@ -48,6 +50,7 @@ export type World = {
   crossers: Crosser[]; follower: Follower | null; swept: number; sweepTime: number; missed: number; combo: number; bestCombo: number;
   stones: Stone[]; coins: Coin[];
   /** 投げるせんべい: 鹿・投げたせんべい・道に落ちているせんべい・持っている枚数・投げた数 */
+  lines: LineWalker[];
   hungry: Hungry[]; thrown: Thrown[]; pickups: (Point & { taken: boolean })[]; held: number; throws: number;
   /** 取ったコイン(シルバー)・ゴールドの数、プレミアムを取ったか */
   silver: number; gold: number; premium: boolean;
@@ -91,6 +94,7 @@ export function createWorld(level: LevelDefinition): World {
     poops: level.poops.map(p => ({ ...p })),
     stones: (level.stones ?? []).map(s => ({ ...s, cx: s.x, stand: 0, sunk: false, down: 0 })),
     coins: (level.coins ?? []).map(c => ({ ...c, taken: false })),
+    lines: (level.lines ?? []).flatMap((def, k) => Array.from({ length: def.count }, (_, i) => ({ id: `${def.id}-${i}`, line: k, kind: def.kind, x: lineX(def, i, 0), y: def.y, dir: (def.speed >= 0 ? 1 : -1) as 1 | -1, walked: 0 }))),
     hungry: (level.hungry ?? []).map(h => ({ id: h.id, kind: h.kind, mode: h.mode, x: h.x, y: h.y, dir: 1, state: 'idle', timer: 0, walked: 0, target: -1 })),
     thrown: [], pickups: (level.senbei?.pickups ?? []).map(p => ({ ...p, taken: false })), held: level.senbei?.start ?? 0, throws: 0,
     silver: 0, gold: 0, premium: false,
@@ -199,6 +203,22 @@ function stepThieves(w: World, dt: number) {
     if (Math.abs(dx) > 8) t.dir = dx > 0 ? 1 : -1;
     if (toBait && d - move < BAIT_ARRIVE) { t.state = 'eat'; t.timer = 0; t.bait = bait; w.baits[bait].by = i; w.events.push({ kind: 'eat', x: t.x, y: t.y, id: t.id }); }
   });
+}
+/** 横切る列の i 台目の位置(先頭が i=0。後ろの台は spacing ずつ遅れる)。 */
+export function lineX(def: LineDefinition, i: number, t: number) {
+  return crossX({ id: '', kind: 'doe', y: def.y, x0: def.x0 - i * def.spacing * Math.sign(def.speed || 1), speed: def.speed }, t);
+}
+/** 人力車は大きく、跳んでも越えられない。鹿の行列は、跳べば越えられる。 */
+export const LINE_HIT = { rickshaw: { w: 78, h: 30 }, deer: { w: 36, h: 24 } };
+function hitsLine(w: World): boolean {
+  const p = w.player;
+  return w.lines.some(m => (m.kind === 'rickshaw' || p.height < 22) && Math.abs(m.x - p.x) < LINE_HIT[m.kind].w && Math.abs(m.y - p.y) < LINE_HIT[m.kind].h);
+}
+function stepLines(w: World, dt: number) {
+  for (const m of w.lines) {
+    const def = w.level.lines![m.line];
+    m.x = lineX(def, Number(m.id.slice(def.id.length + 1)), w.time); m.walked += Math.abs(def.speed) * dt;
+  }
 }
 function stepCrossers(w: World) {
   w.level.cross?.crossers.forEach((def, i) => {
@@ -477,6 +497,7 @@ export function step(w: World, input: Input, dt = RULES.step): void {
   stepChasers(w, dt);
   stepThieves(w, dt);
   stepCrossers(w);
+  if (w.lines.length) stepLines(w, dt);
   stepFollower(w);
   stepRain(w, dt);
   stepStones(w, dt);
@@ -525,6 +546,8 @@ export function step(w: World, input: Input, dt = RULES.step): void {
   } else if (w.thieves.some(t => Math.hypot(t.x - p.x, t.y - p.y) < CAUGHT_REACH)) {
     w.outcome = 'stolen'; w.events.push({ kind: 'stolen', x: p.x, y: p.y });
   } else if (w.crossers.some(c => Math.abs(c.x - p.x) < 44 && Math.abs(c.y - p.y) < 26)) {
+    w.outcome = 'hit'; w.events.push({ kind: 'caught', x: p.x, y: p.y });
+  } else if (w.lines.length && hitsLine(w)) {
     w.outcome = 'hit'; w.events.push({ kind: 'caught', x: p.x, y: p.y });
   } else if (sweep && w.missed >= sweep.limit) {
     w.outcome = 'dirty'; w.events.push({ kind: 'poop', x: p.x, y: p.y });

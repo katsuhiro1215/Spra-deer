@@ -97,3 +97,13 @@ export type HungryDefinition = {
 };
 /** 道に落ちているせんべい(拾うと持てる。最大3枚)と、最初から持っている枚数。 */
 export type SenbeiDefinition = { pickups: Point[]; start?: number };
+
+// ---- 横切る列・夜の面(設計書 28章 C2・C3) ----
+/**
+ * 道を横切る列。count 台(頭)が spacing おきに並び、speed(符号が向き)で道を横切り、画面の外で折り返して戻ってくる(時間だけで決まる)。
+ * - rickshaw: 鹿が引く人力車。大きくて、跳んでも越えられない(列のすき間を通る)
+ * - deer: 鹿の行列。跳べば越えられる
+ */
+export type LineDefinition = { id: string; kind: 'rickshaw' | 'deer'; y: number; x0: number; speed: number; count: number; spacing: number; deer?: 'stag' | 'doe' | 'fawn' };
+/** 夜の面。灯り(灯籠)のまわりと、Spraの足もと・人力車のちょうちんのまわりだけが見える。radius=灯りの半径、player=Spraのまわりの半径。 */
+export type NightDefinition = { lights: Point[]; radius?: number; player?: number };

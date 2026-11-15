@@ -35,6 +35,11 @@ export class ParkView {
   private flowerList: { x: number; y: number; born: number; color: number }[] = [];
   private visualTime = 0;
   private walkers = new Map<string, { image: Phaser.GameObjects.Image; shadow: Phaser.GameObjects.Ellipse }>();
+  /** 人力車(鹿が引く)。台ごとの絵 */
+  private carts = new Map<string, Phaser.GameObjects.Graphics>();
+  /** 夜の暗さ(灯りのまわりを消して、見える所をつくる) */
+  private dark?: Phaser.GameObjects.RenderTexture;
+  private lightBrush?: Phaser.GameObjects.Image;
   private dropped: Phaser.GameObjects.Graphics[] = [];
   private sliderShapes = new Map<string, Phaser.GameObjects.Graphics>();
   private wallShapes = new Map<string, Phaser.GameObjects.Graphics>();
@@ -178,9 +183,24 @@ export class ParkView {
     this.drawTerrain();
   }
 
-  /** 池(道の上に描く)と、通れない植え込み・灯籠の列・岩。 */
+  /** 池(道の上に描く)と、通れない植え込み・灯籠の列・岩。横切る列の道と、夜の灯籠。 */
   private drawTerrain() {
     const s = this.scene;
+    for (const y of new Set((this.level.lines ?? []).map(l => l.y))) {
+      const g = s.add.graphics().setDepth(1);
+      g.fillStyle(0xbfa77a, .55).fillRect(60, y - 44, 600, 88);
+      g.lineStyle(3, 0x8f7a52, .5).lineBetween(60, y - 44, 660, y - 44).lineBetween(60, y + 44, 660, y + 44);
+      g.fillStyle(0xd8c79c, .6);
+      for (let x = 80; x < 640; x += 46) g.fillRoundedRect(x, y - 30 + ((x / 46) % 2) * 22, 30, 16, 5);
+    }
+    for (const l of this.level.night?.lights ?? []) {
+      const g = s.add.graphics().setDepth(l.y);
+      g.fillStyle(0x3d4a30, .25).fillEllipse(l.x, l.y + 4, 46, 16);
+      g.fillStyle(0x9d977f).fillRect(l.x - 5, l.y - 40, 10, 42).fillRoundedRect(l.x - 16, l.y - 6, 32, 10, 3);
+      g.fillStyle(0xb3ab94).fillRoundedRect(l.x - 14, l.y - 66, 28, 28, 4);
+      g.fillStyle(0xffd27a).fillRect(l.x - 8, l.y - 60, 16, 14);
+      g.fillStyle(0x8f8873).fillTriangle(l.x - 22, l.y - 64, l.x + 22, l.y - 64, l.x, l.y - 86);
+    }
     for (const o of this.level.ponds ?? []) {
       const g = s.add.graphics().setDepth(1);
       g.fillStyle(0x7d9a6a, .5).fillRoundedRect(o.x - 10, o.y - 8, o.w + 20, o.h + 18, 34);
@@ -354,6 +374,8 @@ export class ParkView {
     this.wallShapes.clear();
     for (const k of this.walkers.values()) { k.image.destroy(); k.shadow.destroy(); }
     this.dropped = []; this.walkers.clear();
+    for (const g of this.carts.values()) g.destroy();
+    this.carts.clear();
     this.sprite.setTexture('spru').setAlpha(1).setAngle(0);
   }
 
@@ -378,6 +400,47 @@ export class ParkView {
       for (let x = r.x + 70; x < r.x + r.w - 20; x += 90) g.lineBetween(x, r.y + 8, x, r.y + r.h - 8);
       g.lineStyle(4, 0x5e4429).strokeRoundedRect(r.x, r.y, r.w, r.h, 18);
     }
+  }
+
+  /** 人力車の車(右向きに描いて、向きは setScale で変える)。上にちょうちん。 */
+  private cart(id: string) {
+    let g = this.carts.get(id);
+    if (g) return g;
+    g = this.scene.add.graphics();
+    g.fillStyle(0x3d4a30, .22).fillEllipse(10, 0, 130, 26);
+    g.lineStyle(5, 0x6b4a2c).lineBetween(-4, -40, 66, -30); // かじ棒(前の鹿へ)
+    g.fillStyle(0xa8322a).fillRoundedRect(-46, -74, 58, 42, 8); // 座席
+    g.fillStyle(0x5a1f1a).fillRoundedRect(-52, -108, 40, 46, { tl: 22, tr: 6, bl: 4, br: 4 }); // ほろ
+    g.fillStyle(0x2f2a24).fillRect(-46, -36, 58, 6);
+    g.lineStyle(5, 0x3b2a1e).strokeCircle(-18, -24, 24);
+    g.lineStyle(2, 0x3b2a1e);
+    for (let a = 0; a < Math.PI; a += Math.PI / 4) g.lineBetween(-18 - Math.cos(a) * 22, -24 - Math.sin(a) * 22, -18 + Math.cos(a) * 22, -24 + Math.sin(a) * 22);
+    g.fillStyle(0xffe3a0).fillRoundedRect(4, -98, 14, 18, 6).lineStyle(2, 0xc0392b).strokeRoundedRect(4, -98, 14, 18, 6); // ちょうちん
+    this.carts.set(id, g);
+    return g;
+  }
+
+  /** 夜の暗さ。灯り・Spraの足もと・人力車のちょうちんのまわりだけ、明るくする。 */
+  private renderNight(w: World) {
+    const night = this.level.night;
+    if (!night) { this.dark?.setVisible(false); return; }
+    if (!this.scene.textures.exists('night-light')) {
+      const c = this.scene.textures.createCanvas('night-light', 256, 256)!, ctx = c.getContext();
+      const grad = ctx.createRadialGradient(128, 128, 0, 128, 128, 128);
+      grad.addColorStop(0, 'rgba(255,255,255,1)'); grad.addColorStop(.55, 'rgba(255,255,255,.92)'); grad.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = grad; ctx.fillRect(0, 0, 256, 256); c.refresh();
+    }
+    this.lightBrush ??= this.scene.make.image({ key: 'night-light', add: false }, false).setOrigin(.5);
+    this.dark ??= this.scene.add.renderTexture(0, 0, VIEW.width, VIEW.height).setOrigin(0).setScrollFactor(0).setDepth(7900);
+    const rt = this.dark.setVisible(true), top = this.cameraY, b = this.lightBrush;
+    rt.clear(); rt.fill(0x0b1330, .86);
+    const light = (x: number, y: number, r: number) => {
+      if (y + r < top || y - r > top + VIEW.height) return;
+      b.setPosition(x, y - top).setScale(r / 128); rt.erase(b);
+    };
+    for (const l of night.lights) light(l.x, l.y - 30, night.radius ?? 170);
+    for (const m of w.lines) if (m.kind === 'rickshaw') light(m.x, m.y - 40, 120);
+    light(w.player.x, w.player.y - 30 - w.player.height, night.player ?? 125);
   }
 
   /** 鹿せんべい（まるいせんべい）。 */
@@ -444,6 +507,13 @@ export class ParkView {
     }
     // ステージ4: 道を横切る動物
     for (const c of w.crossers) place(c.id, c.kind, c.x, c.y + 20, c.dir, true, c.walked);
+    // 横切る列: 鹿の行列と、鹿が引く人力車(前を鹿、後ろに車)
+    for (const m of w.lines) {
+      const def = w.level.lines![m.line];
+      if (m.kind === 'deer') { place(`L:${m.id}`, def.deer ?? 'doe', m.x, m.y + 20, m.dir, true, m.walked); continue; }
+      place(`L:${m.id}`, 'doe', m.x + m.dir * 46, m.y + 20, m.dir, true, m.walked);
+      this.cart(m.id).setPosition(m.x - m.dir * 34, m.y + 22).setScale(m.dir, 1).setDepth(m.y + 14);
+    }
     // ステージ5: 迷子の鹿（見つけると、ついてくる）
     if (w.follower) {
       const f = w.follower;
@@ -507,6 +577,7 @@ export class ParkView {
     this.sprite.setAngle(falling ? lossAge * 105 : 0);
     this.renderTerrain(w);
     this.renderDeers(w);
+    this.renderNight(w);
     this.renderWallsAndSliders(w);
     this.sprite.setVisible(showPlayer);
     this.shadow.setVisible(showPlayer);

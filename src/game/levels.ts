@@ -1,5 +1,5 @@
 import { FIELD } from './stage.ts';
-import type { HungryDefinition, SenbeiDefinition } from './stage.ts';
+import type { HungryDefinition, LineDefinition, NightDefinition, SenbeiDefinition } from './stage.ts';
 import { RUNNER_LEVELS } from '../runner/levels.ts';
 import type { ChaserDefinition, CoinDefinition, CrosserDefinition, CrossDefinition, DeliveryDefinition, HedgeDefinition, PondDefinition, RescueDefinition, StoneDefinition, SweepDefinition, GoalDefinition, Point, RainDefinition, SliderDefinition, TrapDefinition, WallDefinition } from './stage.ts';
 
@@ -55,6 +55,10 @@ export type LevelDefinition = {
   /** 投げるせんべい(拾う場所・最初の枚数)と、せんべいが好きな鹿。 */
   senbei?: SenbeiDefinition;
   hungry?: HungryDefinition[];
+  /** 道を横切る列(人力車・鹿の行列)。 */
+  lines?: LineDefinition[];
+  /** 夜の面(灯りのまわりしか見えない)。 */
+  night?: NightDefinition;
   chapters: Chapter[];
   /** 失敗の原因と、次の攻略方法（失敗の種類ごと）。water=池に落ちた */
   hints: { poop: string; fall: string; wall: string; caught?: string; water?: string };
@@ -346,7 +350,7 @@ export const LEVEL_1_7: LevelDefinition = {
 
 /** 1-8: せまる壁。左右から閉じる壁、壁を跳んだ先のうんこ、追いかける鹿。 */
 export const LEVEL_1_8: LevelDefinition = {
-  id: '1-7', stage: 1, title: 'せまる壁', // 旧1-8
+  id: '旧1-8', stage: 1, title: 'せまる壁', // 2026-11-16 外した(1-7 は「夜の参道」に)
   intro: '壁は、毎回同じ場所に出る。',
   start: { x: 360, y: 3400 },
   poops: [...row(3150, 384), ...block(2300), ...row(1700, 256), ...block(1100)],
@@ -776,6 +780,67 @@ export const LEVEL_1_9_CHASE: LevelDefinition = {
   },
 };
 
+/**
+ * 新1-7: 夜の参道(2026-11-16。設計書 28章の C2・C3)。
+ * 灯籠のまわりと、Spraの足もとしか見えない。人力車(跳べない)と鹿の行列(跳べる)が、道を横切る。
+ * ① 暗い参道(灯りの外のうんこ・崩れる床) ② 横切る列が3本 ③ 暗い曲がり道と、最後の人力車
+ */
+export const LEVEL_1_7_NIGHT: LevelDefinition = {
+  id: '1-7', stage: 1, title: '夜の参道',
+  intro: '夜の参道。\n灯籠のまわりしか、見えない。',
+  start: { x: 360, y: 3400 },
+  poops: [
+    { x: 300, y: 3180 }, { x: 470, y: 3080 }, { x: 220, y: 2980 }, { x: 400, y: 2900 }, { x: 520, y: 2800 }, { x: 260, y: 2720 },
+    { x: 560, y: 1700 }, { x: 200, y: 1480 }, { x: 330, y: 1400 }, { x: 470, y: 1180 },
+    ...row(620, 360),
+  ],
+  deers: [], walls: [], sliders: [], chasers: [], rain: [],
+  traps: [
+    { id: 'dark-hole', x: 300, y: 2600, width: 140, height: 90, warning: .45 },
+    { id: 'turn-hole', x: 150, y: 1050, width: 130, height: 90, warning: .45 },
+  ],
+  hedges: [
+    { x: 100, y: 1550, w: 340, h: 50 },
+    { x: 280, y: 1250, w: 340, h: 50 },
+  ],
+  lines: [
+    { id: 'L1', kind: 'deer', deer: 'doe', y: 2420, x0: 0, speed: 130, count: 4, spacing: 72 },
+    { id: 'L2', kind: 'rickshaw', y: 2180, x0: 300, speed: -190, count: 2, spacing: 340 },
+    { id: 'L3', kind: 'deer', deer: 'fawn', y: 1940, x0: 420, speed: 165, count: 5, spacing: 64 },
+    { id: 'L4', kind: 'rickshaw', y: 880, x0: 100, speed: 230, count: 1, spacing: 0 },
+  ],
+  night: {
+    lights: [
+      { x: 140, y: 3250 }, { x: 580, y: 3000 }, { x: 140, y: 2760 },
+      { x: 580, y: 2420 }, { x: 140, y: 2180 }, { x: 580, y: 1940 },
+      { x: 560, y: 1620 }, { x: 160, y: 1330 }, { x: 590, y: 1000 }, { x: 360, y: 720 }, { x: 360, y: 420 },
+    ],
+    radius: 170, player: 125,
+  },
+  coins: [
+    { x: 360, y: 3250 }, { x: 140, y: 3120 }, { x: 580, y: 2880 }, { x: 140, y: 2640 },
+    { x: 360, y: 2300 }, { x: 360, y: 2060 },
+    { x: 590, y: 1440, kind: 'gold' }, // 暗い曲がり角の奥
+    { x: 470, y: 1650 }, { x: 200, y: 1380 }, { x: 360, y: 1120 },
+    { x: 470, y: 1000, kind: 'premium', air: true },
+    { x: 360, y: 780 }, { x: 360, y: 500 },
+  ],
+  chapters: [
+    { above: 3100, text: '灯籠の明かりを、たよりに。' },
+    { above: 2500, text: '足もとが、見えにくい…' },
+    { above: 1800, text: '列が、道を横切っていく。人力車は、跳べない。' },
+    { above: 1000, text: '暗い曲がり道。' },
+    { above: 650, text: 'もう一台、来る！' },
+    { above: -Infinity, text: 'ゴールの明かりが、見えた。' },
+  ],
+  hints: {
+    poop: 'うんこに、当たった…！\n暗い所は、ゆっくり進もう。\nSpraの足もとは、少し見える。',
+    fall: '暗くて、ひびが見えなかった…！\n「ミシッ」と聞こえたら、すぐ離れよう。',
+    wall: WALL_HINT,
+    caught: 'ぶつかった…！\n人力車は、跳んでも越えられない。\n列のすき間を、ねらって通ろう。\n鹿の行列は、跳べば越えられる。',
+  },
+};
+
 /** 2-4: おとりで道をつくる。狭いすきまに、鹿が立っている。せんべいで、どかす。 */
 export const LEVEL_2_4: LevelDefinition = {
   id: '旧2-4', stage: 1, title: 'おとりで道をつくる', // 2026-11-15 外した(投げるせんべいの新1-8へ)
@@ -927,7 +992,7 @@ export const STAGE_1: LevelSlot[] = [
   { id: '1-4', title: LEVEL_1_4.title, summary: '鹿が、追いかけてくる', level: LEVEL_1_4 },
   { id: '1-5', title: LEVEL_1_5.title, summary: 'ここまでの、全部入り', level: LEVEL_1_5 },
   { id: '1-6', title: LEVEL_1_6_POND.title, summary: '曲がり道と、池の飛び石', level: LEVEL_1_6_POND },
-  { id: '1-7', title: LEVEL_1_8.title, summary: '壁が、せまってくる', level: LEVEL_1_8 },
+  { id: '1-7', title: LEVEL_1_7_NIGHT.title, summary: '暗い道と、横切る人力車', level: LEVEL_1_7_NIGHT },
   { id: '1-8', title: LEVEL_1_8_SENBEI.title, summary: 'せんべいを投げて、どいてもらう', level: LEVEL_1_8_SENBEI },
   { id: '1-9', title: LEVEL_1_9_CHASE.title, summary: '追ってくる鹿を、せんべいで止める', level: LEVEL_1_9_CHASE },
   { id: '1-10', title: LEVEL_1_10.title, summary: 'WORLD 1 の最終関門', level: LEVEL_1_10 },
