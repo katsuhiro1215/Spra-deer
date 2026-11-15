@@ -1,6 +1,6 @@
 // ステージ3「鹿の大脱走」の面の一覧(3D走りゲームのシリーズ)。
 // 面を足すときは、ここに1つ書くだけ。見た目は theme、手ごたえは rules、仕掛けは seed/extra で変える。
-import { buildCourse, type Course, type Curve, type PatternName, type Rules } from './course.ts';
+import { buildCourse, type Course, type Curve, type HillPoint, type PatternName, type Rules } from './course.ts';
 
 export type Weather = 'none' | 'rain' | 'snow';
 /** 道の景色: sando=灯籠と杉の参道 / town=街道(夕焼けの街) / mountain=灯籠のない山道 */
@@ -59,6 +59,8 @@ export interface RunnerLevel {
   rules: Rules;
   /** 曲がる道(無ければ、まっすぐ) */
   curve?: Curve;
+  /** 坂(無ければ、平ら)。ゴールの100m手前からは平らにする */
+  hills?: HillPoint[];
   theme: Theme;
   /** 回復薬を置く場所(割合) */
   potions?: number[];
@@ -169,12 +171,17 @@ export const RUNNER_LEVELS: RunnerLevel[] = [
   },
   {
     id: '3-3', title: '若草山のつづら折り', summary: '登りのカーブ。前が見えにくい',
-    intro: '若草山のつづら折り！ カーブで 外へ 押されるよ！',
+    intro: '若草山を 登るよ！ 登りは おそく、カーブで 外へ 押される！',
     length: 1000, seed: 20261230, difficulty: 0.55,
     extra: ['critterSleep', 'critterCross', 'critterHop', 'critterCharge'], critters: ['bear', 'tanuki', 'squirrel', 'koron', 'goro', 'toge'],
     opening: ['hole', 'critterSleep', 'poop', 'critterCross'],
-    rules: { speed0: 13.5, speed1: 20, steerAccel: 40, steerSpeed: 7.0 },
+    rules: { speed0: 14.5, speed1: 21, steerAccel: 40, steerSpeed: 7.0 },
     curve: { amp: 34, wave: 170 },
+    // 急な登りと、ひと息つける平らな所が、交互に続く(全部で約40m登る)
+    hills: [
+      { at: 0.08, h: 0 }, { at: 0.2, h: 8 }, { at: 0.27, h: 9 }, { at: 0.4, h: 17 }, { at: 0.47, h: 18 },
+      { at: 0.6, h: 27 }, { at: 0.67, h: 28 }, { at: 0.8, h: 37 }, { at: 0.88, h: 40 },
+    ],
     theme: MOUNTAIN_MIST, goalName: '若草山',
     lines: ['つづら折りが つづく…', 'もうすぐ 山頂だよ', '山頂が 見えてきた！'],
   },
@@ -186,6 +193,11 @@ export const RUNNER_LEVELS: RunnerLevel[] = [
     opening: ['hole', 'puddle', 'critterSleep', 'fenceGap'],
     rules: { speed0: 14, speed1: 21, steerAccel: 22, steerSpeed: 6.8 },
     curve: { amp: 22, wave: 240 },
+    // 田んぼの中の、ゆるい上り下り
+    hills: [
+      { at: 0.1, h: 0 }, { at: 0.2, h: 4 }, { at: 0.3, h: 0.5 }, { at: 0.45, h: 5 }, { at: 0.55, h: 1 },
+      { at: 0.7, h: 6 }, { at: 0.8, h: 2 }, { at: 0.9, h: 0 },
+    ],
     potions: [0.38, 0.68],
     landmarks: [
       { at: 0.38, kind: 'pagoda', side: -1, name: '薬師寺' },
@@ -198,10 +210,12 @@ export const RUNNER_LEVELS: RunnerLevel[] = [
     id: '3-6', title: '雪の大神神社', summary: '雪の三輪山へ。こおりの道',
     intro: '雪の参道。こおりを ふむと つるつる すべるよ！',
     length: 900, seed: 20261213, difficulty: 0.45,
-    extra: ['ice', 'critterSleep', 'critterCross', 'critterHop', 'critterCharge'], critters: ['snowy', 'frosty', 'gingi', 'rabbit', 'candi'],
+    extra: ['ice', 'critterSleep', 'critterCross', 'critterHop', 'critterCharge', 'ramp'], critters: ['snowy', 'frosty', 'gingi', 'rabbit', 'candi'],
     opening: ['hole', 'ice', 'critterSleep', 'poop'],
     rules: { speed0: 12, speed1: 19, steerAccel: 14, steerSpeed: 6.4 },
     curve: { amp: 26, wave: 220 },
+    // 三輪山のふもとへ、ゆるく登る
+    hills: [{ at: 0.12, h: 0 }, { at: 0.35, h: 7 }, { at: 0.5, h: 8 }, { at: 0.75, h: 16 }, { at: 0.88, h: 18 }],
     theme: SNOW_OMIWA, goalName: '大神神社',
     lines: ['しんしんと 雪が ふっている', '三輪山が 見えてきた', '雪の大鳥居が 見えた！'],
   },
@@ -209,7 +223,7 @@ export const RUNNER_LEVELS: RunnerLevel[] = [
     id: '3-10', title: '大阪湾をめざせ！', summary: '最長の最終面。街をぬけて、海まで',
     intro: '脱走した鹿は、大阪湾をめざす！ 長いよ、速いよ、気をつけて！',
     length: 1800, seed: 20261220, difficulty: 0.8,
-    extra: [], rules: { speed0: 15, speed1: 25, steerAccel: 42, steerSpeed: 7.0 },
+    extra: ['ramp'], rules: { speed0: 15, speed1: 25, steerAccel: 42, steerSpeed: 7.0 },
     theme: BAY, goalName: '大阪湾',
     lines: ['街を ぬけて いくぞ！', '潮の かおりが してきた', '海が 見えてきた！ 観覧車も！'],
   },
@@ -221,6 +235,6 @@ export function courseOf(level: RunnerLevel): Course {
   return buildCourse({
     seed: level.seed, length: level.length, difficulty: level.difficulty,
     extra: level.extra, critters: level.critters, opening: level.opening, rules: level.rules, curve: level.curve,
-    potions: level.potions, wake: level.wake,
+    potions: level.potions, wake: level.wake, hills: level.hills,
   });
 }

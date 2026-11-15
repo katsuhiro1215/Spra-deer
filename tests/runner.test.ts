@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { COURSE_LENGTH, PLAY_HALF, buildCourse, obstacleState, roadCurv, roadHeading, roadX, HIT_RADIUS, type Course, type Obstacle } from '../src/runner/course.ts';
+import { COURSE_LENGTH, PLAY_HALF, buildCourse, hillY, obstacleState, roadCurv, roadGrade, roadHeading, roadX, roadY, HIT_RADIUS, type Course, type Obstacle } from '../src/runner/course.ts';
 import { Run, PLAYER_RADIUS, type Input } from '../src/runner/sim.ts';
 import { RUNNER_LEVELS, courseOf, runnerById } from '../src/runner/levels.ts';
 
@@ -278,6 +278,60 @@ test('雨・雪の面は、左右の動きだしが鈍い', () => {
   const day = runnerById('3-1')!.rules.steerAccel;
   assert.ok(runnerById('3-5')!.rules.steerAccel < day);
   assert.ok(runnerById('3-6')!.rules.steerAccel < runnerById('3-5')!.rules.steerAccel);
+});
+
+test('坂: 出だしは高さ0、ゴールの100m手前からは平ら。3-1は平らなまま。3-3は登る', () => {
+  for (const l of RUNNER_LEVELS) {
+    const c = courseOf(l);
+    assert.equal(roadY(c, 0), 0, l.id);
+    assert.ok(Math.abs(hillY(c, l.length - 100) - hillY(c, l.length + 80)) < 1e-9, `${l.id}: ゴール前が平らでない`);
+    // 急すぎない(一番急な所で 15%まで)
+    for (let s = 0; s < l.length; s += 2) assert.ok(Math.abs(roadGrade(c, s)) <= 0.15, `${l.id}: s=${s} 傾き ${roadGrade(c, s).toFixed(3)}`);
+  }
+  const flat = courseOf(runnerById('3-1')!);
+  assert.ok(!flat.hills && !flat.bumps, '3-1は今までどおり平ら');
+  const up = courseOf(runnerById('3-3')!);
+  assert.ok(hillY(up, 1000) >= 30, '若草山は30m以上登る');
+});
+
+test('坂: 登りはおそく、下りは速い', () => {
+  const rules = { speed0: 15, speed1: 15, steerAccel: 42, steerSpeed: 6.8 };
+  const mk = (h: number): Course => ({ obstacles: [], coins: [], length: 1000, rules, hills: [{ at: 0, h: 0 }, { at: 0.2, h }] });
+  const at = (c: Course) => { const r = new Run(c); r.start(); r.s = 100; return r.speed; };
+  assert.ok(at(mk(10)) < 15 * 0.9, `登り ${at(mk(10)).toFixed(2)}`);
+  assert.ok(at(mk(-10)) > 15 * 1.1, `下り ${at(mk(-10)).toFixed(2)}`);
+});
+
+test('ジャンプ台: 何もしなくても飛び出す。台の先で跳ぶと、もっと高く飛ぶ', () => {
+  const fly = (jump: boolean) => {
+    const c: Course = { obstacles: [], coins: [], length: 1000, rules: { speed0: 16, speed1: 16, steerAccel: 42, steerSpeed: 6.8 }, bumps: [{ s: 50, len: 8, h: 1.3 }] };
+    const r = new Run(c);
+    r.start();
+    r.s = 30;
+    let top = 0;
+    let launched = false;
+    for (let i = 0; i < 300; i++) {
+      r.step(DT, { left: false, right: false, jump: jump && r.s > 49 && r.s < 50 });
+      for (const e of r.drainEvents()) if (e.kind === 'launch' || e.kind === 'jump') launched = true;
+      top = Math.max(top, r.y);
+    }
+    return { top, launched, y: r.y };
+  };
+  const plain = fly(false);
+  assert.ok(plain.launched && plain.top > 1.2, `飛び出さない: ${plain.top.toFixed(2)}`);
+  assert.equal(plain.y, 0, '最後は着地している');
+  const big = fly(true);
+  assert.ok(big.top > plain.top + 2, `大ジャンプにならない: ${big.top.toFixed(2)}`);
+});
+
+test('ジャンプ台のある面では、空中のコインを取れる', () => {
+  const l = runnerById('3-10')!;
+  const c = courseOf(l);
+  assert.ok((c.bumps?.length ?? 0) >= 1, '3-10にジャンプ台がある');
+  const r = play(c, bot);
+  const air = c.coins.filter((cn) => cn.y >= 1.9 && cn.y < 3 && c.bumps!.some((b) => cn.s > b.s && cn.s < b.s + 8));
+  const got = air.filter((cn) => r.collected.has(cn.id)).length;
+  assert.ok(got >= air.length * 0.5, `空中のコイン ${got}/${air.length}`);
 });
 
 test('コインは同じものを2回取れない', () => {

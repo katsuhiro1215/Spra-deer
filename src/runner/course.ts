@@ -54,6 +54,19 @@ export interface Curve {
   wave: number;
 }
 
+/** 坂。コース全体に対する割合 at(0〜1) の所で、道の高さが h[m]。間は、なめらかにつなぐ。 */
+export interface HillPoint {
+  at: number;
+  h: number;
+}
+
+/** ジャンプ台。走って登ると、先(s)から体が飛び出す。s=先の位置、len=登る長さ、h=高さ */
+export interface Bump {
+  s: number;
+  len: number;
+  h: number;
+}
+
 export interface Course {
   obstacles: Obstacle[];
   coins: Coin[];
@@ -62,6 +75,10 @@ export interface Course {
   curve?: Curve;
   /** この割合(0〜1)を過ぎると、罠がぐっとふえる(大仏の目が光ったあと) */
   wake?: number;
+  /** 坂(無ければ、平ら) */
+  hills?: HillPoint[];
+  /** ジャンプ台 */
+  bumps?: Bump[];
 }
 
 const smooth = (a: number, b: number, x: number): number => {
@@ -87,6 +104,56 @@ export function roadHeading(course: { curve?: Curve; length: number }, s: number
 export function roadCurv(course: { curve?: Curve; length: number }, s: number): number {
   if (!course.curve) return 0;
   return roadX(course, s + 1) - 2 * roadX(course, s) + roadX(course, s - 1);
+}
+
+type Hilly = { hills?: HillPoint[]; bumps?: Bump[]; length: number };
+
+/** 坂だけの高さ(ジャンプ台を除く。地面・景色の高さ)。 */
+export function hillY(course: Hilly, s: number): number {
+  const hs = course.hills;
+  if (!hs || !hs.length) return 0;
+  const L = course.length;
+  if (s <= hs[0].at * L) return hs[0].h;
+  for (let i = 1; i < hs.length; i++) {
+    const a = hs[i - 1];
+    const b = hs[i];
+    if (s <= b.at * L) return a.h + (b.h - a.h) * smooth(a.at * L, b.at * L, s);
+  }
+  return hs[hs.length - 1].h;
+}
+
+/** ジャンプ台の、先から落ちる面の長さ[m]。 */
+export const RAMP_DROP = 2.4;
+
+/** ジャンプ台の高さ。だんだん急になって先(s)で最も高く、その先はすぐ落ちる。 */
+export function bumpY(course: Hilly, s: number): number {
+  const bs = course.bumps;
+  if (!bs) return 0;
+  let y = 0;
+  for (const b of bs) {
+    const u = s - b.s;
+    if (u > -b.len && u <= 0) y += b.h * ((u + b.len) / b.len) ** 2;
+    else if (u > 0 && u < RAMP_DROP) y += b.h * (1 - smooth(0, RAMP_DROP, u));
+  }
+  return y;
+}
+
+/** 距離 s での、道の高さ[m](坂とこぶ)。 */
+export function roadY(course: Hilly, s: number): number {
+  return hillY(course, s) + bumpY(course, s);
+}
+
+/** 坂の傾き(登りが正)。こぶは含めない(こぶで速さは変わらない)。 */
+export function roadGrade(course: Hilly, s: number): number {
+  if (!course.hills) return 0;
+  return (hillY(course, s + 0.5) - hillY(course, s - 0.5)) / 1.0;
+}
+
+/** 道の高さの曲がりぐあい(2回微分)。てっぺんでは負。体が浮くかどうかの計算に使う。 */
+export function roadBend(course: Hilly, s: number): number {
+  if (!course.hills && !course.bumps) return 0;
+  const h = 0.25;
+  return (roadY(course, s + h) - 2 * roadY(course, s) + roadY(course, s - h)) / (h * h);
 }
 
 /** 各障害物の当たりの大きさ(半径)。 */
@@ -157,7 +224,7 @@ function mulberry32(seed: number) {
 
 export type PatternName =
   | 'hole' | 'poop' | 'fenceGap' | 'stones' | 'deerCross' | 'holePoop' | 'fenceHole' | 'coinSnake' | 'puddle' | 'ice'
-  | 'critterSleep' | 'critterCross' | 'critterHop' | 'critterCharge';
+  | 'critterSleep' | 'critterCross' | 'critterHop' | 'critterCharge' | 'ramp';
 
 export interface CourseOptions {
   seed?: number;
@@ -177,6 +244,8 @@ export interface CourseOptions {
   potions?: number[];
   /** この割合を過ぎると、罠がぐっとふえる(大仏の目が光ったあと) */
   wake?: number;
+  /** 坂(無ければ、平ら) */
+  hills?: HillPoint[];
 }
 
 export function buildCourse(opts: CourseOptions = {}): Course {
@@ -336,8 +405,22 @@ export function buildCourse(opts: CourseOptions = {}): Course {
     return s + 42;
   };
 
+  // ジャンプ台: 登ると、先から飛び出す。空中のコインを取れる(跳ぶと、もっと高く飛べる)
+  const bumps: Bump[] = [];
+  const rampPattern = (s: number) => {
+    const lip = s + 8;
+    bumps.push({ s: lip, len: 8, h: 1.3 });
+    line(s - 7, 0, 3, 2.2);
+    // 飛び出したときに通る高さ(速さ13〜24m/sで確かめた)。台の先で跳ぶと、上の2枚も取れる
+    [[1.2, 1.9], [2.8, 2.2], [4.4, 2.2], [6.0, 1.9]].forEach(([ds, y]) => coin(lip + ds, 0, y));
+    coin(lip + 5, 0, 4.8);
+    coin(lip + 7, 0, 5.0);
+    return lip + 22;
+  };
+
   const run = (name: PatternName, s: number, p: number) => {
     switch (name) {
+      case 'ramp': return rampPattern(s);
       case 'critterSleep': return critterSleepPattern(s);
       case 'critterCross': return critterCrossPattern(s);
       case 'critterHop': return critterHopPattern(s);
@@ -396,5 +479,8 @@ export function buildCourse(opts: CourseOptions = {}): Course {
     while (obstacles.some((o) => Math.abs(o.s - ps) < 16 + o.len)) ps += 6;
     coins.push({ id: id++, s: ps, x: 0, y: 1.1, kind: 'potion' });
   }
-  return { obstacles, coins, length, rules: opts.rules, curve: opts.curve, wake: opts.wake };
+  const course: Course = { obstacles, coins, length, rules: opts.rules, curve: opts.curve, wake: opts.wake };
+  if (opts.hills) course.hills = opts.hills;
+  if (bumps.length) course.bumps = bumps;
+  return course;
 }

@@ -2,7 +2,7 @@
 // 面ごとの空・光・天候・景色は RunnerLevel.theme で切り替える。
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import { GOAL_GAP, ROAD_HALF, roadHeading, roadX, type Course, type Obstacle } from './course.ts';
+import { GOAL_GAP, RAMP_DROP, ROAD_HALF, hillY, roadHeading, roadX, roadY, type Course, type Obstacle } from './course.ts';
 import { CRITTERS, type CritterDef } from './critters.ts';
 import type { Landmark, RunnerLevel, Theme } from './levels.ts';
 import type { Run } from './sim.ts';
@@ -170,6 +170,11 @@ export class KasugaView {
   private level: RunnerLevel;
   private end: number; // 道の終わり(ゴールの先)
   private cine = 0;
+  /** 道の中心線の左右のずれ(1mごと。地面の高さを求めるときに使う) */
+  private clX?: Float64Array;
+  /** カメラの高さの基準(坂に合わせて、なめらかに追う) */
+  private camBase = 0;
+  private camLook = 0;
   private wheel?: THREE.Object3D;
   private weather?: { pts: THREE.Object3D; pos: Float32Array; n: number; rain: boolean; seed: Float32Array };
   private disposables: { dispose(): void }[] = [];
@@ -230,12 +235,16 @@ export class KasugaView {
       this.buildSandoScenery(); // 山道も、灯籠・鳥居をのぞいて同じ木々
       if (theme.setting === 'sando') this.buildTorii();
     }
+    const before = this.scene.children.length;
     if (theme.goal === 'shrine') this.buildShrine();
     else if (theme.goal === 'bay') this.buildBay();
     else if (theme.goal === 'todaiji') this.buildTodaiji();
     else if (theme.goal === 'horyuji') this.buildHoryuji();
     else if (theme.goal === 'omiwa') this.buildOmiwa();
     else this.buildSummit();
+    // ゴールの景色は、ゴールの道の高さ(坂を登った・下った先)に置く
+    const hEnd = this.gy(course.length);
+    if (hEnd !== 0) for (const ch of this.scene.children.slice(before)) if (!ch.userData.placed) ch.position.y += hEnd;
     for (const lm of level.landmarks ?? []) this.buildLandmark(lm);
     this.buildObstacles();
     this.buildCoins();
@@ -264,30 +273,73 @@ export class KasugaView {
     this.resize();
   }
 
-  /** 距離 s・道の中心から右へ x の位置を、世界の座標にする(曲がる道に沿う)。psi=道の向き */
-  private roadW(s: number, x = 0): { x: number; z: number; psi: number } {
+  /** 距離 s・道の中心から右へ x の位置を、世界の座標にする(曲がる道に沿う)。psi=道の向き、y=道の高さ(坂・ジャンプ台) */
+  private roadW(s: number, x = 0): { x: number; y: number; z: number; psi: number } {
     const psi = roadHeading(this.course, s);
-    return { x: roadX(this.course, s) + x * Math.cos(psi), z: -s + x * Math.sin(psi), psi };
+    return { x: roadX(this.course, s) + x * Math.cos(psi), y: roadY(this.course, s), z: -s + x * Math.sin(psi), psi };
   }
 
-  /** 道に沿った、置き物の位置と向き(rotY は、道の向きに足す)。 */
+  /** 坂のある面か(地面を、高さのある1枚にする)。 */
+  private get hilly(): boolean {
+    return !!this.course.hills;
+  }
+
+  /** 地面(芝)の高さ。坂の高さに、山道では、道から離れるほど上がる斜面(土手)を足す。 */
+  private terrainAt(X: number, Z: number, sHint: number): { h: number; d: number } {
+    if (!this.hilly) return { h: 0, d: 0 };
+    // 道の中心線のうち、いちばん近い所を探す(s=-Z の点までの距離より遠くは探さない)
+    if (!this.clX) {
+      this.clX = new Float64Array(this.end + 1200);
+      for (let i = 0; i < this.clX.length; i++) this.clX[i] = roadX(this.course, i - 200);
+    }
+    const cl = this.clX;
+    const cx = (s: number) => cl[Math.max(0, Math.min(cl.length - 1, s + 200))];
+    const s0 = Math.round(sHint);
+    const dx0 = X - cx(s0);
+    let best = dx0 * dx0 + (Z + s0) ** 2;
+    let bs = s0;
+    const W = Math.min(90, Math.ceil(Math.sqrt(best)) + 1);
+    for (let s = s0 - W; s <= s0 + W; s++) {
+      const dx = X - cx(s);
+      const dz = Z + s;
+      const d2 = dx * dx + dz * dz;
+      if (d2 < best) { best = d2; bs = s; }
+    }
+    const d = Math.sqrt(best);
+    const bank = this.theme.setting === 'mountain' ? Math.min(26, Math.max(0, d - 9) ** 1.25 * 0.22) : 0;
+    return { h: hillY(this.course, bs) + bank, d };
+  }
+
+  /** 道に沿った、置き物の位置と向き(rotY は、道の向きに足す)。高さは地面に合わせる。 */
   private rp(s: number, x: number, o: { y?: number; rotY?: number; scale?: number } = {}): Placement {
     const w = this.roadW(s, x);
-    return { x: w.x, z: w.z, y: o.y, rotY: -w.psi + (o.rotY ?? 0), scale: o.scale };
+    const g = !this.hilly ? 0 : Math.abs(x) < 9 ? hillY(this.course, s) : this.terrainAt(w.x, w.z, s).h;
+    return { x: w.x, z: w.z, y: (o.y ?? 0) + g, rotY: -w.psi + (o.rotY ?? 0), scale: o.scale };
   }
 
-  /** 道の面(中心線に沿って曲がる帯)。 */
-  private roadRibbon(a: number, b: number, width: number, mat: THREE.Material): THREE.Mesh {
-    const n = Math.max(1, Math.ceil((b - a) / 2));
+  /** 坂の高さ(ジャンプ台を除く。置き物や門を立てる高さ)。 */
+  private gy(s: number): number {
+    return hillY(this.course, s);
+  }
+
+  /** 道の面(中心線に沿って曲がる帯)。坂・ジャンプ台の高さに沿う。yOff=道からの浮かせ */
+  private roadRibbon(a: number, b: number, width: number, mat: THREE.Material, yOff = 0, vScale = 4): THREE.Mesh {
+    const base = this.hilly ? 1 : 2;
+    const bumps = this.course.bumps ?? [];
+    const nearRamp = (s: number) => bumps.some((bp) => s > bp.s - bp.len - 0.6 && s < bp.s + RAMP_DROP + 0.6);
+    const ss: number[] = [];
+    for (let s = a; s < b; s += nearRamp(s) ? 0.4 : base) ss.push(s);
+    ss.push(b);
+    const n = ss.length - 1;
     const pos: number[] = [];
     const uv: number[] = [];
     const idx: number[] = [];
     for (let i = 0; i <= n; i++) {
-      const s = a + ((b - a) * i) / n;
+      const s = ss[i];
       const l = this.roadW(s, -width / 2);
       const r = this.roadW(s, width / 2);
-      pos.push(l.x, 0, l.z, r.x, 0, r.z);
-      uv.push(0, s / 4, width / 4, s / 4);
+      pos.push(l.x, l.y + yOff, l.z, r.x, r.y + yOff, r.z);
+      uv.push(0, s / vScale, width / 4, s / vScale);
       if (i < n) {
         const k = i * 2;
         idx.push(k, k + 1, k + 2, k + 1, k + 3, k + 2);
@@ -337,32 +389,32 @@ export class KasugaView {
     // 地面の芝(曲がる道でも足りるよう、広い1枚。ゴールが海なら、岸まで)
     const grassEnd = th.goal === 'bay' ? pierEnd : this.end + 330;
     const L = grassEnd + 40;
-    const gw = 1400;
-    const gg = new THREE.PlaneGeometry(gw, L + 600);
-    const uv = gg.attributes.uv;
-    for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * (gw / 6), uv.getY(i) * ((L + 600) / 6));
-    const ground = new THREE.Mesh(gg, matGrass);
-    ground.rotation.x = -Math.PI / 2;
-    ground.position.set(0, -0.02, -(L / 2 - 40) + (th.goal === 'bay' ? 0 : 0));
-    ground.receiveShadow = true;
-    this.scene.add(ground);
-    // 穴(のぞくと深い)
+    if (this.hilly) {
+      this.scene.add(this.buildTerrain(matGrass, L));
+    } else {
+      const gw = 1400;
+      // 大きな三角形2枚だと、奥行きの計算の誤差で、道が芝に隠れる所が出る。細かく分けておく
+      const gg = new THREE.PlaneGeometry(gw, L + 600, 40, Math.ceil((L + 600) / 20));
+      const uv = gg.attributes.uv;
+      for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * (gw / 6), uv.getY(i) * ((L + 600) / 6));
+      const ground = new THREE.Mesh(gg, matGrass);
+      ground.rotation.x = -Math.PI / 2;
+      ground.position.set(0, -0.05, -(L / 2 - 40));
+      ground.receiveShadow = true;
+      this.scene.add(ground);
+    }
     // 穴: 地面の上に、まっ黒な面をのせる(地面が1枚の大きな面なので、箱の穴だと、うまってしまう)
     const pitMat = new THREE.MeshBasicMaterial({ color: 0x07050a });
     const tapeA = new THREE.MeshStandardMaterial({ color: 0xffc21a, roughness: 0.6, emissive: 0x4a3200 });
     const pylonMat = new THREE.MeshStandardMaterial({ color: 0xff6a2a, roughness: 0.5, emissive: 0x401400 });
     const stripe = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5 });
     for (const h of holes) {
-      const pw = this.roadW(h.s + h.len / 2, 0);
-      const pit = new THREE.Mesh(new THREE.PlaneGeometry(w + 0.8, h.len).rotateX(-Math.PI / 2), pitMat);
-      pit.position.set(pw.x, 0.03, pw.z);
-      pit.rotation.y = -pw.psi;
-      this.scene.add(pit);
+      this.scene.add(this.roadRibbon(h.s, h.s + h.len, w + 0.8, pitMat, 0.03));
       // 穴のふちに、黄色い帯(手前と奥)
       for (const edge of [h.s, h.s + h.len]) {
         const ew = this.roadW(edge, 0);
         const tape = new THREE.Mesh(new THREE.BoxGeometry(w + 0.8, 0.08, 0.35), tapeA);
-        tape.position.set(ew.x, 0.06, ew.z);
+        tape.position.set(ew.x, ew.y + 0.06, ew.z);
         tape.rotation.y = -ew.psi;
         this.scene.add(tape);
       }
@@ -370,12 +422,129 @@ export class KasugaView {
         for (const zz of [h.s - 1.4, h.s + h.len + 1.4]) {
           const cw = this.roadW(zz, sx * (ROAD_HALF - 0.5));
           const cone = new THREE.Mesh(new THREE.ConeGeometry(0.33, 0.9, 14), pylonMat);
-          cone.position.set(cw.x, 0.45, cw.z);
+          cone.position.set(cw.x, cw.y + 0.45, cw.z);
           cone.castShadow = true;
           const band = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.25, 0.14, 14), stripe);
-          band.position.set(cw.x, 0.5, cw.z);
+          band.position.set(cw.x, cw.y + 0.5, cw.z);
           this.scene.add(cone, band);
         }
+      }
+    }
+    this.buildRamps(w);
+  }
+
+  /** 坂のある面の地面: 道の高さに合わせた、高さのある1枚(道の近くは細かく、遠くは粗く)。 */
+  private buildTerrain(mat: THREE.Material, L: number): THREE.Mesh {
+    const cols: number[] = [];
+    for (const x of [-340, -260, -200, -160, -130, -105, -88]) cols.push(x);
+    for (let x = -76; x <= 76; x += 2) cols.push(x);
+    for (const x of [88, 105, 130, 160, 200, 260, 340]) cols.push(x);
+    const z0 = 80;
+    const z1 = -(L + 120);
+    const dz = 1.5;
+    const rows = Math.ceil((z0 - z1) / dz) + 1;
+    const nc = cols.length;
+    const pos = new Float32Array(rows * nc * 3);
+    const uv = new Float32Array(rows * nc * 2);
+    for (let j = 0; j < rows; j++) {
+      const Z = z0 - j * dz;
+      for (let i = 0; i < nc; i++) {
+        const X = cols[i];
+        const { h, d } = this.terrainAt(X, Z, -Z);
+        // 道の下は少し低くして、芝が道からはみ出さないようにする
+        const off = d < ROAD_HALF + 0.6 ? -0.14 : -0.04;
+        const k = (j * nc + i) * 3;
+        pos[k] = X;
+        pos[k + 1] = h + off;
+        pos[k + 2] = Z;
+        uv[(j * nc + i) * 2] = X / 6;
+        uv[(j * nc + i) * 2 + 1] = Z / 6;
+      }
+    }
+    const idx: number[] = [];
+    for (let j = 0; j < rows - 1; j++) {
+      for (let i = 0; i < nc - 1; i++) {
+        const a = j * nc + i;
+        const b = a + 1;
+        const c = a + nc;
+        const e = c + 1;
+        idx.push(a, c, b, b, c, e);
+      }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    g.setIndex(idx);
+    g.computeVertexNormals();
+    const m = new THREE.Mesh(g, mat);
+    m.receiveShadow = true;
+    return m;
+  }
+
+  /** ジャンプ台: 台の面に矢印、両わきに黄色と黒のしま模様の板。 */
+  private buildRamps(w: number): void {
+    const bumps = this.course.bumps;
+    if (!bumps?.length) return;
+    const arrows = canvasTexture(128, (g, n) => {
+      g.clearRect(0, 0, n, n);
+      g.fillStyle = 'rgba(255,120,30,0.95)';
+      // 前向きの「へ」の字の矢印を2つ(絵の上が、進む向き)
+      const v: [number, number][] = [[0.1, 0.3], [0.5, 0], [0.9, 0.3], [0.9, 0.44], [0.5, 0.14], [0.1, 0.44]];
+      for (const y0 of [0.03, 0.52]) {
+        g.beginPath();
+        v.forEach(([px, py], i) => (i ? g.lineTo(px * n, (y0 + py) * n) : g.moveTo(px * n, (y0 + py) * n)));
+        g.closePath();
+        g.fill();
+      }
+    }, true);
+    arrows.wrapS = THREE.ClampToEdgeWrapping;
+    const stripes = canvasTexture(64, (g, n) => {
+      for (let i = -2; i < 6; i++) {
+        g.fillStyle = i % 2 ? '#1d1d22' : '#ffc21a';
+        g.beginPath();
+        g.moveTo(i * 16, 0);
+        g.lineTo(i * 16 + 16, 0);
+        g.lineTo(i * 16 + 16 + n, n);
+        g.lineTo(i * 16 + n, n);
+        g.closePath();
+        g.fill();
+      }
+    }, true);
+    this.disposables.push(arrows, stripes);
+    const deck = new THREE.MeshStandardMaterial({ color: 0xd9dde4, roughness: 0.55, metalness: 0.1 });
+    const arrowMat = new THREE.MeshBasicMaterial({ map: arrows, transparent: true, depthWrite: false, toneMapped: false });
+    const sideMat = new THREE.MeshStandardMaterial({ map: stripes, roughness: 0.6, side: THREE.DoubleSide });
+    for (const b of bumps) {
+      const a = b.s - b.len;
+      const e = b.s + RAMP_DROP;
+      this.scene.add(this.roadRibbon(a, b.s + 0.05, w, deck, 0.02));
+      this.scene.add(this.roadRibbon(a + 1.5, b.s - 0.3, 4, arrowMat, 0.05, 2.2)); // 幅4m=絵の横幅ちょうど
+      // 両わきの板(地面から台の面まで)
+      for (const sx of [-1, 1]) {
+        const pos: number[] = [];
+        const uv: number[] = [];
+        const idx: number[] = [];
+        let n = 0;
+        for (let s = a; s <= e + 0.001; s += 0.4) {
+          const p = this.roadW(s, sx * (w / 2 + 0.02));
+          const top = p.y + 0.05;
+          const bot = this.gy(s) - 0.15;
+          pos.push(p.x, bot, p.z, p.x, top, p.z);
+          uv.push(s / 1.6, 0, s / 1.6, (top - bot) / 1.6);
+          if (n > 0) {
+            const k = (n - 1) * 2;
+            idx.push(k, k + 2, k + 1, k + 1, k + 2, k + 3);
+          }
+          n++;
+        }
+        const g = new THREE.BufferGeometry();
+        g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+        g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+        g.setIndex(idx);
+        g.computeVertexNormals();
+        const m = new THREE.Mesh(g, sideMat);
+        m.castShadow = true;
+        this.scene.add(m);
       }
     }
   }
@@ -400,7 +569,7 @@ export class KasugaView {
     }
     if (th.setting === 'sando') {
       addInstanced(this.scene, lanternParts, lp);
-      if (th.halo > 0) this.addHalos(lp.map((p) => new THREE.Vector3(p.x, 2.0, p.z)), 0xffb450, 3.6 * th.halo + 1.2, Math.min(1, th.halo));
+      if (th.halo > 0) this.addHalos(lp.map((p) => new THREE.Vector3(p.x, (p.y ?? 0) + 2.0, p.z)), 0xffb450, 3.6 * th.halo + 1.2, Math.min(1, th.halo));
     }
 
     // 杉(根もと・3段の葉)
@@ -472,7 +641,7 @@ export class KasugaView {
       // 灯りの位置は、街灯の腕の先(道の内側へ1.35m)
       const h1 = this.roadW(s, -(ROAD_HALF + 1.2) + 1.35);
       const h2 = this.roadW(s + 11, ROAD_HALF + 1.2 - 1.35);
-      halos.push(new THREE.Vector3(h1.x, 6.25, h1.z), new THREE.Vector3(h2.x, 6.25, h2.z));
+      halos.push(new THREE.Vector3(h1.x, this.gy(s) + 6.25, h1.z), new THREE.Vector3(h2.x, this.gy(s + 11) + 6.25, h2.z));
     }
     addInstanced(this.scene, lampParts, lp);
     if (th.halo > 0) this.addHalos(halos, 0xffc070, 4.2, Math.min(1, th.halo));
@@ -551,9 +720,10 @@ export class KasugaView {
     for (const m of [nuki, shimaki, kasagi, top]) m.castShadow = true;
     g.add(nuki, shimaki, kasagi, top);
     const tw = this.roadW(z, 0);
-    g.position.set(tw.x, 0, tw.z);
+    g.position.set(tw.x, this.gy(z), tw.z);
     g.rotation.y = -tw.psi;
     g.scale.setScalar(scale);
+    g.userData.placed = true;
     return g;
   }
 
@@ -903,7 +1073,7 @@ export class KasugaView {
     board.position.set(0, 3.1, 0.14);
     g.add(post, board);
     const w = this.roadW(s, side * (ROAD_HALF + 2.4));
-    g.position.set(w.x, 0, w.z);
+    g.position.set(w.x, this.gy(s), w.z);
     g.rotation.y = -w.psi + (side > 0 ? -0.35 : 0.35); // 道のほうへ、少し向ける
     return g;
   }
@@ -912,7 +1082,7 @@ export class KasugaView {
     const s = lm.at * this.course.length;
     const model = lm.kind === 'pagoda' ? this.pagoda(3, 6.2) : this.hall(15, 9, 5);
     const w = this.roadW(s, lm.side * (ROAD_HALF + (lm.kind === 'pagoda' ? 9 : 12)));
-    model.position.set(w.x, 0, w.z);
+    model.position.set(w.x, this.terrainAt(w.x, w.z, s).h, w.z);
     model.rotation.y = -w.psi;
     this.scene.add(model);
     this.scene.add(this.signboard(lm.name, s - 4, lm.side));
@@ -924,7 +1094,8 @@ export class KasugaView {
     // 南大門(道のとちゅうに、大きな門)
     const gate = this.bigGate();
     const gw = this.roadW(L * 0.42, 0);
-    gate.position.set(gw.x, 0, gw.z);
+    gate.position.set(gw.x, this.gy(L * 0.42), gw.z);
+    gate.userData.placed = true; // 高さは合わせ済み(ゴールの高さに、さらに上げない)
     gate.rotation.y = -gw.psi;
     this.scene.add(gate);
 
@@ -1269,7 +1440,7 @@ export class KasugaView {
         crit = { def, tex, pose: 'normal' };
       }
       const ow = this.roadW(o.s, o.x);
-      obj.position.set(ow.x, 0, ow.z);
+      obj.position.set(ow.x, ow.y, ow.z);
       obj.rotation.y = -ow.psi;
       this.scene.add(obj);
       this.obstacleObjs.push({ o, obj, spin, sprite, crit });
@@ -1369,6 +1540,7 @@ export class KasugaView {
     const { pos, n, rain, seed } = wd;
     const cx = this.camera.position.x;
     const cz = this.camera.position.z;
+    const by = this.camBase; // 坂の高さに合わせて降らせる
     const cs = Math.cos(this.camPsi);
     const sn = Math.sin(this.camPsi);
     for (let i = 0; i < n; i++) {
@@ -1380,7 +1552,7 @@ export class KasugaView {
       const r = seed[i * 4 + 3];
       if (rain) {
         // 速く落ちて地面でもどる(カメラのまわりに降り続ける)
-        const y = 16 - ((t * (22 + r * 8) + seed[i * 4 + 1]) % 16);
+        const y = by + 16 - ((t * (22 + r * 8) + seed[i * 4 + 1]) % 16);
         const k = i * 6;
         pos[k] = cx + sx;
         pos[k + 1] = y;
@@ -1389,7 +1561,7 @@ export class KasugaView {
         pos[k + 4] = y + 0.85;
         pos[k + 5] = cz + sz - 0.08;
       } else {
-        const y = 15 - ((t * (1.6 + r * 1.4) + seed[i * 4 + 1]) % 15);
+        const y = by + 15 - ((t * (1.6 + r * 1.4) + seed[i * 4 + 1]) % 15);
         const k = i * 3;
         pos[k] = cx + sx + Math.sin(t * 0.6 + i) * 0.7;
         pos[k + 1] = y;
@@ -1435,12 +1607,12 @@ export class KasugaView {
     const mat = this.deer.material as THREE.MeshBasicMaterial;
     if (mat.map !== this.runTex[frame]) mat.map = this.runTex[frame];
     const bob = run.airborne ? 0 : Math.abs(Math.sin(run.stride * 1.9)) * 0.1;
-    this.deer.position.set(wd.x, run.y + bob, wd.z);
+    this.deer.position.set(wd.x, wd.y + run.y + bob, wd.z);
     this.deer.rotation.set(0, -wd.psi, -run.vx * 0.022 + waving, 'YXZ');
     const squash = run.airborne ? 1 + Math.min(0.1, run.y * 0.04) : 1;
     this.deer.scale.set(1 / squash, squash, 1);
     this.deer.visible = run.invuln > 0 ? Math.floor(t * 16) % 2 === 0 : true;
-    this.deerShadow.position.set(wd.x, 0.03, wd.z);
+    this.deerShadow.position.set(wd.x, wd.y + 0.03, wd.z);
     const ss = Math.max(0.5, 1 - run.y * 0.18);
     this.deerShadow.scale.set(ss, 1, ss);
 
@@ -1453,29 +1625,41 @@ export class KasugaView {
       sx = (Math.random() - 0.5) * this.shake * 0.7;
       sy = (Math.random() - 0.5) * this.shake * 0.5;
     }
-    const lift = run.y * 0.25;
+    // ジャンプ台で高く飛んだときは、カメラも上げて、鹿が画面の上から出ないようにする
+    const lift = run.y * 0.25 + Math.max(0, run.y - 1.6) * 0.45;
     // クリア後は少し引いて、ゴールの景色の全体が見えるようにする
     this.cine += ((run.phase === 'cleared' ? 1 : 0) - this.cine) * Math.min(1, dt * 1.6);
     const c = this.cine;
-    const back = this.roadW(run.s - (6.4 + c * 3.2), this.camX + sx);
-    const ahead = this.roadW(run.s + 9 + c * 14, this.camX * 0.95);
-    this.camera.position.set(back.x, 3.5 + lift + sy + c * 2.2, back.z);
-    this.camera.lookAt(ahead.x, 1.5 + lift * 0.5 + c * 2.6, ahead.z);
+    const sBack = run.s - (6.4 + c * 3.2);
+    const sAhead = run.s + 9 + c * 14;
+    const back = this.roadW(sBack, this.camX + sx);
+    const ahead = this.roadW(sAhead, this.camX * 0.95);
+    // 坂: カメラの高さは、坂だけ(ジャンプ台は除く)の高さを、なめらかに追う
+    const k = Math.min(1, dt * 5);
+    const baseT = Math.max(this.gy(sBack), this.gy(run.s) - 0.6);
+    const lookT = this.gy(sAhead) * 0.7 + this.gy(run.s) * 0.3;
+    if (this.clock <= dt) { this.camBase = baseT; this.camLook = lookT; }
+    this.camBase += (baseT - this.camBase) * k;
+    this.camLook += (lookT - this.camLook) * k;
+    this.camera.position.set(back.x, this.camBase + 3.5 + lift + sy + c * 2.2, back.z);
+    this.camera.lookAt(ahead.x, this.camLook + 1.5 + lift * 0.5 + c * 2.6, ahead.z);
 
     // 太陽(月)の影は鹿のまわりだけ
     const sp = this.theme.sunPos;
-    this.sun.position.set(wd.x + sp[0], sp[1], wd.z + sp[2]);
+    const gy = this.gy(run.s);
+    this.sun.position.set(wd.x + sp[0], gy + sp[1], wd.z + sp[2]);
     const tw = this.roadW(run.s + 6, px);
-    this.sun.target.position.set(tw.x, 0, tw.z);
+    this.sun.target.position.set(tw.x, gy, tw.z);
     this.sun.target.updateMatrixWorld();
     if (this.headlight) {
       const hw = this.roadW(run.s + 4, px);
-      this.headlight.position.set(hw.x, 3.4, hw.z);
+      this.headlight.position.set(hw.x, hw.y + 3.4, hw.z);
     }
     if (this.footGlow) {
       const gw = this.roadW(run.s + 3.2, px);
-      this.footGlow.position.set(gw.x, 0.05, gw.z);
-      this.footGlow.rotation.y = -gw.psi;
+      const grade = (roadY(this.course, run.s + 6.4) - roadY(this.course, run.s)) / 6.4;
+      this.footGlow.position.set(gw.x, gw.y + 0.05, gw.z);
+      this.footGlow.rotation.set(Math.atan(grade), -gw.psi, 0, 'YXZ');
     }
 
     // コイン
@@ -1490,7 +1674,7 @@ export class KasugaView {
       const k = alive && cn.kind !== 'potion' ? 1 : 0;
       this.tmpQ.setFromEuler(this.tmpE.set(0, spin + i * 0.7, 0));
       const cw = this.roadW(cn.s, cn.x);
-      this.tmpM.compose(this.tmpP.set(cw.x, cn.y + Math.sin(t * 3 + i) * 0.06, cw.z), this.tmpQ, this.tmpS.set(k, k, k));
+      this.tmpM.compose(this.tmpP.set(cw.x, cw.y + cn.y + Math.sin(t * 3 + i) * 0.06, cw.z), this.tmpQ, this.tmpS.set(k, k, k));
       this.coinDisc.setMatrixAt(i, this.tmpM);
       this.coinRim.setMatrixAt(i, this.tmpM);
     }
@@ -1501,7 +1685,7 @@ export class KasugaView {
       po.obj.visible = near;
       if (!near) continue;
       const pw = this.roadW(po.s, po.x);
-      po.obj.position.set(pw.x, po.y + Math.sin(t * 3) * 0.12, pw.z);
+      po.obj.position.set(pw.x, pw.y + po.y + Math.sin(t * 3) * 0.12, pw.z);
       po.obj.rotation.y = t * 1.8 - pw.psi;
     }
     // 大仏の目が光る
@@ -1521,7 +1705,7 @@ export class KasugaView {
         // 動物・モンスター: 動き方と状態で、ポーズを切りかえる
         const o = e.o;
         const ow = this.roadW(st.s, st.x);
-        e.obj.position.set(ow.x, 0, ow.z);
+        e.obj.position.set(ow.x, ow.y, ow.z);
         e.obj.rotation.y = -this.camPsi; // 絵は、いつもカメラのほうを向く
         const hit = run.consumed.has(o.id);
         const pose = hit ? 'dizzy' : o.behavior === 'sleep' ? 'sleep' : o.behavior === 'charge' ? (run.chargeT.has(o.id) ? 'angry' : 'normal') : o.behavior === 'hop' && st.y > 0.5 ? 'angry' : 'normal';
@@ -1543,7 +1727,7 @@ export class KasugaView {
       }
       if (e.o.kind === 'stone' || e.o.kind === 'deer') {
         const ow = this.roadW(st.s, st.x);
-        e.obj.position.set(ow.x, 0, ow.z);
+        e.obj.position.set(ow.x, ow.y, ow.z);
         e.obj.rotation.y = e.o.kind === 'deer' ? -this.camPsi : -ow.psi;
         if (e.spin) {
           if (this.theme.setting === 'town') {

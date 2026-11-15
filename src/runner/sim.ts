@@ -1,5 +1,5 @@
 // 3D走りゲームの進行計算(見た目に依存しない)。
-import { DEFAULT_RULES, HIT_RADIUS, PLAY_HALF, obstacleRadius, obstacleState, roadCurv, type Course, type Obstacle, type ObstacleState, type Rules } from './course.ts';
+import { DEFAULT_RULES, HIT_RADIUS, PLAY_HALF, obstacleRadius, obstacleState, roadBend, roadCurv, roadGrade, type Course, type Obstacle, type ObstacleState, type Rules } from './course.ts';
 import type { Effect } from './critters.ts';
 
 export interface Input {
@@ -9,7 +9,7 @@ export interface Input {
 }
 
 export type Phase = 'ready' | 'running' | 'cleared' | 'failed';
-export type SimEvent = { kind: 'coin' | 'heal' | 'jump' | 'land' | 'hit' | 'fall' | 'slip' | 'slow' | 'slide' | 'clear' | 'fail'; id?: number };
+export type SimEvent = { kind: 'coin' | 'heal' | 'jump' | 'launch' | 'land' | 'hit' | 'fall' | 'slip' | 'slow' | 'slide' | 'clear' | 'fail'; id?: number };
 
 export const PLAYER_RADIUS = 0.45;
 const JUMP_V = 10.5;
@@ -17,6 +17,8 @@ const GRAVITY = 32;
 export const MAX_LIVES = 3;
 /** カーブで、外側へ押される強さ(大きいほど、曲がり角で操作が要る) */
 const DRIFT_GAIN = 7;
+/** 坂で、速さが変わる強さ(登り10%で約2割おそく、下り10%で約2割速く) */
+const SLOPE_GAIN = 2.2;
 
 export function baseSpeed(s: number, length: number, rules: Rules = DEFAULT_RULES): number {
   return rules.speed0 + (rules.speed1 - rules.speed0) * Math.min(1, s / length);
@@ -57,7 +59,12 @@ export class Run {
   }
 
   get speed(): number {
-    return baseSpeed(this.s, this.course.length, this.rules) * this.speedMul;
+    return baseSpeed(this.s, this.course.length, this.rules) * this.speedMul * this.slopeMul;
+  }
+  /** 坂での速さの倍率(登りはおそく、下りは速く)。 */
+  get slopeMul(): number {
+    if (!this.course.hills) return 1;
+    return Math.max(0.7, Math.min(1.35, 1 - SLOPE_GAIN * roadGrade(this.course, this.s)));
   }
   get airborne(): boolean {
     return this.y > 0;
@@ -135,8 +142,14 @@ export class Run {
   }
 
   private integrateVertical(dt: number): void {
-    if (this.y === 0 && this.vy <= 0) return;
-    this.vy -= GRAVITY * dt;
+    // y は道からの高さ。道が下へ曲がる所(坂の頂上・ジャンプ台の先)では、道が落ちていく分だけ体が浮く
+    const v = this.speed;
+    const acc = -GRAVITY - roadBend(this.course, this.s) * v * v;
+    if (this.y === 0 && this.vy <= 0) {
+      if (acc <= 0) return;
+      this.events.push({ kind: 'launch' }); // 地面から飛び出した
+    }
+    this.vy += acc * dt;
     this.y += this.vy * dt;
     if (this.y <= 0) {
       this.y = 0;

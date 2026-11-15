@@ -65,6 +65,7 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
       case 'coin': tone(1180, 1760, 0.13, 'triangle', 0.08); break;
       case 'heal': [660, 880, 1100, 1320].forEach((f, i) => tone(f, f * 1.02, 0.22, 'sine', 0.09, i * 0.08)); break;
       case 'jump': tone(360, 700, 0.16, 'sine', 0.08); break;
+      case 'launch': tone(280, 980, 0.3, 'triangle', 0.08); break;
       case 'land': tone(160, 90, 0.08, 'sine', 0.05); break;
       case 'hit': tone(200, 60, 0.3, 'sawtooth', 0.1); break;
       case 'fall': tone(520, 50, 0.6, 'triangle', 0.1); break;
@@ -340,6 +341,10 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
           break;
         }
       }
+      if (!hinted.has('ramp') && course.bumps?.some((b) => b.s - run.s > 0 && b.s - run.s < 40)) {
+        hinted.add('ramp');
+        toast('ジャンプ台！ 先っぽで 跳ぶと 大ジャンプ！', 2800);
+      }
       if (course.wake !== undefined && !woke && run.progress >= course.wake) {
         woke = true;
         view.bump(0.3);
@@ -371,6 +376,7 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
     course,
     input,
     level,
+    view,
   };
 
   return () => {
