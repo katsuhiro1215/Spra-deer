@@ -23,6 +23,9 @@ const HINTS: Record<string, string> = {
   'critter:charge': 'つっこんでくる！ よけるか ジャンプ！',
   crossing: 'カンカン… 踏切だ！ 遮断機は すき間か ジャンプで',
   bolt: '光る輪に 雷が落ちる！ 輪の外へ よけて！',
+  leaf: '落ち葉の山！ ふむと すべるよ',
+  fish: '金魚が 跳んでくる！ 低い所は ジャンプで くぐれる',
+  sheet: '花見の シート！ ふむと コインを 落とすよ',
 };
 const hintKey = (o: Obstacle) => (o.kind === 'critter' ? `critter:${o.behavior}` : o.deco ?? o.kind);
 
@@ -80,6 +83,9 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
       case 'bell': for (let i = 0; i < 9; i++) tone(i % 2 ? 760 : 900, i % 2 ? 750 : 890, 0.22, 'square', 0.035, i * 0.45); break;
       case 'warn': tone(1400, 1600, 0.12, 'sine', 0.04); break;
       case 'thunder': noise(0.9, 0.16, 380); tone(90, 40, 0.9, 'sawtooth', 0.06); break;
+      case 'spill': [880, 660, 520].forEach((f, i) => tone(f, f * 0.9, 0.12, 'triangle', 0.07, i * 0.07)); break;
+      // 法螺貝(ブオォ〜): 低い音を、少しゆらして長く
+      case 'charge': if (level.horn) { tone(196, 208, 1.1, 'sawtooth', 0.05); tone(392, 410, 1.1, 'triangle', 0.03); } break;
     }
   };
   /** ざーっ・ゴロゴロという音(短いノイズ)。 */
@@ -334,6 +340,19 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
       if (e.kind === 'thunder') {
         view.flash();
         view.bump(0.15);
+      } else if (e.kind === 'charge') {
+        if (level.horn) toast('ブオォ〜 法螺貝だ！ 何かが 突進してくる！', 2200);
+      } else if (e.kind === 'spill') {
+        view.bump(0.15);
+        toast(run.spilled > 0 ? `シートを ふんじゃった… コインを ${run.spilled}まい 落とした` : 'シートを ふんじゃった！', 2000);
+      } else if (e.kind === 'slow' && hitObj?.kind === 'fish') {
+        view.bump(0.2);
+        toast('金魚が ぴちっ！ おそくなった', 1800);
+      } else if (e.kind === 'slide' && hitObj?.kind === 'leaf') {
+        toast('落ち葉で すべった！', 1500);
+      } else if (e.kind === 'fall' && run.onBridge) {
+        view.bump(0.4);
+        toast('つり橋から 落ちた…！ まんなかを たもって', 2000);
       } else if (e.kind === 'hit' && hitObj?.kind === 'bolt') {
         view.bump(0.4);
         toast('ビリビリッ！ 雷に 打たれた…', 2000);
@@ -373,6 +392,10 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
           toast(HINTS[hintKey(o)], 2800);
           break;
         }
+      }
+      if (!hinted.has('bridge') && course.bridge && course.bridge.from - run.s > 0 && course.bridge.from - run.s < 40) {
+        hinted.add('bridge');
+        toast('谷瀬のつり橋！ ゆれて 押されるよ。◀ ▶ で まんなかへ！', 3200);
       }
       if (!hinted.has('ramp') && course.bumps?.some((b) => b.s - run.s > 0 && b.s - run.s < 40)) {
         hinted.add('ramp');

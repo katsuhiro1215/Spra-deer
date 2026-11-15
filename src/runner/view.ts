@@ -2,7 +2,7 @@
 // 面ごとの空・光・天候・景色は RunnerLevel.theme で切り替える。
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import { GOAL_GAP, RAMP_DROP, ROAD_HALF, hillY, roadHeading, roadX, roadY, type Course, type Obstacle } from './course.ts';
+import { BRIDGE_HALF, FISH_X0, FISH_X1, GOAL_GAP, RAMP_DROP, ROAD_HALF, bridgeSway, hillY, roadHeading, roadX, roadY, type Course, type Obstacle } from './course.ts';
 import { CRITTERS, type CritterDef } from './critters.ts';
 import type { Landmark, RunnerLevel, Theme } from './levels.ts';
 import type { Run } from './sim.ts';
@@ -176,7 +176,7 @@ export class KasugaView {
   private camBase = 0;
   private camLook = 0;
   private wheel?: THREE.Object3D;
-  private weather?: { pts: THREE.Object3D; pos: Float32Array; n: number; rain: boolean; seed: Float32Array };
+  private weather?: { pts: THREE.Object3D; pos: Float32Array; n: number; rain: boolean; seed: Float32Array; flutter: boolean };
   private disposables: { dispose(): void }[] = [];
 
   constructor(host: HTMLElement, course: Course, level: RunnerLevel) {
@@ -228,6 +228,10 @@ export class KasugaView {
       this.scene.add(this.footGlow);
     }
 
+    // 鹿の絵(走る鹿・歩く鹿)。ゴールの景色(奈良公園の鹿)でも使うので、先に読む
+    for (let i = 0; i < 4; i++) this.runTex.push(loadTex(`${ASSET}/kasuga/run_${i}.png`));
+    for (const k of ['doe_l', 'doe_r']) this.walkTex[k] = [0, 1, 2, 3].map((i) => loadTex(`${ASSET}/deer-walk/${k}_${i}.png`));
+
     this.buildGround();
     if (theme.setting === 'town') {
       // 山を下りて街に入る面は、手前を杉の山道にする
@@ -245,6 +249,9 @@ export class KasugaView {
     else if (theme.goal === 'horyuji') this.buildHoryuji();
     else if (theme.goal === 'omiwa') this.buildOmiwa();
     else if (theme.goal === 'heijo') this.buildHeijo();
+    else if (theme.goal === 'zaodo') this.buildZaodo();
+    else if (theme.goal === 'castle') this.buildCastle();
+    else if (theme.goal === 'park') this.buildPark();
     else this.buildSummit();
     // ゴールの景色は、ゴールの道の高さ(坂を登った・下った先)に置く
     const hEnd = this.gy(course.length);
@@ -254,9 +261,6 @@ export class KasugaView {
     this.buildCoins();
     this.buildWeather();
     this.lastCoinState = new Uint8Array(course.coins.length).fill(2); // 2=まだ一度も配置していない
-
-    for (let i = 0; i < 4; i++) this.runTex.push(loadTex(`${ASSET}/kasuga/run_${i}.png`));
-    for (const k of ['doe_l', 'doe_r']) this.walkTex[k] = [0, 1, 2, 3].map((i) => loadTex(`${ASSET}/deer-walk/${k}_${i}.png`));
 
     const dg = new THREE.PlaneGeometry(1.7, 2.267);
     dg.translate(0, 1.13, 0);
@@ -285,7 +289,25 @@ export class KasugaView {
 
   /** 坂のある面か(地面を、高さのある1枚にする)。 */
   private get hilly(): boolean {
-    return !!this.course.hills;
+    return !!this.course.hills || !!this.course.bridge;
+  }
+
+  /** つり橋の下の谷の深さ(0〜1。橋の両端では0、まんなかで1) */
+  private valley(s: number): number {
+    const b = this.course.bridge;
+    if (!b) return 0;
+    const sm = (a: number, c: number, x: number) => {
+      const t = Math.max(0, Math.min(1, (x - a) / (c - a)));
+      return t * t * (3 - 2 * t);
+    };
+    return sm(b.from - 4, b.from + 36, s) * (1 - sm(b.to - 36, b.to + 4, s));
+  }
+  /** 谷の深さ[m] */
+  private static VALLEY_DEPTH = 40;
+  /** つり橋のあたりか(道ばたの置き物は、橋の高さでなく谷の地面に置く) */
+  private nearBridge(s: number): boolean {
+    const b = this.course.bridge;
+    return !!b && s > b.from - 4 && s < b.to + 4;
   }
 
   /** 地面(芝)の高さ。坂の高さに、山道では、道から離れるほど上がる斜面(土手)を足す。 */
@@ -310,14 +332,17 @@ export class KasugaView {
       if (d2 < best) { best = d2; bs = s; }
     }
     const d = Math.sqrt(best);
-    const bank = this.theme.setting === 'mountain' ? Math.min(26, Math.max(0, d - 9) ** 1.25 * 0.22) : 0;
-    return { h: hillY(this.course, bs) + bank, d };
+    const v = this.valley(bs);
+    // 山道は両わきが土手。つり橋の下は、深い谷(橋から離れると、少しずつ上がる)
+    const bank = this.theme.setting === 'mountain' ? Math.min(26, Math.max(0, d - 9) ** 1.25 * 0.22) * (1 - v) : 0;
+    const drop = v * (KasugaView.VALLEY_DEPTH - Math.min(30, Math.max(0, d - 40) * 0.25));
+    return { h: hillY(this.course, bs) + bank - drop, d };
   }
 
   /** 道に沿った、置き物の位置と向き(rotY は、道の向きに足す)。高さは地面に合わせる。 */
   private rp(s: number, x: number, o: { y?: number; rotY?: number; scale?: number } = {}): Placement {
     const w = this.roadW(s, x);
-    const g = !this.hilly ? 0 : Math.abs(x) < 9 ? hillY(this.course, s) : this.terrainAt(w.x, w.z, s).h;
+    const g = !this.hilly ? 0 : Math.abs(x) < 9 && !this.nearBridge(s) ? hillY(this.course, s) : this.terrainAt(w.x, w.z, s).h;
     return { x: w.x, z: w.z, y: (o.y ?? 0) + g, rotY: -w.psi + (o.rotY ?? 0), scale: o.scale };
   }
 
@@ -327,7 +352,7 @@ export class KasugaView {
   }
 
   /** 道の面(中心線に沿って曲がる帯)。坂・ジャンプ台の高さに沿う。yOff=道からの浮かせ */
-  private roadRibbon(a: number, b: number, width: number, mat: THREE.Material, yOff = 0, vScale = 4): THREE.Mesh {
+  private roadRibbon(a: number, b: number, width: number, mat: THREE.Material, yOff = 0, vScale = 4, xOff = 0): THREE.Mesh {
     const base = this.hilly ? 1 : 2;
     const bumps = this.course.bumps ?? [];
     const nearRamp = (s: number) => bumps.some((bp) => s > bp.s - bp.len - 0.6 && s < bp.s + RAMP_DROP + 0.6);
@@ -340,8 +365,8 @@ export class KasugaView {
     const idx: number[] = [];
     for (let i = 0; i <= n; i++) {
       const s = ss[i];
-      const l = this.roadW(s, -width / 2);
-      const r = this.roadW(s, width / 2);
+      const l = this.roadW(s, xOff - width / 2);
+      const r = this.roadW(s, xOff + width / 2);
       pos.push(l.x, l.y + yOff, l.z, r.x, r.y + yOff, r.z);
       uv.push(0, s / vScale, width / 4, s / vScale);
       if (i < n) {
@@ -380,12 +405,24 @@ export class KasugaView {
     const w = ROAD_HALF * 2;
     const dash: Placement[] = [];
     const curbs: Placement[] = [];
+    // つり橋の区間は、道でなく、せまい板の橋にする
+    const br = this.course.bridge;
+    const deckSpans: [number, number][] = [];
+    const roadSpans: [number, number][] = [];
     for (const [a, b] of spans) {
+      if (!br || b <= br.from || a >= br.to) { roadSpans.push([a, b]); continue; }
+      if (a < br.from) roadSpans.push([a, br.from]);
+      deckSpans.push([Math.max(a, br.from), Math.min(b, br.to)]);
+      if (b > br.to) roadSpans.push([br.to, b]);
+    }
+    for (const [a, b] of roadSpans) {
       this.scene.add(this.roadRibbon(a, b, w, matRoad));
       // 縁石(2mごとの短い石)
       if (th.setting !== 'mountain') for (let q = Math.ceil(a / 2) * 2; q + 2 <= b + 0.01; q += 2) for (const sx of [-1, 1]) curbs.push(this.rp(q + 1, sx * (ROAD_HALF + 0.2)));
       if (th.setting === 'town') for (let q = Math.ceil(a / 6) * 6; q < b - 2.5; q += 6) dash.push(this.rp(q + 1.2, 0, { y: 0.015 }));
     }
+    if (br) this.buildBridge(deckSpans);
+    if (th.setting === 'river') this.buildCanal();
     addInstanced(this.scene, [{ geo: new THREE.BoxGeometry(0.4, 0.22, 2.08), mat: matCurb, pos: [0, 0.11, 0] }], curbs);
     if (dash.length) {
       addInstanced(this.scene, [{ geo: new THREE.BoxGeometry(0.22, 0.02, 2.6), mat: new THREE.MeshStandardMaterial({ color: 0xf4efe0, roughness: 0.7 }) }], dash, false);
@@ -413,6 +450,7 @@ export class KasugaView {
     const pylonMat = new THREE.MeshStandardMaterial({ color: 0xff6a2a, roughness: 0.5, emissive: 0x401400 });
     const stripe = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5 });
     for (const h of holes) {
+      if (br && h.s > br.from && h.s < br.to) continue; // 橋の板のぬけた所は、谷が見えるだけ
       this.scene.add(this.roadRibbon(h.s, h.s + h.len, w + 0.8, pitMat, 0.03));
       // 穴のふちに、黄色い帯(手前と奥)
       for (const edge of [h.s, h.s + h.len]) {
@@ -483,6 +521,98 @@ export class KasugaView {
     const m = new THREE.Mesh(g, mat);
     m.receiveShadow = true;
     return m;
+  }
+
+  /** つり橋: 板の床・手すりのロープ・2本の太いケーブルと吊り糸・両端の塔・谷底の川。 */
+  private buildBridge(deckSpans: [number, number][]): void {
+    const br = this.course.bridge!;
+    const planks = canvasTexture(128, (g, n) => {
+      const rnd = rngFor(41);
+      for (let i = 0; i < 8; i++) {
+        const c = 150 + Math.floor(rnd() * 40);
+        g.fillStyle = `rgb(${c},${Math.floor(c * 0.72)},${Math.floor(c * 0.48)})`;
+        g.fillRect(0, (i * n) / 8, n, n / 8 - 3);
+        g.fillStyle = 'rgba(40,24,10,0.9)';
+        g.fillRect(0, ((i + 1) * n) / 8 - 3, n, 3);
+      }
+    }, true);
+    this.disposables.push(planks);
+    const deckMat = new THREE.MeshStandardMaterial({ map: planks, roughness: 0.85 });
+    const dw = BRIDGE_HALF * 2 + 0.4;
+    for (const [a, b] of deckSpans) {
+      const top = this.roadRibbon(a, b, dw, deckMat, 0, 4);
+      top.castShadow = true;
+      this.scene.add(top);
+    }
+    // 手すりのロープと柱
+    const ropeM = new THREE.MeshStandardMaterial({ color: 0x8a6a44, roughness: 0.9 });
+    const steel = new THREE.MeshStandardMaterial({ color: 0x8a3a2a, roughness: 0.6, metalness: 0.4 });
+    const posts: Placement[] = [];
+    const len = br.to - br.from;
+    const towerH = 14;
+    const cableAt = (s: number) => {
+      const u = (s - br.from) / len;
+      return towerH - (towerH - 1.4) * 4 * u * (1 - u); // 塔の上から、まんなかで低くたれる
+    };
+    for (const sx of [-1, 1]) {
+      const hand: THREE.Vector3[] = [];
+      const cable: THREE.Vector3[] = [];
+      for (let s = br.from; s <= br.to + 0.01; s += 3) {
+        const p = this.roadW(s, sx * (BRIDGE_HALF + 0.2));
+        const y = this.gy(s);
+        hand.push(new THREE.Vector3(p.x, y + 1.05, p.z));
+        cable.push(new THREE.Vector3(p.x, y + cableAt(s), p.z));
+        posts.push({ x: p.x, y, z: p.z });
+      }
+      this.scene.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(hand), hand.length * 2, 0.05, 6), ropeM));
+      this.scene.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(cable), cable.length * 2, 0.1, 6), steel));
+      // 吊り糸(ケーブルから手すりへ)
+      const pts: number[] = [];
+      for (let i = 0; i < hand.length; i++) pts.push(hand[i].x, hand[i].y, hand[i].z, cable[i].x, cable[i].y, cable[i].z);
+      const lg = new THREE.BufferGeometry();
+      lg.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+      this.scene.add(new THREE.LineSegments(lg, new THREE.LineBasicMaterial({ color: 0x5a4a3a })));
+    }
+    addInstanced(this.scene, [{ geo: new THREE.CylinderGeometry(0.05, 0.05, 1.05, 6), mat: ropeM, pos: [0, 0.52, 0] }], posts, false);
+    // 両端の塔(鉄の門形)
+    for (const s of [br.from, br.to]) {
+      const w = this.roadW(s, 0);
+      const t = new THREE.Group();
+      for (const sx of [-1, 1]) {
+        const leg = new THREE.Mesh(new THREE.BoxGeometry(0.5, towerH + 0.6, 0.5), steel);
+        leg.position.set(sx * (BRIDGE_HALF + 0.45), (towerH + 0.6) / 2, 0);
+        leg.castShadow = true;
+        t.add(leg);
+      }
+      const beam = new THREE.Mesh(new THREE.BoxGeometry(BRIDGE_HALF * 2 + 1.6, 0.5, 0.5), steel);
+      beam.position.y = towerH + 0.4;
+      t.add(beam);
+      t.position.set(w.x, this.gy(s), w.z);
+      t.rotation.y = -w.psi;
+      this.scene.add(t);
+    }
+    // 谷底の川(エメラルド色)
+    const mid = (br.from + br.to) / 2;
+    const mw = this.roadW(mid, 0);
+    const river = new THREE.Mesh(
+      new THREE.PlaneGeometry(900, len * 0.45).rotateX(-Math.PI / 2),
+      new THREE.MeshStandardMaterial({ color: 0x2f9a8a, roughness: 0.12, metalness: 0.1 }),
+    );
+    river.position.set(mw.x, this.gy(mid) - KasugaView.VALLEY_DEPTH + 0.8, mw.z);
+    river.rotation.y = -mw.psi;
+    this.scene.add(river);
+  }
+
+  /** 川ぞいの道: 道の左に、石の縁の水路(金魚が跳ぶ)。 */
+  private buildCanal(): void {
+    const water = new THREE.MeshStandardMaterial({ color: 0x4f9ec4, roughness: 0.08, metalness: 0.1 });
+    const stone = new THREE.MeshStandardMaterial({ color: 0xb0aa9c, roughness: 0.9 });
+    const x = -(ROAD_HALF + 2.6);
+    const end = this.course.length + 60;
+    this.scene.add(this.roadRibbon(-20, end, 3.0, water, 0.02, 4, x));
+    const edges: Placement[] = [];
+    for (let s = -20; s < end; s += 2) for (const ex of [x - 1.65, x + 1.65]) edges.push(this.rp(s + 1, ex));
+    addInstanced(this.scene, [{ geo: new THREE.BoxGeometry(0.35, 0.3, 2.08), mat: stone, pos: [0, 0.1, 0] }], edges, false);
   }
 
   /** ジャンプ台: 台の面に矢印、両わきに黄色と黒のしま模様の板。 */
@@ -576,16 +706,30 @@ export class KasugaView {
       if (th.halo > 0) this.addHalos(lp.map((p) => new THREE.Vector3(p.x, (p.y ?? 0) + 2.0, p.z)), 0xffb450, 3.6 * th.halo + 1.2, Math.min(1, th.halo));
     }
 
-    // 杉(根もと・3段の葉)
+    // 杉(根もと・3段の葉)。紅葉・桜の面は、丸い木
     const trunk = new THREE.MeshStandardMaterial({ color: 0x6b4a2e, roughness: 1 });
     const leafA = new THREE.MeshStandardMaterial({ color: th.snowCaps ? 0x4d7a64 : 0x2f6a3a, roughness: 0.9 });
     const leafB = new THREE.MeshStandardMaterial({ color: th.snowCaps ? 0x6a9a82 : 0x3d7d43, roughness: 0.9 });
-    const treeParts: PartDef[] = [
+    const round = th.foliage === 'maple' || th.foliage === 'sakura';
+    const blobColors = th.foliage === 'maple' ? [0xd9452a, 0xf08a2a, 0xf2c043] : [0xf7b8cc, 0xfbd3e0, 0xf29ab6];
+    let treeParts: PartDef[] = [
       { geo: new THREE.CylinderGeometry(0.35, 0.5, 3.2, 8), mat: trunk, pos: [0, 1.6, 0] },
       { geo: new THREE.ConeGeometry(3.0, 5.2, 9), mat: leafA, pos: [0, 5.0, 0] },
       { geo: new THREE.ConeGeometry(2.4, 4.4, 9), mat: leafB, pos: [0, 7.8, 0] },
       { geo: new THREE.ConeGeometry(1.7, 3.6, 9), mat: leafA, pos: [0, 10.3, 0] },
     ];
+    // 丸い木は、色ちがいを3種類つくって、まぜて置く
+    const roundParts = (k: number): PartDef[] => {
+      const m1 = new THREE.MeshStandardMaterial({ color: blobColors[k % 3], roughness: 0.85, flatShading: true });
+      const m2 = new THREE.MeshStandardMaterial({ color: blobColors[(k + 1) % 3], roughness: 0.85, flatShading: true });
+      return [
+        { geo: new THREE.CylinderGeometry(0.28, 0.42, 3.4, 8), mat: trunk, pos: [0, 1.7, 0] },
+        { geo: new THREE.IcosahedronGeometry(2.6, 1), mat: m1, pos: [0, 4.6, 0] },
+        { geo: new THREE.IcosahedronGeometry(1.8, 1), mat: m2, pos: [1.4, 5.6, 0.6] },
+        { geo: new THREE.IcosahedronGeometry(1.7, 1), mat: m1, pos: [-1.3, 5.3, -0.5] },
+      ];
+    };
+    if (round) treeParts = roundParts(0);
     if (th.snowCaps) {
       // 葉の上に、雪をのせる(少し小さい白い円すい)
       treeParts.push(
@@ -604,12 +748,21 @@ export class KasugaView {
         if (rnd() < 0.5) tp.push(this.rp(s + rnd() * 4, sx * (near + 9 + rnd() * 14), { scale: 1 + rnd() * 0.9, rotY: rnd() * 6 }));
       }
     }
-    addInstanced(this.scene, treeParts, tp);
+    if (round) {
+      // 3種類に分けて置く(紅葉は赤・橙・黄、桜は濃い・うすいピンク)
+      for (let k = 0; k < 3; k++) addInstanced(this.scene, k === 0 ? treeParts : roundParts(k), tp.filter((_, i) => i % 3 === k));
+    } else {
+      addInstanced(this.scene, treeParts, tp);
+    }
 
-    const bushMat = new THREE.MeshStandardMaterial({ color: th.snowCaps ? 0xe9f1f7 : 0x4f9446, roughness: 1 });
+    const bushColor = th.snowCaps ? 0xe9f1f7 : th.foliage === 'maple' ? 0xc8662e : 0x4f9446;
+    const bushMat = new THREE.MeshStandardMaterial({ color: bushColor, roughness: 1 });
     const bp: Placement[] = [];
     for (let s = Math.max(0, from); s < Math.min(to, this.end); s += 7) {
-      for (const sx of [-1, 1]) if (rnd() < 0.7) bp.push(this.rp(s + rnd() * 6, sx * (ROAD_HALF + 3 + rnd() * 3), { scale: 0.6 + rnd() * 0.6 }));
+      for (const sx of [-1, 1]) {
+        const canal = th.setting === 'river' && sx < 0 ? 3.5 : 0; // 水路のある側は、水路の外へ
+        if (rnd() < 0.7) bp.push(this.rp(s + rnd() * 6, sx * (ROAD_HALF + 3 + canal + rnd() * 3), { scale: 0.6 + rnd() * 0.6 }));
+      }
     }
     addInstanced(this.scene, [{ geo: new THREE.SphereGeometry(1, 10, 8), mat: bushMat, pos: [0, 0.6, 0] }], bp);
   }
@@ -978,11 +1131,11 @@ export class KasugaView {
   }
 
   /** 金堂のような、屋根の大きな堂。 */
-  private hall(w: number, d: number, h: number, stories = 1): THREE.Group {
+  private hall(w: number, d: number, h: number, stories = 1, colors: { body?: number; pillar?: number; roof?: number } = {}): THREE.Group {
     const g = new THREE.Group();
-    const white = new THREE.MeshStandardMaterial({ color: this.theme.snowCaps ? 0xf4f7fa : 0xf1e8d6, roughness: 0.85 });
-    const red = new THREE.MeshStandardMaterial({ color: RED, roughness: 0.5, emissive: 0x200600 });
-    const roof = new THREE.MeshStandardMaterial({ color: this.theme.snowCaps ? 0xe3eaf1 : 0x57493c, roughness: 0.95 });
+    const white = new THREE.MeshStandardMaterial({ color: colors.body ?? (this.theme.snowCaps ? 0xf4f7fa : 0xf1e8d6), roughness: 0.85 });
+    const red = new THREE.MeshStandardMaterial({ color: colors.pillar ?? RED, roughness: 0.5, emissive: 0x200600 });
+    const roof = new THREE.MeshStandardMaterial({ color: colors.roof ?? (this.theme.snowCaps ? 0xe3eaf1 : 0x57493c), roughness: 0.95 });
     const stone = new THREE.MeshStandardMaterial({ color: 0xcfc8b8, roughness: 0.95 });
     const plat = new THREE.Mesh(new THREE.BoxGeometry(w + 6, 1.4, d + 6), stone);
     plat.position.y = 0.7;
@@ -1273,6 +1426,139 @@ export class KasugaView {
     }
   }
 
+  /** ゴールの景色のまわりに置く、丸い木(紅葉・桜)。 */
+  private roundTrees(colors: number[], spots: { x: number; z: number; s: number }[]): void {
+    const trunk = new THREE.MeshStandardMaterial({ color: 0x6b4a2e, roughness: 1 });
+    colors.forEach((c, k) => {
+      const m = new THREE.MeshStandardMaterial({ color: c, roughness: 0.85, flatShading: true });
+      addInstanced(this.scene, [
+        { geo: new THREE.CylinderGeometry(0.3, 0.45, 3.4, 8), mat: trunk, pos: [0, 1.7, 0] },
+        { geo: new THREE.IcosahedronGeometry(2.6, 1), mat: m, pos: [0, 4.6, 0] },
+        { geo: new THREE.IcosahedronGeometry(1.8, 1), mat: m, pos: [1.4, 5.6, 0.6] },
+      ], spots.filter((_, i) => i % colors.length === k).map((p) => ({ x: p.x, z: p.z, scale: p.s })));
+    });
+  }
+
+  /** 遠くの山なみ(重なるほど、うすい色)。 */
+  private ranges(z0: number, cols: number[]): void {
+    for (let i = 0; i < 16; i++) {
+      const layer = i % 3;
+      const mat = new THREE.MeshStandardMaterial({ color: cols[layer], roughness: 1, flatShading: true });
+      const h = 38 + ((i * 29) % 40) + layer * 10;
+      const m = new THREE.Mesh(new THREE.ConeGeometry(70 + (i % 4) * 18, h, 7), mat);
+      m.position.set(-420 + i * 56, h / 2 - 3, -(z0 + layer * 70));
+      this.scene.add(m);
+    }
+  }
+
+  // ---- 金峯山寺の蔵王堂(吉野): 黒っぽい大きな二重屋根の堂と、紅葉 ----
+  private buildZaodo(): void {
+    const end = this.course.length + GOAL_GAP;
+    const hall = this.hall(30, 22, 10, 2, { body: 0x6e4a32, pillar: 0x3d2a1c, roof: 0x4a3326 });
+    hall.position.set(0, 0, -(end + 6));
+    hall.scale.setScalar(1.15);
+    this.scene.add(hall);
+    // 石段
+    const stone = new THREE.MeshStandardMaterial({ color: 0xb8b0a0, roughness: 0.95 });
+    for (let i = 0; i < 5; i++) {
+      const st = new THREE.Mesh(new THREE.BoxGeometry(16 - i, 0.45, 2.2), stone);
+      st.position.set(0, 0.22 + i * 0.45, -(end - 22 + i * 2));
+      st.receiveShadow = true;
+      this.scene.add(st);
+    }
+    const rnd = rngFor(17);
+    const spots: { x: number; z: number; s: number }[] = [];
+    for (let i = 0; i < 30; i++) {
+      const sx = rnd() < 0.5 ? -1 : 1;
+      spots.push({ x: sx * (22 + rnd() * 50), z: -(end - 30 + rnd() * 80), s: 1 + rnd() * 0.8 });
+    }
+    this.roundTrees([0xd9452a, 0xf08a2a, 0xf2c043], spots);
+    this.ranges(end + 200, [0x9a5a3a, 0xc08a5a, 0xd8b896]);
+  }
+
+  // ---- 郡山城: 石垣の上の白い天守と、桜・堀 ----
+  private buildCastle(): void {
+    const end = this.course.length + GOAL_GAP;
+    const g = new THREE.Group();
+    const stone = new THREE.MeshStandardMaterial({ color: 0x9c968a, roughness: 0.95, flatShading: true });
+    const white = new THREE.MeshStandardMaterial({ color: 0xf4f1e8, roughness: 0.8 });
+    const roof = new THREE.MeshStandardMaterial({ color: 0x55606c, roughness: 0.8 });
+    const gold = new THREE.MeshStandardMaterial({ color: 0xffd36a, metalness: 0.6, roughness: 0.3, emissive: 0x6a4410, emissiveIntensity: 0.5 });
+    // 石垣(すそが広い)
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(15, 20, 9, 4, 1), stone);
+    base.rotation.y = Math.PI / 4;
+    base.position.y = 4.5;
+    base.receiveShadow = true;
+    g.add(base);
+    let y = 9;
+    const tiers: [number, number, number][] = [[16, 6.5, 13], [12, 5.5, 10], [8, 5, 7]];
+    for (const [w, h, d] of tiers) {
+      const body = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), white);
+      body.position.y = y + h / 2;
+      body.castShadow = true;
+      const r = new THREE.Mesh(new THREE.ConeGeometry(Math.hypot(w + 4, d + 4) / 2, h * 0.55, 4), roof);
+      r.rotation.y = Math.PI / 4;
+      r.scale.set((w + 4) / Math.hypot(w + 4, d + 4) * 1.41, 1, (d + 4) / Math.hypot(w + 4, d + 4) * 1.41);
+      r.position.y = y + h + h * 0.2;
+      r.castShadow = true;
+      g.add(body, r);
+      y += h + h * 0.3;
+    }
+    for (const sx of [-1, 1]) {
+      const fish = new THREE.Mesh(new THREE.ConeGeometry(0.4, 1.4, 8), gold); // しゃちほこ(小さな金の飾り)
+      fish.position.set(sx * 3.2, y + 0.8, 0);
+      g.add(fish);
+    }
+    g.position.set(0, 0, -(end + 20));
+    this.scene.add(g);
+    // 堀
+    const moat = new THREE.Mesh(new THREE.PlaneGeometry(140, 10).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x3f8aa8, roughness: 0.1 }));
+    moat.position.set(0, 0.02, -(end - 8));
+    this.scene.add(moat);
+    // 堀にかかる橋(道のつづき)
+    const span = new THREE.Mesh(new THREE.BoxGeometry(8, 0.5, 11), new THREE.MeshStandardMaterial({ color: 0x8a6a44, roughness: 0.8 }));
+    span.position.set(0, 0.2, -(end - 8));
+    this.scene.add(span);
+    const rnd = rngFor(23);
+    const spots: { x: number; z: number; s: number }[] = [];
+    for (let i = 0; i < 26; i++) {
+      const sx = rnd() < 0.5 ? -1 : 1;
+      spots.push({ x: sx * (12 + rnd() * 55), z: -(end - 26 + rnd() * 70), s: 0.9 + rnd() * 0.7 });
+    }
+    this.roundTrees([0xf7b8cc, 0xfbd3e0, 0xf29ab6], spots);
+    this.ranges(end + 220, [0x5f8f5a, 0x7fa87a, 0xa6c5a3]);
+  }
+
+  // ---- 奈良公園: 大きな鳥居・芝生の鹿たち・興福寺の五重塔・若草山 ----
+  private buildPark(): void {
+    const L = this.course.length;
+    const end = L + GOAL_GAP;
+    this.scene.add(this.torii(L, 1.5));
+    // 芝生で休む鹿たち(絵の板。カメラのほうを向く)
+    const rnd = rngFor(31);
+    for (let i = 0; i < 8; i++) {
+      const tex = this.walkTex[rnd() < 0.5 ? 'doe_l' : 'doe_r'][0];
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 1.78).translate(0, 0.89, 0), new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: 0.45, toneMapped: false }));
+      const sx = i % 2 ? -1 : 1;
+      m.position.set(sx * (6 + rnd() * 22), 0, -(L + 14 + rnd() * 50));
+      m.scale.setScalar(1.1 + rnd() * 0.3);
+      this.scene.add(m);
+    }
+    const tower = this.pagoda(5, 8);
+    tower.position.set(-46, 0, -(end + 70));
+    this.scene.add(tower);
+    const hill = new THREE.Mesh(new THREE.SphereGeometry(70, 24, 14), new THREE.MeshStandardMaterial({ color: 0x7fb85a, roughness: 1 }));
+    hill.scale.set(1.6, 0.5, 0.9);
+    hill.position.set(40, -6, -(end + 170));
+    this.scene.add(hill);
+    const spots: { x: number; z: number; s: number }[] = [];
+    for (let i = 0; i < 22; i++) {
+      const sx = rnd() < 0.5 ? -1 : 1;
+      spots.push({ x: sx * (14 + rnd() * 50), z: -(L - 10 + rnd() * 110), s: 0.9 + rnd() * 0.6 });
+    }
+    this.roundTrees([0xf7b8cc, 0xfbd3e0, 0xf29ab6], spots);
+  }
+
   // ---- 若草山の山頂: 木のゴールゲート・山なみ ----
   private buildSummit(): void {
     const L = this.course.length;
@@ -1422,6 +1708,41 @@ export class KasugaView {
         scorch.visible = false;
         obj.add(ring, fill, bolt, scorch);
         sprite = bolt;
+      } else if (o.kind === 'leaf') {
+        // 落ち葉の山: こんもりした山と、まわりに散らばる葉
+        const mound = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 10), new THREE.MeshStandardMaterial({ color: 0xc9562a, roughness: 1, flatShading: true }));
+        mound.scale.set(1.15, 0.28, 1.0);
+        obj.add(mound);
+        const rl = rngFor(o.id + 3);
+        const leafCols = [0xd9452a, 0xf08a2a, 0xf2c043, 0xb8341f];
+        for (let k = 0; k < 16; k++) {
+          const a = rl() * Math.PI * 2;
+          const r = 0.3 + rl() * 1.1;
+          const lf = new THREE.Mesh(new THREE.CircleGeometry(0.16, 5).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: leafCols[k % 4], roughness: 0.9, side: THREE.DoubleSide }));
+          lf.scale.set(1.6, 1, 1);
+          lf.position.set(Math.cos(a) * r, 0.05 + (r < 0.9 ? 0.26 * (1 - r / 1.15) : 0), Math.sin(a) * r);
+          lf.rotation.y = rl() * 6;
+          obj.add(lf);
+        }
+      } else if (o.kind === 'sheet') {
+        // 花見のシート: 青いシートに、お弁当と湯のみ
+        const tarp = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 2.1).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x2f7fd6, roughness: 0.6 }));
+        tarp.position.y = 0.03;
+        obj.add(tarp);
+        const box = new THREE.MeshStandardMaterial({ color: 0x2a1c18, roughness: 0.4 });
+        const lid = new THREE.MeshStandardMaterial({ color: 0xc8322a, roughness: 0.4 });
+        for (const [bx, bz] of [[-0.45, -0.2], [0.35, 0.3]]) {
+          const b = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.22, 0.42), box);
+          b.position.set(bx, 0.14, bz);
+          const l = new THREE.Mesh(new THREE.BoxGeometry(0.57, 0.04, 0.44), lid);
+          l.position.set(bx, 0.27, bz);
+          obj.add(b, l);
+        }
+        const cup = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.07, 0.16, 10), new THREE.MeshStandardMaterial({ color: 0xf2efe6, roughness: 0.5 }));
+        cup.position.set(0.6, 0.11, -0.5);
+        obj.add(cup);
+      } else if (o.kind === 'fish') {
+        obj.add(this.goldfishModel());
       } else if (o.kind === 'fence') {
         const w = o.halfW * 2;
         const n = Math.max(2, Math.round(w / 1.1) + 1);
@@ -1594,6 +1915,30 @@ export class KasugaView {
     return g;
   }
 
+  /** 金魚(赤い体・ひらひらの尾・白い目)。頭が +x を向く。 */
+  private goldfishModel(): THREE.Group {
+    const g = new THREE.Group();
+    const red = new THREE.MeshStandardMaterial({ color: 0xff5a1f, roughness: 0.35, emissive: 0x401000 });
+    const body = new THREE.Mesh(new THREE.SphereGeometry(0.42, 18, 12), red);
+    body.scale.set(1.25, 0.9, 0.7);
+    const tail = new THREE.Mesh(new THREE.ConeGeometry(0.36, 0.6, 12).rotateZ(Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0xff8a4a, roughness: 0.4, transparent: true, opacity: 0.9 }));
+    tail.position.x = -0.68;
+    tail.scale.set(1, 1, 0.3);
+    const white = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    const black = new THREE.MeshBasicMaterial({ color: 0x111111 });
+    for (const sz of [-0.27, 0.27]) {
+      const e = new THREE.Mesh(new THREE.SphereGeometry(0.1, 10, 8), white);
+      e.position.set(0.3, 0.1, sz);
+      const p = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 6), black);
+      p.position.set(0.36, 0.1, sz * 1.15);
+      g.add(e, p);
+    }
+    body.castShadow = true;
+    g.add(body, tail);
+    g.scale.setScalar(1.25);
+    return g;
+  }
+
   private signals: { o: Obstacle; lamps: THREE.Mesh[] }[] = [];
   /** 線路(道を横切る2本のレール)と、警報機(赤いランプ・バッテン印)。 */
   private buildTrack(o: Obstacle): void {
@@ -1745,7 +2090,8 @@ export class KasugaView {
     const w = this.theme.weather;
     if (w === 'none') return;
     const rain = w === 'rain';
-    const n = rain ? 1300 : 1700;
+    const flutter = w === 'leaves' || w === 'petals'; // 落ち葉・花びら: ひらひら舞う
+    const n = rain ? 1300 : flutter ? 1000 : 1700;
     const pos = new Float32Array(n * (rain ? 6 : 3));
     const seed = new Float32Array(n * 4);
     const rnd = rngFor(77);
@@ -1760,6 +2106,21 @@ export class KasugaView {
     let obj: THREE.Object3D;
     if (rain) {
       obj = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: 0xcfe0f2, transparent: true, opacity: 0.45, depthWrite: false }));
+    } else if (flutter) {
+      // 1枚ずつ色を変える(紅葉=赤・橙・黄 / 桜=ピンク)
+      const palette = (w === 'leaves' ? [0xd9452a, 0xf08a2a, 0xf2c043, 0xb8341f] : [0xffc4d6, 0xffe2ea, 0xff9fbf]).map((c) => new THREE.Color(c));
+      const col = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) palette[i % palette.length].toArray(col, i * 3);
+      geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+      const tex = canvasTexture(64, (g, s) => {
+        g.clearRect(0, 0, s, s);
+        g.fillStyle = '#ffffff';
+        g.beginPath();
+        g.ellipse(s / 2, s / 2, s * 0.42, s * 0.24, 0.6, 0, Math.PI * 2);
+        g.fill();
+      });
+      this.disposables.push(tex);
+      obj = new THREE.Points(geo, new THREE.PointsMaterial({ map: tex, vertexColors: true, size: w === 'leaves' ? 0.36 : 0.26, transparent: true, alphaTest: 0.3, depthWrite: false, sizeAttenuation: true }));
     } else {
       const tex = glowTexture();
       this.disposables.push(tex);
@@ -1767,13 +2128,13 @@ export class KasugaView {
     }
     obj.frustumCulled = false;
     this.scene.add(obj);
-    this.weather = { pts: obj, pos, n, rain, seed };
+    this.weather = { pts: obj, pos, n, rain, seed, flutter };
   }
 
   private updateWeather(t: number): void {
     const wd = this.weather;
     if (!wd) return;
-    const { pos, n, rain, seed } = wd;
+    const { pos, n, rain, seed, flutter } = wd;
     const cx = this.camera.position.x;
     const cz = this.camera.position.z;
     const by = this.camBase; // 坂の高さに合わせて降らせる
@@ -1796,6 +2157,13 @@ export class KasugaView {
         pos[k + 3] = cx + sx + 0.18;
         pos[k + 4] = y + 0.85;
         pos[k + 5] = cz + sz - 0.08;
+      } else if (flutter) {
+        // ひらひら: ゆっくり落ちながら、大きく左右にゆれる
+        const y = by + 14 - ((t * (1.0 + r * 1.1) + seed[i * 4 + 1]) % 14);
+        const k = i * 3;
+        pos[k] = cx + sx + Math.sin(t * (0.9 + r) + i) * 1.6;
+        pos[k + 1] = y;
+        pos[k + 2] = cz + sz + Math.cos(t * 0.7 + i * 1.3) * 0.9;
       } else {
         const y = by + 15 - ((t * (1.6 + r * 1.4) + seed[i * 4 + 1]) % 15);
         const k = i * 3;
@@ -1879,6 +2247,8 @@ export class KasugaView {
     this.camLook += (lookT - this.camLook) * k;
     this.camera.position.set(back.x, this.camBase + 3.5 + lift + sy + c * 2.2, back.z);
     this.camera.lookAt(ahead.x, this.camLook + 1.5 + lift * 0.5 + c * 2.6, ahead.z);
+    // つり橋の上では、ゆれに合わせて画面が少しかたむく
+    if (run.onBridge) this.camera.rotateZ(-bridgeSway(run.t) * 0.012);
 
     // 太陽(月)の影は鹿のまわりだけ
     const sp = this.theme.sunPos;
@@ -1943,6 +2313,17 @@ export class KasugaView {
         const tw = this.roadW(e.o.s, st.x);
         e.obj.position.set(tw.x, this.gy(e.o.s), tw.z);
         e.obj.rotation.y = -this.roadW(e.o.s, 0).psi;
+        continue;
+      }
+      if (e.o.kind === 'fish') {
+        // 金魚: 水路から弧をえがいて、道を横切る(水の中では見えない)
+        e.obj.visible = st.y > -1;
+        const fw = this.roadW(e.o.s, st.x);
+        e.obj.position.set(fw.x, this.gy(e.o.s) + Math.max(0, st.y) + 0.3, fw.z);
+        e.obj.rotation.y = -fw.psi;
+        // 弧に合わせて、頭を上・下へ向ける
+        const u = (st.x - FISH_X0) / (FISH_X1 - FISH_X0);
+        e.obj.children[0].rotation.z = 0.9 * (1 - 2 * Math.min(1, Math.max(0, u)));
         continue;
       }
       if (e.o.kind === 'bolt') {

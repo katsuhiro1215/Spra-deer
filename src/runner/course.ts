@@ -9,7 +9,23 @@ export const COURSE_LENGTH = 1000; // 既定の長さ
 /** ゴールの先、背景の建物(社殿・港)までの距離。 */
 export const GOAL_GAP = 75;
 
-export type ObstacleKind = 'hole' | 'poop' | 'fence' | 'stone' | 'deer' | 'puddle' | 'ice' | 'critter' | 'train' | 'bolt';
+export type ObstacleKind = 'hole' | 'poop' | 'fence' | 'stone' | 'deer' | 'puddle' | 'ice' | 'critter' | 'train' | 'bolt' | 'leaf' | 'fish' | 'sheet';
+
+/** 金魚: 左の水路(この位置)から、道を横切って右へ跳ぶ */
+export const FISH_X0 = -(3.6 + 2.6);
+export const FISH_X1 = 3.6 + 1.4;
+/** 金魚が空中にいる時間[秒] */
+export const FISH_FLY = 1.3;
+
+/** つり橋の、落ちずに走れる幅の半分[m] */
+export const BRIDGE_HALF = 1.9;
+/** つり橋のゆれ(左右へ押す速さ[m/秒])。ゆっくりした揺れに、5秒ごとの突風が加わる */
+export function bridgeSway(t: number): number {
+  const k = Math.floor(t / 5);
+  const u = t - k * 5;
+  const gust = u < 1.2 ? 3.0 * Math.sin((Math.PI * u) / 1.2) * (k % 2 ? 1 : -1) : 0;
+  return 1.5 * Math.sin(1.1 * t) + 0.9 * Math.sin(2.3 * t + 1) + gust;
+}
 
 /** 雷が落ちている時間[秒](この間に、その場所にいると当たる) */
 export const BOLT_TIME = 0.45;
@@ -88,6 +104,10 @@ export interface Course {
   hills?: HillPoint[];
   /** ジャンプ台 */
   bumps?: Bump[];
+  /** 道がまっすぐな区間(s の範囲)。つり橋など */
+  straights?: [number, number][];
+  /** つり橋の区間(s の範囲)。幅がせまく、左右にゆれる */
+  bridge?: { from: number; to: number };
 }
 
 const smooth = (a: number, b: number, x: number): number => {
@@ -95,22 +115,31 @@ const smooth = (a: number, b: number, x: number): number => {
   return t * t * (3 - 2 * t);
 };
 
+type Curvy = { curve?: Curve; length: number; straights?: [number, number][] };
+
 /** 距離 s での、道の中心線の左右のずれ[m]。出だしとゴール前は、まっすぐ(0)。 */
-export function roadX(course: { curve?: Curve; length: number }, s: number): number {
+export function roadX(course: Curvy, s: number): number {
   const c = course.curve;
   if (!c) return 0;
   const a = 90; // ここからカーブがはじまる
   const b = course.length - 190; // ここから、まっすぐにもどる(ゴールの100m手前で、まっすぐ)
-  const env = smooth(a, a + 120, s) * (1 - smooth(b, b + 90, s));
+  let env = smooth(a, a + 120, s) * (1 - smooth(b, b + 90, s));
+  // まっすぐな区間(つり橋など)では、ずれを0にもどす(手前80mで、なめらかにつなぐ)
+  for (const [p, q] of course.straights ?? []) {
+    if (s > p - 80 && s < q + 80) {
+      const w = smooth(p - 80, p, s) * (1 - smooth(q, q + 80, s));
+      env *= 1 - w;
+    }
+  }
   return c.amp * env * Math.sin((2 * Math.PI * (s - a)) / c.wave);
 }
 /** 道の向き(進む向きが、まっすぐからどれだけ右へ曲がっているか。ラジアン)。 */
-export function roadHeading(course: { curve?: Curve; length: number }, s: number): number {
+export function roadHeading(course: Curvy, s: number): number {
   if (!course.curve) return 0;
   return Math.atan((roadX(course, s + 0.5) - roadX(course, s - 0.5)) / 1.0);
 }
 /** 道の曲がりぐあい(右へ曲がるほど正。1/半径[m]ぐらい)。 */
-export function roadCurv(course: { curve?: Curve; length: number }, s: number): number {
+export function roadCurv(course: Curvy, s: number): number {
   if (!course.curve) return 0;
   return roadX(course, s + 1) - 2 * roadX(course, s) + roadX(course, s - 1);
 }
@@ -174,8 +203,8 @@ export function roadBend(course: Hilly, s: number): number {
 }
 
 /** 各障害物の当たりの大きさ(半径)。 */
-export const HIT_RADIUS: Record<ObstacleKind, number> = { hole: 0, poop: 0.6, fence: 0.35, stone: 0.85, deer: 0.8, puddle: 1.1, ice: 1.5, critter: 0.8, train: 0, bolt: 1.35 };
-export const OBSTACLE_HEIGHT: Record<ObstacleKind, number> = { hole: 0, poop: 0.55, fence: 1.05, stone: 1.15, deer: 1.25, puddle: 0.3, ice: 0.3, critter: 1.2, train: 99, bolt: 99 };
+export const HIT_RADIUS: Record<ObstacleKind, number> = { hole: 0, poop: 0.6, fence: 0.35, stone: 0.85, deer: 0.8, puddle: 1.1, ice: 1.5, critter: 0.8, train: 0, bolt: 1.35, leaf: 1.25, fish: 0.5, sheet: 1.2 };
+export const OBSTACLE_HEIGHT: Record<ObstacleKind, number> = { hole: 0, poop: 0.55, fence: 1.05, stone: 1.15, deer: 1.25, puddle: 0.3, ice: 0.3, critter: 1.2, train: 99, bolt: 99, leaf: 0.3, fish: 99, sheet: 0.3 };
 
 const DEER_RANGE = (PLAY_HALF + 1.2) * 2;
 /** 電車が動き出す位置(道の中心から、電車の先頭まで)[m] */
@@ -210,6 +239,13 @@ export function obstacleState(o: Obstacle, t: number, t0?: number): ObstacleStat
   if (o.kind === 'deer') {
     const m = pingPong(t, o.freq, o.phase);
     return { x: m.x, s: o.s, y: 0, dir: m.dir };
+  }
+  if (o.kind === 'fish') {
+    // 金魚: freq 秒ごとに、水路から跳び出して、道を横切る(amp=いちばん高い所)。水の中では見えない
+    const p = (((t + o.phase) % o.freq) + o.freq) % o.freq;
+    const u = p / FISH_FLY;
+    if (u > 1) return { x: FISH_X0, s: o.s, y: -9, dir: 0 };
+    return { x: FISH_X0 + (FISH_X1 - FISH_X0) * u, s: o.s, y: 4 * o.amp * u * (1 - u), dir: 1 };
   }
   if (o.kind === 'train') {
     // 動き出すまでは、ずっと遠く(見えない)。動き出すと、片側から道を横切っていく
@@ -248,7 +284,8 @@ function mulberry32(seed: number) {
 
 export type PatternName =
   | 'hole' | 'poop' | 'fenceGap' | 'stones' | 'deerCross' | 'holePoop' | 'fenceHole' | 'coinSnake' | 'puddle' | 'ice'
-  | 'critterSleep' | 'critterCross' | 'critterHop' | 'critterCharge' | 'ramp' | 'crossing' | 'thunder';
+  | 'critterSleep' | 'critterCross' | 'critterHop' | 'critterCharge' | 'ramp' | 'crossing' | 'thunder'
+  | 'leafPile' | 'goldfish' | 'hanami';
 
 export interface CourseOptions {
   seed?: number;
@@ -272,6 +309,8 @@ export interface CourseOptions {
   hills?: HillPoint[];
   /** この割合より先でだけ出す罠(例: 踏切は、街に入ってから) */
   after?: Partial<Record<PatternName, number>>;
+  /** つり橋の区間(コース全体に対する割合) */
+  bridge?: { from: number; to: number };
 }
 
 export function buildCourse(opts: CourseOptions = {}): Course {
@@ -487,8 +526,38 @@ export function buildCourse(opts: CourseOptions = {}): Course {
     return s + 40;
   };
 
+  // 落ち葉の山(紅葉): ふむと、少しすべる(0.8秒曲がれない)
+  const leafPattern = (s: number) => {
+    const f = sign();
+    [-1.4, 1.3, -0.1].forEach((x, i) => add({ kind: 'leaf', s: s + i * 8, x: x * f }));
+    line(s - 6, 0.4 * f, 3, 2.0);
+    coin(s + 4, 1.9 * f);
+    coin(s + 12, -1.9 * f);
+    return s + 20;
+  };
+  // 金魚(水路のある道): 左の水路から、道を横切って跳ぶ。低い所で当たる(跳べばくぐれる)
+  const goldfishPattern = (s: number) => {
+    for (let k = 0; k < 2; k++) add({ kind: 'fish', s: s + k * 9, freq: 2.2 + rand() * 0.4, phase: rand() * 3, amp: 1.75 });
+    line(s - 6, 0, 3, 2.2);
+    coin(s + 4.5, 0, 1.6);
+    return s + 14;
+  };
+  // 花見のシート: ふむと、コインを落とす。すき間を通る
+  const hanamiPattern = (s: number) => {
+    const f = sign();
+    add({ kind: 'sheet', s, x: 1.5 * f });
+    add({ kind: 'sheet', s: s + 9, x: -1.5 * f });
+    coin(s, -1.6 * f);
+    coin(s + 9, 1.6 * f);
+    line(s + 14, 0, 3, 2.0);
+    return s + 18;
+  };
+
   const run = (name: PatternName, s: number, p: number) => {
     switch (name) {
+      case 'leafPile': return leafPattern(s);
+      case 'goldfish': return goldfishPattern(s);
+      case 'hanami': return hanamiPattern(s);
       case 'crossing': return crossingPattern(s);
       case 'thunder': return thunderPattern(s);
       case 'ramp': return rampPattern(s);
@@ -517,7 +586,19 @@ export function buildCourse(opts: CourseOptions = {}): Course {
   let prev: PatternName = opening[opening.length - 1] ?? 'fenceGap';
   const used = new Set<PatternName>(opening);
   const endObstacles = length - (critters.length ? 100 : 75); // 突進する動物は手前から走ってくるので、ゴールから離す(3-1は従来どおり)
+  const br = opts.bridge ? { from: opts.bridge.from * length, to: opts.bridge.to * length } : undefined;
   while (s < endObstacles) {
+    if (br && s + 46 > br.from && s < br.to) {
+      // つり橋: ほかの罠は置かず、板のぬけた所(跳びこえる)だけ。ゆれに耐えて渡る
+      line(br.from - 2, 0, 6, 2.4);
+      for (let q = br.from + 22; q < br.to - 26; q += 34 + rand() * 12) {
+        add({ kind: 'hole', s: q, len: 3.2, halfW: BRIDGE_HALF });
+        for (let k = 0; k < 4; k++) coin(q - 0.6 + (k * 4.4) / 3, 0, 1.0 + 0.8 * Math.sin((Math.PI * k) / 3));
+        line(q + 8, 0, 3, 2.4);
+      }
+      s = br.to + 24;
+      continue;
+    }
     const p = s / length;
     const awake = opts.wake !== undefined && p >= opts.wake; // 大仏の目が光ったあと
     const after = opts.after ?? {};
@@ -556,5 +637,9 @@ export function buildCourse(opts: CourseOptions = {}): Course {
   const course: Course = { obstacles, coins, length, rules: opts.rules, curve: opts.curve, wake: opts.wake };
   if (opts.hills) course.hills = opts.hills;
   if (bumps.length) course.bumps = bumps;
+  if (br) {
+    course.bridge = br;
+    course.straights = [[br.from - 10, br.to + 10]];
+  }
   return course;
 }

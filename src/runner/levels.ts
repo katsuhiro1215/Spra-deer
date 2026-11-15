@@ -2,11 +2,17 @@
 // 面を足すときは、ここに1つ書くだけ。見た目は theme、手ごたえは rules、仕掛けは seed/extra で変える。
 import { buildCourse, type Course, type Curve, type HillPoint, type PatternName, type Rules } from './course.ts';
 
-export type Weather = 'none' | 'rain' | 'snow';
-/** 道の景色: sando=灯籠と杉の参道 / town=街道(夕焼けの街) / mountain=灯籠のない山道 */
-export type Setting = 'sando' | 'town' | 'mountain';
-/** ゴールの景色: shrine=春日大社 / todaiji=東大寺の大仏殿 / horyuji=法隆寺 / omiwa=大神神社 / bay=大阪湾 / summit=山頂 / heijo=平城宮跡の朱雀門 */
-export type GoalScene = 'shrine' | 'todaiji' | 'horyuji' | 'omiwa' | 'bay' | 'summit' | 'heijo';
+/** 天気: leaves=舞う落ち葉 / petals=桜吹雪 */
+export type Weather = 'none' | 'rain' | 'snow' | 'leaves' | 'petals';
+/** 道の景色: sando=灯籠と杉の参道 / town=街道(夕焼けの街) / mountain=灯籠のない山道 / river=左に水路のある川ぞいの道 */
+export type Setting = 'sando' | 'town' | 'mountain' | 'river';
+/**
+ * ゴールの景色: shrine=春日大社 / todaiji=東大寺の大仏殿 / horyuji=法隆寺 / omiwa=大神神社 / bay=大阪湾 / summit=山頂
+ * heijo=平城宮跡の朱雀門 / zaodo=金峯山寺の蔵王堂 / castle=郡山城 / park=奈良公園
+ */
+export type GoalScene = 'shrine' | 'todaiji' | 'horyuji' | 'omiwa' | 'bay' | 'summit' | 'heijo' | 'zaodo' | 'castle' | 'park';
+/** 道ばたの木: cedar=杉(既定) / maple=紅葉 / sakura=桜 */
+export type Foliage = 'cedar' | 'maple' | 'sakura';
 
 export interface Theme {
   setting: Setting;
@@ -34,6 +40,8 @@ export interface Theme {
   halo: number;
   /** 木に雪をのせる。 */
   snowCaps: boolean;
+  /** 道ばたの木(無ければ杉) */
+  foliage?: Foliage;
 }
 
 /** 道ばたの名所(目印と、回復薬の場所)。at=コース全体に対する割合。 */
@@ -66,6 +74,10 @@ export interface RunnerLevel {
   townFrom?: number;
   /** この割合より先でだけ出す罠(例: 踏切は街に入ってから) */
   after?: Partial<Record<PatternName, number>>;
+  /** つり橋の区間(割合) */
+  bridge?: { from: number; to: number };
+  /** 突進する動物が動き出すとき、法螺貝が鳴る(吉野) */
+  horn?: boolean;
   theme: Theme;
   /** 回復薬を置く場所(割合) */
   potions?: number[];
@@ -152,6 +164,36 @@ const EVENING_HEIJO: Theme = {
   road: { base: '#6a6c72', specks: ['#5c5e64', '#787a80', '#515359'], rough: 0.9 },
   grass: { base: '#7f9a4e', specks: ['#6f8a42', '#90ab5c', '#62803a'] },
   lampGlow: 3.2, halo: 0.55, snowCaps: false,
+};
+
+/** 秋の吉野(紅葉と落ち葉) */
+const AUTUMN_YOSHINO: Theme = {
+  setting: 'mountain', goal: 'zaodo', weather: 'leaves', night: false, foliage: 'maple',
+  sky: ['#4c8fd8', '#9cc6ec', '#f1dcc0', '#f6e6c8'],
+  fog: 0xefdcc2, fogNear: 50, fogFar: 230,
+  hemiSky: 0xffeedd, hemiGround: 0x9a7a4a, hemi: 0.85,
+  sun: 0xffd9a8, sunPower: 2.4, sunPos: [14, 22, 6], env: 0.4, exposure: 1.05,
+  road: { base: '#b59a72', specks: ['#a3875e', '#c7ad86', '#94784f', '#d4b98e'], rough: 1 },
+  grass: { base: '#a8954a', specks: ['#988640', '#b9a75a', '#c08a3c', '#8a7a38'] },
+  lampGlow: 1.6, halo: 0, snowCaps: false,
+};
+
+/** 谷瀬のつり橋(深い緑の谷)から、郡山城へ */
+const BRIDGE_CASTLE: Theme = {
+  ...MOUNTAIN, goal: 'castle', fogNear: 80, fogFar: 320,
+  grass: { base: '#5f9a48', specks: ['#4f8a3c', '#72ad58', '#467e34'] },
+};
+
+/** 春の佐保川(桜吹雪)から、奈良公園へ */
+const SPRING_PARK: Theme = {
+  setting: 'river', goal: 'park', weather: 'petals', night: false, foliage: 'sakura',
+  sky: ['#6ab0ee', '#b6dcf6', '#f4e6ee', '#f6eef0'],
+  fog: 0xf4e4ea, fogNear: 60, fogFar: 280,
+  hemiSky: 0xfff0f4, hemiGround: 0x8fae7a, hemi: 0.9,
+  sun: 0xfff2e2, sunPower: 2.5, sunPos: [14, 26, 8], env: 0.45, exposure: 1.06,
+  road: { base: '#d6c9aa', specks: ['#c4b692', '#e2d6bb', '#b9a985', '#f0c8d4'], rough: 1 },
+  grass: { base: '#78b452', specks: ['#68a344', '#8ac462', '#f2c4d2', '#5c9638'] },
+  lampGlow: 1.6, halo: 0, snowCaps: false,
 };
 
 const BAY: Theme = {
@@ -257,6 +299,52 @@ export const RUNNER_LEVELS: RunnerLevel[] = [
     lines: ['しんしんと 雪が ふっている', '三輪山が 見えてきた', '雪の大鳥居が 見えた！'],
   },
   {
+    id: '3-7', title: '紅葉の吉野へ', summary: '落ち葉が舞う山道。法螺貝は突進の合図',
+    intro: '落ち葉が 舞って 見えにくい！ 法螺貝が 鳴ったら 突進が 来るよ！',
+    length: 1200, seed: 20261222, difficulty: 0.6,
+    extra: ['leafPile', 'critterSleep', 'critterCross', 'critterHop', 'critterCharge', 'ramp'], critters: ['toge', 'noko', 'squirrel', 'bear', 'tanuki'],
+    opening: ['hole', 'leafPile', 'critterSleep', 'poop'],
+    rules: { speed0: 14, speed1: 21, steerAccel: 34, steerSpeed: 7.0 },
+    curve: { amp: 28, wave: 200 },
+    // 吉野の山へ、上り下りしながら約30m登る
+    hills: [
+      { at: 0.08, h: 0 }, { at: 0.2, h: 6 }, { at: 0.3, h: 4 }, { at: 0.45, h: 14 }, { at: 0.55, h: 12 },
+      { at: 0.72, h: 24 }, { at: 0.88, h: 30 },
+    ],
+    potions: [0.5],
+    horn: true,
+    theme: AUTUMN_YOSHINO, goalName: '金峯山寺',
+    lines: ['紅葉が きれい… でも 足元に 注意', '吉野の 山が 近づいてきた', '蔵王堂が 見えてきた！'],
+  },
+  {
+    id: '3-8', title: '谷瀬のつり橋', summary: 'ゆれる長い橋を渡って、郡山城へ',
+    intro: 'つり橋は ゆれるよ！ ◀ ▶ で まんなかを たもとう！',
+    length: 1300, seed: 20261227, difficulty: 0.6,
+    extra: ['critterSleep', 'critterCross', 'critterCharge', 'ramp'], critters: ['fox', 'squirrel', 'rabbit', 'goro'],
+    opening: ['hole', 'critterSleep', 'poop', 'fenceGap'],
+    rules: { speed0: 13.5, speed1: 21, steerAccel: 40, steerSpeed: 7.2 },
+    curve: { amp: 20, wave: 230 },
+    // 橋の高さまで登り、橋をわたって、城下へ下る
+    hills: [{ at: 0.1, h: 0 }, { at: 0.25, h: 8 }, { at: 0.56, h: 8 }, { at: 0.75, h: 0 }],
+    bridge: { from: 0.3, to: 0.52 },
+    potions: [0.6],
+    theme: BRIDGE_CASTLE, goalName: '郡山城',
+    lines: ['もうすぐ 橋を わたりきるよ！', 'お城の 石垣が 見えてきた', '郡山城に とうちゃく まぢか！'],
+  },
+  {
+    id: '3-9', title: '佐保川の桜並木', summary: '桜吹雪の川ぞいを、奈良公園へ',
+    intro: '桜吹雪！ 花見の シートを ふむと コインを 落とすよ。金魚にも 注意！',
+    length: 1300, seed: 20261229, difficulty: 0.65,
+    extra: ['hanami', 'goldfish', 'critterSleep', 'critterCross', 'critterHop', 'critterCharge'], critters: ['rabbit', 'puni', 'bubu', 'fox'],
+    opening: ['hole', 'hanami', 'goldfish', 'poop'],
+    rules: { speed0: 14, speed1: 22, steerAccel: 40, steerSpeed: 7.0 },
+    curve: { amp: 16, wave: 280 },
+    hills: [{ at: 0.1, h: 0 }, { at: 0.3, h: 3 }, { at: 0.5, h: 0 }, { at: 0.7, h: 4 }, { at: 0.88, h: 6 }],
+    potions: [0.45, 0.75],
+    theme: SPRING_PARK, goalName: '奈良公園',
+    lines: ['桜の トンネルだ！', '若草山が 見えてきた', '奈良公園に 帰ってきた！'],
+  },
+  {
     id: '3-10', title: '大阪湾をめざせ！', summary: '最長の最終面。街をぬけて、海まで',
     intro: '脱走した鹿は、大阪湾をめざす！ 長いよ、速いよ、気をつけて！',
     length: 1800, seed: 20261220, difficulty: 0.8,
@@ -272,6 +360,6 @@ export function courseOf(level: RunnerLevel): Course {
   return buildCourse({
     seed: level.seed, length: level.length, difficulty: level.difficulty,
     extra: level.extra, critters: level.critters, opening: level.opening, rules: level.rules, curve: level.curve,
-    potions: level.potions, wake: level.wake, hills: level.hills, after: level.after,
+    potions: level.potions, wake: level.wake, hills: level.hills, after: level.after, bridge: level.bridge,
   });
 }

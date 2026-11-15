@@ -2,8 +2,11 @@
 // public/assets/runner/critters/<key>_<ポーズ番号>.png (シートの並び順: 左上→右下)。
 // 見た目に依存しない純粋なデータ(ルールの計算からも使う)。
 
-/** 当たったときの効果: damage=ハート−1 / slow=おそくなる / slip=操作が逆(1.6秒) / ice=曲がれない(1.4秒) */
-export type Effect = 'damage' | 'slow' | 'slip' | 'ice';
+/**
+ * 当たったときの効果: damage=ハート−1 / slow=おそくなる / slip=操作が逆(1.6秒) / ice=曲がれない(1.4秒)
+ * skid=少しすべる(落ち葉。0.8秒曲がれない) / spill=コインを落とす(花見のシート)
+ */
+export type Effect = 'damage' | 'slow' | 'slip' | 'ice' | 'skid' | 'spill';
 
 export interface CritterDef {
   /** 画面での高さ(メートル) */

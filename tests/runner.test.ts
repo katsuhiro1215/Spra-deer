@@ -13,8 +13,33 @@ function bot(r: Run): Input {
   let left = false;
   let right = false;
   let jump = false;
+  // つり橋の上: ゆれに逆らって、まんなかを保つ(板のぬけた所は、下の穴の処理で跳ぶ)
+  if (r.onBridge) {
+    if (r.x > 0.25) left = true;
+    else if (r.x < -0.25) right = true;
+  }
   for (const o of r.course.obstacles) {
     if (o.kind === 'train') continue; // 電車は、着く前に通りすぎる
+    if (o.kind === 'fish') {
+      // 金魚: 着く頃に、体の高さを通りそうなら跳ぶ
+      const d = o.s - r.s;
+      if (d < -1 || d > 20) continue;
+      const ta = d / v;
+      const at = obstacleState(o, r.t + ta);
+      if (at.y > -1 && at.y < 1.3 && Math.abs(at.x - r.x) < 1.3 && ta > 0.24 && ta < 0.34) jump = true;
+      continue;
+    }
+    if (o.kind === 'sheet' || o.kind === 'leaf') {
+      // シート・落ち葉: よける(落ち葉は、跳んでもよい)
+      const d = o.s - r.s;
+      if (d > 0 && d < 10 && Math.abs(o.x - r.x) < HIT_RADIUS[o.kind] + PLAYER_RADIUS + 0.4) {
+        if (o.x > r.x) left = true;
+        else right = true;
+        if (r.x <= -PLAY_HALF + 0.1) { left = false; right = true; }
+        if (r.x >= PLAY_HALF - 0.1) { right = false; left = true; }
+      }
+      continue;
+    }
     if (o.kind === 'bolt') {
       // 雷: 光る輪の外へ、よける
       const d = o.s - r.s;
@@ -380,6 +405,55 @@ test('雷: 光る輪の上にいると当たる。よければ当たらない。
   assert.equal(go(0, true), 2, '跳んでも当たる');
   assert.equal(go(2.6, false), 3, '輪の外なら当たらない');
   assert.ok(courseOf(runnerById('3-5')!).obstacles.some((o) => o.kind === 'bolt'), '雨の面には雷');
+});
+
+test('3-1〜3-10が、順番どおりにそろっている', () => {
+  assert.deepEqual(RUNNER_LEVELS.map((l) => l.id), Array.from({ length: 10 }, (_, i) => `3-${i + 1}`));
+});
+
+test('3-7: 落ち葉の山があり、法螺貝の合図がある', () => {
+  const l = runnerById('3-7')!;
+  const c = courseOf(l);
+  assert.ok(c.obstacles.some((o) => o.kind === 'leaf'), '落ち葉の山');
+  assert.ok(l.horn && c.obstacles.some((o) => o.behavior === 'charge'), '法螺貝と突進');
+  assert.equal(l.theme.weather, 'leaves');
+  // 落ち葉をふむと、少しの間すべる(ハートは減らない)
+  const r = new Run(one('leaf'));
+  r.start();
+  for (let i = 0; i < 200 && r.ice === 0; i++) r.step(DT, { left: false, right: false, jump: false });
+  assert.ok(r.ice > 0 && r.ice <= 0.8 && r.lives === 3);
+});
+
+test('3-8: つり橋は、まっすぐで、ゆれる。何もしないと落ちる', () => {
+  const l = runnerById('3-8')!;
+  const c = courseOf(l);
+  const b = c.bridge!;
+  assert.ok(b && b.to - b.from > 200, '長いつり橋');
+  for (let s = b.from; s < b.to; s += 10) assert.ok(Math.abs(roadX(c, s)) < 1e-9, '橋の上は、まっすぐ');
+  assert.ok(!c.obstacles.some((o) => o.s > b.from && o.s < b.to && o.kind !== 'hole'), '橋の上は、板のぬけた所だけ');
+  // 何もしないと、ゆれで端へ押されて落ちる
+  const r = new Run({ ...c, obstacles: [], coins: [] });
+  r.start();
+  r.s = b.from + 2;
+  for (let i = 0; i < 8 / DT && r.lives === 3; i++) r.step(DT, { left: false, right: false, jump: false });
+  assert.equal(r.lives, 2, 'ゆれで落ちる');
+  assert.equal(r.x, 0, '落ちたら、まんなかへもどる');
+});
+
+test('3-9: 花見のシートでコインを落とす。金魚は低い所で当たり、跳べばくぐれる', () => {
+  const c = courseOf(runnerById('3-9')!);
+  assert.ok(c.obstacles.some((o) => o.kind === 'sheet') && c.obstacles.some((o) => o.kind === 'fish'));
+  const r = new Run(one('sheet'));
+  r.start();
+  r.coins = 8;
+  for (let i = 0; i < 200 && r.coins === 8; i++) r.step(DT, { left: false, right: false, jump: false });
+  assert.equal(r.coins, 3, '5まい落とす');
+  assert.equal(r.lives, 3);
+  // 金魚: 体の高さを通るときに当たる
+  const fish: Obstacle = { id: 0, kind: 'fish', s: 0, x: 0, len: 0, halfW: 0, height: 99, amp: 1.75, freq: 2.2, phase: 0 };
+  const lowAt = [0.1, 0.2, 0.3, 0.9, 1.0, 1.1, 1.2].map((t) => obstacleState(fish, t));
+  assert.ok(lowAt.some((st) => st.y > 0 && st.y < 1.3), '低いときがある');
+  assert.equal(obstacleState(fish, 2.0).y, -9, '水の中にいる時間がある');
 });
 
 test('コインは同じものを2回取れない', () => {

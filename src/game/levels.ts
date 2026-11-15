@@ -731,12 +731,8 @@ export const STAGE_1: LevelSlot[] = [
   { id: '1-10', title: LEVEL_1_10.title, summary: 'ステージ1の最終関門', level: LEVEL_1_10 },
 ];
 
-/** まだ作っていない3D走りの面(行き先のメモ) */
-const PLANNED: Record<string, { title: string; summary: string }> = {
-  '3-7': { title: '吉野 金峯山寺へ', summary: '案を検討中' },
-  '3-8': { title: '谷瀬のつり橋から郡山城へ', summary: 'ゆれる橋でバランス' },
-  '3-9': { title: '佐保川の桜並木', summary: '桜のトンネルを、奈良公園へ' },
-};
+/** まだ作っていない3D走りの面(行き先のメモ)。2026-11-15に3-1〜3-10がそろったので、今は空 */
+const PLANNED: Record<string, { title: string; summary: string }> = {};
 
 export const STAGES: { stage: number; title: string; slots: LevelSlot[] }[] = [
   { stage: 1, title: '足元にご用心', slots: STAGE_1 },

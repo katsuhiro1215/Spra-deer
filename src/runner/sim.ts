@@ -1,5 +1,5 @@
 // 3D走りゲームの進行計算(見た目に依存しない)。
-import { BOLT_TIME, DEFAULT_RULES, HIT_RADIUS, PLAY_HALF, TRAIN_HALF_DEPTH, obstacleRadius, obstacleState, roadBend, roadCurv, slopeMul, type Course, type Obstacle, type ObstacleState, type Rules } from './course.ts';
+import { BOLT_TIME, BRIDGE_HALF, DEFAULT_RULES, HIT_RADIUS, PLAY_HALF, TRAIN_HALF_DEPTH, bridgeSway, obstacleRadius, obstacleState, roadBend, roadCurv, slopeMul, type Course, type Obstacle, type ObstacleState, type Rules } from './course.ts';
 import type { Effect } from './critters.ts';
 
 export interface Input {
@@ -10,7 +10,7 @@ export interface Input {
 
 export type Phase = 'ready' | 'running' | 'cleared' | 'failed';
 export type SimEvent = {
-  kind: 'coin' | 'heal' | 'jump' | 'launch' | 'land' | 'hit' | 'fall' | 'slip' | 'slow' | 'slide' | 'clear' | 'fail' | 'bell' | 'warn' | 'thunder';
+  kind: 'coin' | 'heal' | 'jump' | 'launch' | 'land' | 'hit' | 'fall' | 'slip' | 'slow' | 'slide' | 'clear' | 'fail' | 'bell' | 'warn' | 'thunder' | 'spill' | 'charge';
   id?: number;
 };
 
@@ -45,6 +45,8 @@ export class Run {
   readonly consumed = new Set<number>();
   /** 落ちた雷(音を1回だけ鳴らす) */
   readonly struck = new Set<number>();
+  /** 花見のシートで、さいごに落としたコインの数 */
+  spilled = 0;
   private events: SimEvent[] = [];
   private jumpBuf = 0;
   private prevJump = false;
@@ -112,9 +114,12 @@ export class Run {
     this.vx += dv;
     // カーブでは、外側へ押し出される(右カーブなら、左へ)
     const drift = this.course.curve ? -roadCurv(this.course, this.s) * this.speed * DRIFT_GAIN : 0;
-    this.x += (this.vx + drift) * dt;
+    // つり橋の上では、橋のゆれで左右へ押される
+    const sway = this.onBridge ? bridgeSway(this.t) : 0;
+    this.x += (this.vx + drift + sway) * dt;
     if (this.x > PLAY_HALF) { this.x = PLAY_HALF; this.vx = 0; }
     if (this.x < -PLAY_HALF) { this.x = -PLAY_HALF; this.vx = 0; }
+    if (this.onBridge && Math.abs(this.x) > BRIDGE_HALF) this.fallOffBridge();
 
     // ジャンプ(少し早押しでも受け付ける)
     if (input.jump && !this.prevJump) this.jumpBuf = 0.14;
@@ -142,6 +147,23 @@ export class Run {
       this.phase = 'cleared';
       this.events.push({ kind: 'clear' });
     }
+  }
+
+  /** つり橋の上にいるか。 */
+  get onBridge(): boolean {
+    const b = this.course.bridge;
+    return !!b && this.s > b.from && this.s < b.to;
+  }
+
+  /** つり橋から落ちた: ハート−1(無敵の間は減らない)、橋のまんなかへもどる。 */
+  private fallOffBridge(): void {
+    if (this.invuln > 0) this.events.push({ kind: 'fall' });
+    else this.damage('fall');
+    this.x = 0;
+    this.vx = 0;
+    this.y = 0;
+    this.vy = 0;
+    this.invuln = Math.max(this.invuln, 1.6);
   }
 
   private integrateVertical(dt: number): void {
@@ -189,6 +211,15 @@ export class Run {
     } else if (effect === 'ice') {
       this.ice = 1.4;
       this.events.push({ kind: 'slide', id });
+    } else if (effect === 'skid') {
+      this.ice = Math.max(this.ice, 0.8);
+      this.events.push({ kind: 'slide', id });
+    } else if (effect === 'spill') {
+      // コインを落とす(5枚まで)
+      this.spilled = Math.min(5, this.coins);
+      this.coins -= this.spilled;
+      this.speedMul = Math.min(this.speedMul, 0.75);
+      this.events.push({ kind: 'spill', id });
     } else {
       this.damage('hit', id);
     }
@@ -201,6 +232,7 @@ export class Run {
         this.chargeT.set(o.id, this.t);
         if (o.kind === 'train') this.events.push({ kind: 'bell', id: o.id });
         if (o.kind === 'bolt') this.events.push({ kind: 'warn', id: o.id });
+        if (o.behavior === 'charge') this.events.push({ kind: 'charge', id: o.id });
       }
       if (o.kind === 'bolt' && !this.struck.has(o.id) && this.chargeT.has(o.id) && this.t - this.chargeT.get(o.id)! >= o.freq) {
         this.struck.add(o.id);
@@ -226,7 +258,8 @@ export class Run {
       if (this.y >= o.height) continue;
       if (this.touches(o)) {
         this.consumed.add(o.id);
-        const effect: Effect = o.kind === 'poop' ? 'slip' : o.kind === 'puddle' ? 'slow' : o.kind === 'ice' ? 'ice' : o.kind === 'critter' ? (o.effect ?? 'damage') : 'damage';
+        const byKind: Partial<Record<Obstacle['kind'], Effect>> = { poop: 'slip', puddle: 'slow', ice: 'ice', leaf: 'skid', sheet: 'spill', fish: 'slow' };
+        const effect: Effect = o.kind === 'critter' ? (o.effect ?? 'damage') : (byKind[o.kind] ?? 'damage');
         this.applyEffect(effect, o.id);
       }
     }
@@ -241,6 +274,13 @@ export class Run {
   }
 
   private touches(o: Obstacle): boolean {
+    if (o.kind === 'fish') {
+      // 金魚: 鹿の体の高さを通るときだけ当たる(高く跳んでいれば、下をくぐる)
+      const st = this.stateOf(o);
+      if (st.y < -1) return false;
+      const dy = st.y - this.y;
+      return dy > -0.3 && dy < 1.3 && Math.abs(st.x - this.x) < HIT_RADIUS.fish + PLAYER_RADIUS && Math.abs(o.s - this.s) < 0.6 + PLAYER_RADIUS;
+    }
     if (o.kind === 'bolt') {
       if (!this.boltActive(o)) return false;
       const dx = o.x - this.x;
