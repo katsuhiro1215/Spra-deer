@@ -156,3 +156,10 @@ span.hs-buy { background: #eee6cf; box-shadow: none; color: #7a7260; }
 .modal-card .hs-status { align-items: center; margin: 0 0 3cqw; }
 
 .coin-stat b { font-size: max(15px, 4.4cqw); }
+
+// 投げるせんべい(設計書 28章 B1): ジャンプの左に、せんべい色の小さめのボタン
+#throw { flex-shrink: 0; display: flex; align-items: center; justify-content: center; flex-direction: column; width: 21cqw; height: 21cqw; border: 3px solid #f3d7a6; border-radius: 50%; background: #c98b45; color: #fffbea; box-shadow: 0 5px 0 #8f5f2c, 0 8px 18px #57613020; touch-action: none;
+  svg { width: 9cqw; height: 6cqw; fill: none; stroke: currentColor; stroke-width: 3.5; stroke-linecap: round; stroke-linejoin: round; }
+  strong { font-size: max(14px, 3.4cqw); margin: .4cqw 0; } > span { font-size: max(12px, 2.6cqw); }
+  &.busy { background: #c5b891; box-shadow: 0 2px 0 #a49773; transform: translateY(3px); } &:disabled { cursor: default; } &[hidden] { display: none; } }
+#controls.has-throw .control-note { display: none; }

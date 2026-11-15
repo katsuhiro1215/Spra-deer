@@ -43,6 +43,8 @@ export class ParkView {
   /** 飛び石・はすの葉・コイン(毎フレーム描き直す) */
   private terrainFx!: Phaser.GameObjects.Graphics;
   private coinFx!: Phaser.GameObjects.Graphics;
+  /** 頭の上に出すもの(持っているせんべい・「！」・飛んでいるせんべい) */
+  private overFx!: Phaser.GameObjects.Graphics;
   private particles: Particle[] = [];
   private labels: { text: Phaser.GameObjects.Text; born: number; y: number }[] = [];
   private deer: { image: Phaser.GameObjects.Image; y: number; phase: number }[] = [];
@@ -61,6 +63,7 @@ export class ParkView {
     this.trapGraphics = scene.add.graphics().setDepth(2);
     this.terrainFx = scene.add.graphics().setDepth(3);
     this.coinFx = scene.add.graphics().setDepth(8500);
+    this.overFx = scene.add.graphics().setDepth(8600);
     this.goalGate = scene.add.image(GOAL.x, GOAL.y + 62, 'gate-goal').setOrigin(.5, 1);
     this.goalGate.setDisplaySize(310, 310 * this.goalGate.frame.height / this.goalGate.frame.width);
     const { x, y } = level.start;
@@ -140,7 +143,7 @@ export class ParkView {
     }
     // The deer watch from the verge; they do not obstruct the safe detours.
     // 道ばたの飾りの鹿。動く鹿（歩く鹿・追いかける鹿）がいる面では、紛らわしいので出さない。
-    const decorations: number[][] = this.level.deers.length || this.level.chasers.length || this.level.delivery || this.level.cross || this.level.rescue ? [] : [[53, 3190, 0], [671, 2680, 1], [53, 1840, 0], [674, 930, 1]];
+    const decorations: number[][] = this.level.deers.length || this.level.chasers.length || this.level.hungry?.length || this.level.delivery || this.level.cross || this.level.rescue ? [] : [[53, 3190, 0], [671, 2680, 1], [53, 1840, 0], [674, 930, 1]];
     for (const [x, y, flip] of decorations) {
       s.add.ellipse(x, y, 83, 24, 0x54713b, .15).setDepth(y - 1);
       const image = s.add.image(x, y, 'deer').setOrigin(.5, 1).setDepth(y).setFlipX(!!flip);
@@ -300,6 +303,12 @@ export class ParkView {
       this.labels.push({ text, born: now, y: text.y });
     }
     if (e.kind === 'crush') this.scene.cameras.main.shake(220, .01);
+    if (e.kind === 'pickup' || e.kind === 'splash' || e.kind === 'lure') {
+      const word = { pickup: 'せんべい！', splash: 'ぽちゃん…', lure: 'あっ、せんべい！' }[e.kind];
+      const text = this.label(e.x, e.y - (e.kind === 'lure' ? 120 : 50), word, 24, '#755338').setDepth(8000);
+      text.setStroke('#fff9dc', 6);
+      this.labels.push({ text, born: now, y: text.y });
+    }
     if (e.kind === 'sink' || e.kind === 'water' || e.kind === 'gold' || e.kind === 'premium') {
       const word = { sink: 'ぶくぶく…', water: 'ばしゃーん！', gold: 'ゴールド！', premium: 'プレミアム！！' }[e.kind];
       const text = this.label(e.x, e.y - 60, word, e.kind === 'premium' ? 32 : 26, e.kind === 'premium' ? '#8a3ad8' : '#755338').setDepth(8000);
@@ -380,7 +389,7 @@ export class ParkView {
 
   /** 歩く鹿。歩いた距離でコマを進め、予告中はその場で足踏みし、落とす場所に輪を出す。 */
   private renderDeers(w: World) {
-    this.deerFx.clear(); this.rainGraphic?.clear();
+    this.deerFx.clear(); this.overFx.clear(); this.rainGraphic?.clear();
     const place = (id: string, kind: keyof typeof DEER_HEIGHT, x: number, y: number, dir: 1 | -1, moving: boolean, walked: number, wobble = 0) => {
       let walker = this.walkers.get(id);
       if (!walker) {
@@ -405,6 +414,34 @@ export class ParkView {
     }
     // 追いかけてくる鹿
     for (const c of w.chasers) place(c.id, c.kind, c.x, c.y, c.dir, c.state === 'chase', c.walked);
+    // 投げるせんべい: 道のせんべい(拾える)、飛んでいる/落ちているせんべい、せんべいが好きな鹿
+    if (w.level.senbei || w.hungry.length) {
+      const g = this.deerFx;
+      for (const k of w.pickups) {
+        if (k.taken) continue;
+        const glow = .5 + .5 * Math.sin(w.time * 4 + k.x);
+        g.fillStyle(0xfff3c4, .25 + glow * .25).fillCircle(k.x, k.y - 4, 26);
+        this.senbei(g, k.x, k.y - 4, 15, 1);
+      }
+      for (const s of w.thrown) {
+        if (s.state === 'eaten' || s.state === 'lost') continue;
+        const lift = s.state === 'fly' ? 4 * 70 * s.t * (1 - s.t) : 0;
+        if (lift) g.fillStyle(0x6f4d2a, .18).fillEllipse(s.x, s.y + 6, 26, 10);
+        this.senbei(lift ? this.overFx : g, s.x, s.y - lift, 14, s.by >= 0 && w.hungry[s.by]?.state === 'eat' ? .8 : 1);
+      }
+      for (const h of w.hungry) {
+        place(`h:${h.id}`, h.kind, h.x, h.y, h.dir, h.state === 'chase' || h.state === 'go' || h.state === 'back', h.walked, h.state === 'eat' ? Math.sin(h.timer * 18) * 2 : 0);
+        // ふさいでいる鹿: 足もとに、通れないしるし(うすい輪)
+        if (h.mode === 'block' && h.state === 'idle') g.lineStyle(3, 0xb98a46, .35).strokeEllipse(h.x, h.y + 4, 80, 30);
+        // 追ってくる鹿: 走っている間は、頭の上に「！」
+        if (h.mode === 'chase' && h.state === 'chase') {
+          const top = h.y - DEER_HEIGHT[h.kind] - 26;
+          this.overFx.fillStyle(0xfff9dc).fillCircle(h.x, top - 6, 17).fillStyle(0xd0603a).fillRoundedRect(h.x - 4, top - 18, 8, 15, 3).fillCircle(h.x, top + 3, 4);
+        }
+      }
+      // 持っているせんべい(Spraの頭の上に、枚数ぶん)
+      if (w.outcome === 'playing') for (let i = 0; i < w.held; i++) this.senbei(this.overFx, w.player.x - (w.held - 1) * 9 + i * 18, w.player.y - 96 - w.player.height, 9, 1);
+    }
     // ステージ4: 道を横切る動物
     for (const c of w.crossers) place(c.id, c.kind, c.x, c.y + 20, c.dir, true, c.walked);
     // ステージ5: 迷子の鹿（見つけると、ついてくる）

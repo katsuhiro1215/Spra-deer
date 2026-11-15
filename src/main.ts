@@ -55,7 +55,7 @@ class Sound {
   }
   play(kind: Event['kind']) {
     if (!this.enabled || this.context?.state !== 'running') return;
-    const notes: Partial<Record<Event['kind'], [number, number, number]>> = { jump: [390, 730, .13], warning: [160, 110, .17], collapse: [110, 38, .28], poop: [180, 75, .22], fall: [390, 85, .4], clear: [540, 1080, .42], wall: [120, 45, .3], slide: [320, 190, .12], crush: [150, 40, .35], chase: [200, 330, .2], caught: [260, 90, .3], drop: [240, 120, .14], bait: [330, 220, .1], eat: [200, 260, .12], stolen: [260, 90, .3], sweep: [260, 420, .12], found: [500, 900, .2], lost: [260, 90, .3], coin: [1180, 1760, .12], gold: [880, 1760, .3], premium: [660, 1320, .5], sink: [300, 120, .3], water: [420, 90, .45] };
+    const notes: Partial<Record<Event['kind'], [number, number, number]>> = { jump: [390, 730, .13], warning: [160, 110, .17], collapse: [110, 38, .28], poop: [180, 75, .22], fall: [390, 85, .4], clear: [540, 1080, .42], wall: [120, 45, .3], slide: [320, 190, .12], crush: [150, 40, .35], chase: [200, 330, .2], caught: [260, 90, .3], drop: [240, 120, .14], bait: [330, 220, .1], eat: [200, 260, .12], pickup: [880, 1320, .12], throw: [300, 520, .1], senbeiLand: [260, 180, .08], splash: [420, 120, .25], lure: [620, 880, .14], stolen: [260, 90, .3], sweep: [260, 420, .12], found: [500, 900, .2], lost: [260, 90, .3], coin: [1180, 1760, .12], gold: [880, 1760, .3], premium: [660, 1320, .5], sink: [300, 120, .3], water: [420, 90, .45] };
     const data = notes[kind]; if (!data) return;
     const [start, end, duration] = data, ctx = this.context;
     const oscillator = ctx.createOscillator(), gain = ctx.createGain();
@@ -230,8 +230,10 @@ class Park extends Phaser.Scene {
     button.querySelector('strong')!.textContent = names[mode] || 'ジャンプ';
     button.setAttribute('aria-label', names[mode] || 'ジャンプ');
     el('game').setAttribute('aria-label', mode === 'none' ? 'ゲーム画面。方向キーで移動' : `ゲーム画面。方向キーで移動、スペースで${names[mode]}`);
+    const toss = !!level.senbei;
+    el('throw').hidden = !toss; el('controls').classList.toggle('has-throw', toss);
     const guide = document.querySelectorAll('.keyboard-guide span')[1];
-    if (guide) guide.innerHTML = `${mode === 'none' ? '' : `<kbd>Space</kbd> ${names[mode]}　`}<kbd>R</kbd> 再挑戦`;
+    if (guide) guide.innerHTML = `${mode === 'none' ? '' : `<kbd>Space</kbd> ${names[mode]}　`}${toss ? '<kbd>X</kbd> なげる　' : ''}<kbd>R</kbd> 再挑戦`;
   }
   private message(text: string, duration = 2) { el('message').textContent = text; this.messageUntil = this.world.time + duration; }
   private pause() {
@@ -259,7 +261,7 @@ class Park extends Phaser.Scene {
     const order = ALL_PLAYABLE_SLOTS, nextSlot = clear ? order[order.findIndex(x => x.id === level.id) + 1] : undefined;
     const next = nextSlot ? { id: nextSlot.id, runner: nextSlot.runner } : undefined;
     const attempts = progress.get(level.id).attempts;
-    const stat: [string, number, string] = level.delivery ? ['つかったせんべい', w.baits.length, '個'] : level.sweep ? ['掃いたうんこ', w.swept, '個'] : level.cross ? ['わたった道', new Set(level.cross.crossers.map(c => c.y)).size, '本'] : level.rescue ? ['つれていった鹿', 1, '頭'] : ['ジャンプ', w.jumps, '回'];
+    const stat: [string, number, string] = level.senbei ? ['なげたせんべい', w.throws, '枚'] : level.delivery ? ['つかったせんべい', w.baits.length, '個'] : level.sweep ? ['掃いたうんこ', w.swept, '個'] : level.cross ? ['わたった道', new Set(level.cross.crossers.map(c => c.y)).size, '本'] : level.rescue ? ['つれていった鹿', 1, '頭'] : ['ジャンプ', w.jumps, '回'];
     const title = clear ? (level.delivery ? '無事に、お届け。' : level.sweep ? '公園が、ぴかぴか！' : level.cross ? '無事に、横断。' : level.rescue ? '無事に、救出！' : '無事に、おさんぽ。') : w.outcome === 'dirty' ? '公園が、うんこだらけ…！' : w.outcome === 'hit' ? 'ぶつかった！' : w.outcome === 'lost' ? 'はぐれちゃった…！' : w.outcome === 'stolen' ? 'せんべい、取られた！' : w.outcome === 'water' ? 'ばしゃーん！' : w.outcome === 'fall' ? '地面まで、いたずら。' : w.outcome === 'wall' ? 'ぐえっ、壁…！' : w.outcome === 'caught' ? 'つかまった！' : 'あっ、足元…！';
     const copy = clear ? (level.delivery ? 'せんべいは、無事に届いた。\n鹿は、もぐもぐ満足そう。' : level.sweep ? '奈良公園は、きれいになった。\n鹿は、また落とす気まんまん。' : level.cross ? '動物たちの動きを、見事に読んだ。' : level.rescue ? '子鹿は、ほっと一安心。\nSpraの後ろで、ご機嫌。' : '数々のしかけを、見事に突破。\n鹿は、何も知らない顔。') : (w.outcome === 'dirty' || w.outcome === 'hit' || w.outcome === 'lost') ? (level.hints.caught ?? CAUGHT_HINT) : w.outcome === 'stolen' ? (level.hints.caught ?? STOLEN_DEFAULT) : w.outcome === 'water' ? (level.hints.water ?? WATER_HINT) : w.outcome === 'fall' ? level.hints.fall : w.outcome === 'wall' ? level.hints.wall : w.outcome === 'caught' ? (level.hints.caught ?? CAUGHT_HINT) : level.hints.poop;
     const primary = next ? `<button class="primary" data-action="${next.runner ? 'run' : 'next'}" data-level="${next.id}">次の面へ（${next.id}） <span>▶</span></button>` : `<button class="primary" data-action="retry">${clear ? 'もう一度あそぶ' : 'すぐに、もう一回'} <span>▶</span></button>`;
@@ -282,6 +284,7 @@ class Park extends Phaser.Scene {
     document.querySelector('.progress')!.setAttribute('aria-valuenow', String(this.progress()));
     const p = this.world.player, busy = p.jumpTime >= 0 || p.cooldown > 0;
     if (this.level.cross || this.level.rescue || this.level.sweep) { /* ボタンなし */ } else if (this.level.delivery) { const left = this.world.baitsLeft; el('jump').classList.toggle('busy', left === 0 || p.cooldown > 0); el('jump-hint').textContent = left === 0 ? 'もう、ない' : `のこり ${left}個`; } else { el('jump').classList.toggle('busy', busy); el('jump-hint').textContent = p.jumpTime >= 0 ? 'ジャンプ中' : busy ? 'ひと呼吸' : 'Space'; }
+    if (this.level.senbei) { el('throw').classList.toggle('busy', this.world.held === 0); el('throw-hint').textContent = `${this.world.held}枚`; }
     const section = this.level.chapters.find(c => p.y > c.above)?.text ?? '';
     if (section !== this.lastChapter) { this.lastChapter = section; if (this.world.time >= this.messageUntil) this.message(section, 3); }
     if (this.world.time > this.messageUntil) el('message').textContent = '';

@@ -1,10 +1,11 @@
-import { FIELD, GOAL, RULES, type CoinDefinition, type HedgeDefinition, type StoneDefinition, type CrosserDefinition, type RescueDefinition, type ThiefDefinition, type ChaserDefinition, type GoalDefinition, type Point, type TrapDefinition, type WallDefinition, type SliderDefinition } from './stage.ts';
+import { FIELD, GOAL, RULES, type CoinDefinition, type HedgeDefinition, type HungryDefinition, type StoneDefinition, type CrosserDefinition, type RescueDefinition, type ThiefDefinition, type ChaserDefinition, type GoalDefinition, type Point, type TrapDefinition, type WallDefinition, type SliderDefinition } from './stage.ts';
 import type { DeerDefinition, LevelDefinition } from './levels.ts';
 import { facingOf, type Facing } from './facing.ts';
-export type Input = { x: number; y: number; jump?: boolean };
+/** throw: せんべいを投げる(向いている方へ)。 */
+export type Input = { x: number; y: number; jump?: boolean; throw?: boolean };
 export type Trap = TrapDefinition & { state: 'intact' | 'shaking' | 'open'; elapsed: number };
 export type Event = {
-  kind: 'coin' | 'gold' | 'premium' | 'sink' | 'water' | 'jump' | 'land' | 'warning' | 'collapse' | 'poop' | 'fall' | 'clear' | 'dropWarning' | 'drop' | 'wall' | 'slide' | 'crush' | 'goalMove' | 'chase' | 'caught' | 'bait' | 'eat' | 'stolen' | 'sweep' | 'found' | 'lost' | 'miss';
+  kind: 'coin' | 'gold' | 'premium' | 'sink' | 'water' | 'jump' | 'land' | 'warning' | 'collapse' | 'poop' | 'fall' | 'clear' | 'dropWarning' | 'drop' | 'wall' | 'slide' | 'crush' | 'goalMove' | 'chase' | 'caught' | 'bait' | 'eat' | 'stolen' | 'sweep' | 'found' | 'lost' | 'miss' | 'pickup' | 'throw' | 'senbeiLand' | 'splash' | 'lure';
   x: number; y: number; id?: string;
 };
 /** 歩く鹿。walk=歩く, warn=止まって予告中。 */
@@ -30,6 +31,10 @@ export type Bait = Point & { by: number; gone: boolean };
 export type Crosser = { id: string; kind: CrosserDefinition['kind']; x: number; y: number; dir: 1 | -1; walked: number };
 /** 飛び石・はすの葉。x は今の位置(動く葉)。stand=乗っている秒数、sunk=沈んでいる(down 秒後に浮く)。 */
 export type Stone = StoneDefinition & { cx: number; stand: number; sunk: boolean; down: number };
+/** せんべいが好きな鹿。idle=その場, chase=Spraを追う, go=せんべいへ向かう, eat=食べている, back=元の場所へ戻る。 */
+export type Hungry = { id: string; kind: HungryDefinition['kind']; mode: HungryDefinition['mode']; x: number; y: number; dir: 1 | -1; state: 'idle' | 'chase' | 'go' | 'eat' | 'back'; timer: number; walked: number; target: number };
+/** 投げたせんべい。fly=飛んでいる(t は 0→1), ground=落ちている, eaten=食べられた, lost=池に落ちた。by=食べに来る鹿。 */
+export type Thrown = Point & { fx: number; fy: number; tx: number; ty: number; t: number; state: 'fly' | 'ground' | 'eaten' | 'lost'; by: number };
 /** コイン。taken=取った。 */
 export type Coin = CoinDefinition & { taken: boolean };
 /** 迷子の鹿。lost=まだ見つけていない, follow=ついてくる（Spruが通った道を、少し遅れてたどる）。 */
@@ -37,16 +42,19 @@ export type Follower = { kind: RescueDefinition['kind']; x: number; y: number; d
 export type Outcome = 'playing' | 'poop' | 'fall' | 'water' | 'wall' | 'caught' | 'stolen' | 'dirty' | 'hit' | 'lost' | 'clear';
 export type World = {
   level: LevelDefinition;
-  player: Point & { height: number; jumpTime: number; cooldown: number; facing: Facing; stride: number; moving: boolean };
+  player: Point & { height: number; jumpTime: number; cooldown: number; facing: Facing; stride: number; moving: boolean; aimX: number; aimY: number };
   traps: Trap[]; deers: Deer[]; walls: Wall[]; sliders: Slider[]; chasers: Chaser[]; rain: Rain[]; goal: Goal;
   thieves: Thief[]; baits: Bait[]; baitsLeft: number;
   crossers: Crosser[]; follower: Follower | null; swept: number; sweepTime: number; missed: number; combo: number; bestCombo: number;
   stones: Stone[]; coins: Coin[];
+  /** 投げるせんべい: 鹿・投げたせんべい・道に落ちているせんべい・持っている枚数・投げた数 */
+  hungry: Hungry[]; thrown: Thrown[]; pickups: (Point & { taken: boolean })[]; held: number; throws: number;
   /** 取ったコイン(シルバー)・ゴールドの数、プレミアムを取ったか */
   silver: number; gold: number; premium: boolean;
   /** 面に置かれたうんこ＋鹿が落としたうんこ。当たり判定はこれと sliders を使う。 */
   poops: Point[];
   time: number; jumps: number; outcome: Outcome;
+  thrownAt?: number;
   events: Event[]; furthest: number;
 };
 const clamp = (n: number, a: number, b: number) => Math.max(a, Math.min(b, n));
@@ -67,7 +75,7 @@ export function crossX(c: CrosserDefinition, t: number) {
 }
 export function createWorld(level: LevelDefinition): World {
   return {
-    level, player: { ...level.start, height: 0, jumpTime: -1, cooldown: 0, facing: 'up', stride: 0, moving: false },
+    level, player: { ...level.start, height: 0, jumpTime: -1, cooldown: 0, facing: 'up', stride: 0, moving: false, aimX: 0, aimY: -1 },
     traps: level.traps.map(t => ({ ...t, state: 'intact', elapsed: 0 })),
     deers: level.deers.map(d => ({ id: d.id, kind: d.kind, x: d.startX, y: d.y, dir: d.startDir, state: 'walk', timer: 0, dropped: 0, nextDrop: d.firstDrop, walked: 0 })),
     walls: level.walls.map(wall => ({ ...wall, length: wall.length ?? WALL.length, state: 'idle', progress: 0, timer: 0 })),
@@ -83,6 +91,8 @@ export function createWorld(level: LevelDefinition): World {
     poops: level.poops.map(p => ({ ...p })),
     stones: (level.stones ?? []).map(s => ({ ...s, cx: s.x, stand: 0, sunk: false, down: 0 })),
     coins: (level.coins ?? []).map(c => ({ ...c, taken: false })),
+    hungry: (level.hungry ?? []).map(h => ({ id: h.id, kind: h.kind, mode: h.mode, x: h.x, y: h.y, dir: 1, state: 'idle', timer: 0, walked: 0, target: -1 })),
+    thrown: [], pickups: (level.senbei?.pickups ?? []).map(p => ({ ...p, taken: false })), held: level.senbei?.start ?? 0, throws: 0,
     silver: 0, gold: 0, premium: false,
     time: 0, jumps: 0, outcome: 'playing', events: [], furthest: level.start.y,
   };
@@ -303,6 +313,101 @@ function pickCoins(w: World) {
     w.events.push({ kind: c.kind === 'premium' ? 'premium' : c.kind === 'gold' ? 'gold' : 'coin', x: c.x, y: c.y });
   }
 }
+// ---- 投げるせんべい(設計書 28章 B1) ----
+export const SENBEI = { max: 3, reach: 30, dist: 250, flight: .45, arrive: 26, eat: 2.6, block: 38, deer: 20, cool: .35 };
+const hedgeAt = (w: World, x: number, y: number, r: number) => (w.level.hedges ?? []).some(h => inHedge({ x, y }, h, r));
+/** 鹿を、植え込みをよけながら(横・縦を別々に)、tx, ty へ dist だけ動かす。着いたら true。 */
+function walkTo(w: World, a: { x: number; y: number; dir: 1 | -1; walked: number }, tx: number, ty: number, dist: number): boolean {
+  const dx = tx - a.x, dy = ty - a.y, d = Math.hypot(dx, dy);
+  if (d < 1) return true;
+  const move = Math.min(dist, d), nx = a.x + dx / d * move, ny = a.y + dy / d * move;
+  const fromX = a.x, fromY = a.y;
+  // 植え込みに当たったら、ふちにそって(進みたい向きのほうへ)全速ですべる
+  const sx = a.x + Math.sign(dx) * Math.min(move, Math.abs(dx)), sy = a.y + Math.sign(dy) * Math.min(move, Math.abs(dy));
+  if (!hedgeAt(w, nx, ny, SENBEI.deer)) { a.x = nx; a.y = ny; }
+  else if (Math.abs(dx) >= Math.abs(dy) && !hedgeAt(w, a.x, sy, SENBEI.deer)) a.y = sy;
+  else if (!hedgeAt(w, sx, a.y, SENBEI.deer)) a.x = sx;
+  else if (!hedgeAt(w, a.x, sy, SENBEI.deer)) a.y = sy;
+  a.walked += Math.hypot(a.x - fromX, a.y - fromY);
+  if (Math.abs(dx) > 8) a.dir = dx > 0 ? 1 : -1;
+  return d - move < 1;
+}
+/** せんべいを投げる。向いている方へ飛び、植え込みに当たると、その手前に落ちる。 */
+function throwSenbei(w: World) {
+  const p = w.player;
+  let tx = p.x, ty = p.y;
+  for (let d = 10; d <= SENBEI.dist; d += 10) {
+    const x = clamp(p.x + p.aimX * d, FIELD.left, FIELD.right), y = clamp(p.y + p.aimY * d, FIELD.top, FIELD.bottom);
+    if (hedgeAt(w, x, y, SENBEI.deer)) break; // 鹿が食べに行ける所(植え込みから少し手前)に落ちる
+    tx = x; ty = y;
+  }
+  w.thrown.push({ x: p.x, y: p.y, fx: p.x, fy: p.y, tx, ty, t: 0, state: 'fly', by: -1 });
+  w.held--; w.throws++; w.thrownAt = w.time;
+  w.events.push({ kind: 'throw', x: p.x, y: p.y });
+}
+function stepSenbei(w: World, dt: number) {
+  const p = w.player;
+  for (const k of w.pickups) {
+    if (k.taken || w.held >= SENBEI.max || p.height > 60 || Math.hypot(p.x - k.x, p.y - k.y) > SENBEI.reach) continue;
+    k.taken = true; w.held++; w.events.push({ kind: 'pickup', x: k.x, y: k.y });
+  }
+  for (const s of w.thrown) {
+    if (s.state !== 'fly') continue;
+    s.t = Math.min(1, s.t + dt / SENBEI.flight);
+    s.x = s.fx + (s.tx - s.fx) * s.t; s.y = s.fy + (s.ty - s.fy) * s.t;
+    if (s.t < 1) continue;
+    const pond = inPond(s, w) && !standingStone(s, w);
+    s.state = pond ? 'lost' : 'ground';
+    w.events.push({ kind: pond ? 'splash' : 'senbeiLand', x: s.x, y: s.y });
+  }
+}
+/** 落ちているせんべいは、いちばん近い(sense 以内の、手のあいている)鹿が、食べに行く。 */
+function stepHungry(w: World, dt: number) {
+  const p = w.player, defs = w.level.hungry ?? [];
+  w.thrown.forEach((s, k) => {
+    if (s.state !== 'ground' || s.by >= 0) return;
+    let best = -1, bestD = Infinity;
+    w.hungry.forEach((h, i) => {
+      if (h.state === 'go' || h.state === 'eat') return;
+      const d = Math.hypot(h.x - s.x, h.y - s.y);
+      if (d < defs[i].sense && d < bestD) { best = i; bestD = d; }
+    });
+    if (best < 0) return;
+    const h = w.hungry[best]; s.by = best; h.state = 'go'; h.target = k;
+    w.events.push({ kind: 'lure', x: h.x, y: h.y, id: h.id });
+  });
+  defs.forEach((def, i) => {
+    const h = w.hungry[i], speed = def.speed * dt;
+    if (h.state === 'eat') {
+      h.timer += dt;
+      if (h.timer >= (def.eat ?? SENBEI.eat)) { w.thrown[h.target].state = 'eaten'; h.target = -1; h.state = def.mode === 'block' ? 'back' : 'chase'; }
+      return;
+    }
+    if (h.state === 'go') {
+      const s = w.thrown[h.target];
+      if (walkTo(w, h, s.x, s.y, speed) || Math.hypot(h.x - s.x, h.y - s.y) < SENBEI.arrive) { h.state = 'eat'; h.timer = 0; w.events.push({ kind: 'eat', x: h.x, y: h.y, id: h.id }); }
+      return;
+    }
+    if (def.mode === 'block') {
+      if (h.state === 'back' && walkTo(w, h, def.x, def.y, speed * .6)) h.state = 'idle';
+      return;
+    }
+    if (h.state === 'idle' && p.y <= (def.triggerY ?? -Infinity)) { h.state = 'chase'; w.events.push({ kind: 'chase', x: h.x, y: h.y, id: h.id }); }
+    if (h.state === 'chase') walkTo(w, h, p.x, p.y, speed);
+  });
+}
+/** ふさいでいる鹿からは、押し出される(通れない。触れても大丈夫)。 */
+function blockDeer(w: World, fromX: number, fromY: number) {
+  const p = w.player;
+  for (const h of w.hungry) {
+    if (h.mode !== 'block') continue;
+    const dx = p.x - h.x, dy = p.y - h.y, d = Math.hypot(dx, dy);
+    if (d >= SENBEI.block) continue;
+    const ux = d > .01 ? dx / d : 0, uy = d > .01 ? dy / d : 1;
+    p.x = clamp(h.x + ux * SENBEI.block, FIELD.left, FIELD.right); p.y = clamp(h.y + uy * SENBEI.block, FIELD.top, FIELD.bottom);
+  }
+  if (hedgeAt(w, p.x, p.y, RULES.radius)) { p.x = fromX; p.y = fromY; }
+}
 /** 植え込みに入らないよう、動いた分をもどす(横・縦を別々に見て、壁ぞいにすべれるように)。 */
 function blockHedges(w: World, fromX: number, fromY: number) {
   const hedges = w.level.hedges;
@@ -315,6 +420,8 @@ function blockHedges(w: World, fromX: number, fromY: number) {
   p.x = fromX; p.y = fromY;
 }
 
+/** 最後に投げた時刻(連続で投げすぎないように)。 */
+const lastThrow = (w: World) => w.thrownAt ?? -Infinity;
 export function inHole(p: Point, t: TrapDefinition): boolean {
   // Test the foot/shadow centre against the inner edge; the sprite is not the collider.
   return p.x > t.x + 7 && p.x < t.x + t.width - 7 && p.y > t.y + 7 && p.y < t.y + t.height - 7;
@@ -343,11 +450,14 @@ export function step(w: World, input: Input, dt = RULES.step): void {
   const length = Math.hypot(input.x, input.y);
   const dx = input.x / Math.max(1, length), dy = input.y / Math.max(1, length);
   p.moving = length > .02;
+  if (p.moving) { p.aimX = input.x / length; p.aimY = input.y / length; }
+  if (input.throw && w.held > 0 && w.time - lastThrow(w) >= SENBEI.cool) throwSenbei(w);
   const fromX = p.x, fromY = p.y;
   p.x = clamp(p.x + dx * RULES.speed * dt, FIELD.left, FIELD.right);
   p.y = clamp(p.y + dy * RULES.speed * dt, FIELD.top, FIELD.bottom);
   // 向きは入力で、歩幅（足の出し入れ）は実際に進んだ距離で決める。壁に押しつけても足は動かない。
   blockHedges(w, fromX, fromY);
+  if (w.hungry.length) blockDeer(w, fromX, fromY);
   if (p.moving) p.facing = facingOf(dx, dy);
   p.stride += Math.hypot(p.x - fromX, p.y - fromY);
   let landed = false;
@@ -371,6 +481,7 @@ export function step(w: World, input: Input, dt = RULES.step): void {
   stepRain(w, dt);
   stepStones(w, dt);
   pickCoins(w);
+  if (w.level.senbei || w.hungry.length) { stepSenbei(w, dt); stepHungry(w, dt); }
   for (const trap of w.traps) {
     if (trap.state === 'intact') {
       const kind = trap.trigger ?? 'near';
@@ -408,6 +519,8 @@ export function step(w: World, input: Input, dt = RULES.step): void {
   if (p.height < 22 && !sweep && (w.poops.some(o => Math.hypot(o.x - p.x, o.y - p.y) < poopReach) || w.sliders.some(s => Math.hypot(s.cx - p.x, s.cy - p.y) < poopReach))) {
     w.outcome = 'poop'; w.events.push({ kind: 'poop', x: p.x, y: p.y });
   } else if (p.height < 22 && w.chasers.some(c => c.state === 'chase' && Math.hypot(c.x - p.x, c.y - p.y) < CAUGHT_REACH)) {
+    w.outcome = 'caught'; w.events.push({ kind: 'caught', x: p.x, y: p.y });
+  } else if (p.height < 22 && w.hungry.some(h => h.mode === 'chase' && h.state === 'chase' && Math.hypot(h.x - p.x, h.y - p.y) < CAUGHT_REACH)) {
     w.outcome = 'caught'; w.events.push({ kind: 'caught', x: p.x, y: p.y });
   } else if (w.thieves.some(t => Math.hypot(t.x - p.x, t.y - p.y) < CAUGHT_REACH)) {
     w.outcome = 'stolen'; w.events.push({ kind: 'stolen', x: p.x, y: p.y });

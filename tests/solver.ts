@@ -7,7 +7,7 @@ import type { LevelDefinition } from '../src/game/levels.ts';
  * 先頭から band 以上遅れた状態は捨てる。見つかれば、実際に再生できる入力列を返す（＝クリア可能の証明）。
  * 見つからないのは「無理」ではなく「ボットが見つけられなかった」の意味。
  */
-export type Action = { x: number; y: number; jump: boolean };
+export type Action = { x: number; y: number; jump: boolean; throw?: boolean };
 export type SolveResult = { ok: true; actions: Action[]; time: number; jumps: number } | { ok: false; reason: string; best: number };
 
 const DIRS: [number, number][] = [[0, 0], [0, -1], [1, -1], [-1, -1], [1, 0], [-1, 0], [1, 1], [-1, 1], [0, 1]];
@@ -17,6 +17,9 @@ const ACTIONS: Action[] = [
   ...DIRS.map(d => { const [x, y] = norm(d); return { x, y, jump: false }; }),
   ...DIRS.slice(1).map(d => { const [x, y] = norm(d); return { x, y, jump: true }; }),
 ];
+/** 投げるせんべいの面: その方向を向いて投げる(そのあと、同じ方向へ歩く) */
+const THROWS: Action[] = DIRS.slice(1).map(d => { const [x, y] = norm(d); return { x, y, jump: false, throw: true }; });
+const input = (a: Action, i: number): Input => ({ x: a.x, y: a.y, jump: a.jump && i === 0, throw: !!a.throw && i === 0 });
 
 type Node = { w: World; parent: Node | null; action: Action | null };
 
@@ -32,15 +35,15 @@ export function solve(level: LevelDefinition, opts: { macro?: number; bucket?: n
     const next = new Map<string, Node>();
     deaths = {};
     for (const node of layer) {
-      for (const a of ACTIONS) {
+      for (const a of node.w.held > 0 ? [...ACTIONS, ...THROWS] : ACTIONS) {
         const p = node.w.player;
         if (a.jump && (p.height > 0 || p.jumpTime >= 0 || p.cooldown > 0 || level.cross || level.rescue)) continue;
         const w = structuredClone(node.w);
-        for (let i = 0; i < steps && w.outcome === 'playing'; i++) step(w, { x: a.x, y: a.y, jump: a.jump && i === 0 } as Input);
+        for (let i = 0; i < steps && w.outcome === 'playing'; i++) step(w, input(a, i));
         if (w.outcome === 'clear') return { ok: true, actions: unwind({ w, parent: node, action: a }), time: w.time, jumps: w.jumps };
         if (w.outcome !== 'playing') { deaths[w.outcome] = (deaths[w.outcome] ?? 0) + 1; continue; }
         const q = w.player;
-        const key = `${Math.round(q.x / bucket)},${Math.round(q.y / bucket)},${q.height > 0 ? 1 : 0},${w.walls.map(x => x.state[0]).join('')}${w.traps.map(x => x.state[0]).join('')}${w.chasers.map(x => Math.round(x.x / 90) + ':' + Math.round(x.y / 90)).join('')}${w.sliders.map(x => x.state[0]).join('')}${w.baitsLeft}:${w.poops.length}:${w.follower ? w.follower.state[0] + Math.round(w.follower.x / 60) + ':' + Math.round(w.follower.y / 60) : ''}${w.thieves.map(x => x.state[0] + Math.round(x.x / 90) + ':' + Math.round(x.y / 90)).join('')}`;
+        const key = `${Math.round(q.x / bucket)},${Math.round(q.y / bucket)},${q.height > 0 ? 1 : 0},${w.walls.map(x => x.state[0]).join('')}${w.traps.map(x => x.state[0]).join('')}${w.chasers.map(x => Math.round(x.x / 90) + ':' + Math.round(x.y / 90)).join('')}${w.sliders.map(x => x.state[0]).join('')}${w.baitsLeft}:${w.poops.length}:${w.follower ? w.follower.state[0] + Math.round(w.follower.x / 60) + ':' + Math.round(w.follower.y / 60) : ''}${w.thieves.map(x => x.state[0] + Math.round(x.x / 90) + ':' + Math.round(x.y / 90)).join('')}|${w.held}${w.hungry.map(x => x.state[0] + Math.round(x.x / 60) + ':' + Math.round(x.y / 60)).join('')}`;
         if (!next.has(key)) next.set(key, { w, parent: node, action: a });
       }
     }
@@ -64,6 +67,6 @@ function unwind(node: Node): Action[] {
 /** solve が返した入力列を再生して、本当にクリアすることを確かめる。 */
 export function replay(level: LevelDefinition, actions: Action[], macro = .25): World {
   const w = createWorld(level), steps = Math.round(macro / (1 / 120));
-  for (const a of actions) for (let i = 0; i < steps && w.outcome === 'playing'; i++) step(w, { x: a.x, y: a.y, jump: a.jump && i === 0 } as Input);
+  for (const a of actions) for (let i = 0; i < steps && w.outcome === 'playing'; i++) step(w, input(a, i));
   return w;
 }

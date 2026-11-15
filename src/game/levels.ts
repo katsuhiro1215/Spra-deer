@@ -1,4 +1,5 @@
 import { FIELD } from './stage.ts';
+import type { HungryDefinition, SenbeiDefinition } from './stage.ts';
 import { RUNNER_LEVELS } from '../runner/levels.ts';
 import type { ChaserDefinition, CoinDefinition, CrosserDefinition, CrossDefinition, DeliveryDefinition, HedgeDefinition, PondDefinition, RescueDefinition, StoneDefinition, SweepDefinition, GoalDefinition, Point, RainDefinition, SliderDefinition, TrapDefinition, WallDefinition } from './stage.ts';
 
@@ -51,6 +52,9 @@ export type LevelDefinition = {
   stones?: StoneDefinition[];
   /** コイン(シルバー・ゴールド・プレミアム)。 */
   coins?: CoinDefinition[];
+  /** 投げるせんべい(拾う場所・最初の枚数)と、せんべいが好きな鹿。 */
+  senbei?: SenbeiDefinition;
+  hungry?: HungryDefinition[];
   chapters: Chapter[];
   /** 失敗の原因と、次の攻略方法（失敗の種類ごと）。water=池に落ちた */
   hints: { poop: string; fall: string; wall: string; caught?: string; water?: string };
@@ -660,9 +664,121 @@ export const LEVEL_1_6_POND: LevelDefinition = {
   },
 };
 
+/** すき間(幅90)をふさぐ植え込みの列。gap はすき間の中心。 */
+const hedgeRow = (y: number, gap: number, look: 'hedge' | 'lantern' | 'rock' = 'hedge') => [
+  { x: 100, y, w: gap - 45 - 100, h: 50, look }, { x: gap + 45, y, w: 620 - gap - 45, h: 50, look },
+];
+
+/**
+ * 新1-8: せんべいで、道をあける(2026-11-15。設計書 28章の B1)。
+ * すき間に立つ鹿へ、せんべいを投げて、どいてもらう。食べ終わると、鹿は元の場所へ戻ってくる。
+ * ① 1頭(覚える) ② 左右に1頭ずつ(拾いながら) ③ 池の向こうの1頭(池に投げると、しずむ)
+ */
+export const LEVEL_1_8_SENBEI: LevelDefinition = {
+  id: '1-8', stage: 1, title: 'せんべいで、道をあける',
+  intro: 'すき間に、鹿が立っている。\nせんべいを拾って、投げてみよう。',
+  start: { x: 360, y: 3400 },
+  poops: [
+    { x: 180, y: 2800 }, { x: 540, y: 2760 },
+    ...row(2350, 420),
+    { x: 250, y: 1960 }, { x: 470, y: 1900 },
+    ...row(620, 360),
+  ],
+  deers: [], traps: [], walls: [], sliders: [], chasers: [], rain: [],
+  hedges: [
+    ...hedgeRow(3000, 360),
+    ...hedgeRow(2550, 200),
+    ...hedgeRow(2150, 520),
+    ...hedgeRow(1150, 360, 'lantern'),
+  ],
+  ponds: [{ x: 130, y: 1300, w: 460, h: 360 }],
+  stones: [
+    { id: 's1', x: 360, y: 1610, r: 36 },
+    { id: 's2', x: 300, y: 1500, r: 34 },
+    { id: 's3', x: 380, y: 1390, r: 36 },
+  ],
+  senbei: { pickups: [{ x: 360, y: 3260 }, { x: 220, y: 3200 }, { x: 470, y: 2720 }, { x: 300, y: 2300 }, { x: 360, y: 1800 }, { x: 560, y: 1980 }] },
+  hungry: [
+    { id: 'b1', kind: 'doe', x: 360, y: 3025, mode: 'block', sense: 300, speed: 210, eat: 2.6 },
+    { id: 'b2', kind: 'stag', x: 200, y: 2575, mode: 'block', sense: 320, speed: 220, eat: 2.4 },
+    { id: 'b3', kind: 'fawn', x: 520, y: 2175, mode: 'block', sense: 320, speed: 230, eat: 2.2 },
+    { id: 'b4', kind: 'stag', x: 360, y: 1175, mode: 'block', sense: 260, speed: 220, eat: 2.2 },
+  ],
+  coins: [
+    { x: 360, y: 3180 }, { x: 360, y: 2900 }, { x: 360, y: 2820 },
+    { x: 200, y: 2680 }, { x: 200, y: 2460 }, { x: 420, y: 2280 },
+    { x: 520, y: 2060 }, { x: 590, y: 2420, kind: 'gold' }, // 右の奥(行き止まり)
+    { x: 360, y: 1700 }, { x: 330, y: 1555, air: true }, { x: 340, y: 1445, air: true },
+    { x: 540, y: 1250, kind: 'premium', air: true }, // 池をわたった先の右すみ(跳ぶと取れる)
+    { x: 360, y: 1050 }, { x: 360, y: 820 }, { x: 360, y: 480 },
+  ],
+  chapters: [
+    { above: 3100, text: 'せんべいを拾って、ボタンで投げる。' },
+    { above: 2700, text: '鹿は、食べ終わると戻ってくる。' },
+    { above: 2250, text: 'こっちの鹿にも、せんべいを。' },
+    { above: 1700, text: '池の向こうにも、鹿が。' },
+    { above: 1100, text: 'あと少し。' },
+    { above: -Infinity, text: 'ゴールは、目の前。' },
+  ],
+  hints: {
+    poop: POOP_HINT, fall: FALL_HINT, wall: WALL_HINT,
+    water: '池に、落ちた…！\n石から石へ、跳んで渡ろう。\nせんべいも、池に落ちると、しずむ。',
+    caught: 'すき間の鹿は、通してくれない。\nせんべいを、すき間から横へ外れた所に投げよう。',
+  },
+};
+
+/**
+ * 新1-9: 追ってくる鹿(2026-11-15。設計書 28章の B1)。
+ * せんべいの好きな鹿が、走って追ってくる。せんべいを投げると、食べている間は止まる。
+ * ① 前から1頭 ② すき間の鹿と、後ろから1頭 ③ 左右から2頭(1枚では、たりない)
+ */
+export const LEVEL_1_9_CHASE: LevelDefinition = {
+  id: '1-9', stage: 1, title: '追ってくる、くいしんぼう',
+  intro: 'せんべいのにおいに、鹿が気づいた！',
+  start: { x: 360, y: 3400 },
+  poops: [
+    { x: 250, y: 3000 }, { x: 470, y: 2950 }, { x: 360, y: 2800 },
+    ...row(1750, 360),
+    { x: 200, y: 1250 }, { x: 520, y: 1200 },
+    ...row(560, 240),
+  ],
+  deers: [], traps: [], walls: [], sliders: [], chasers: [], rain: [],
+  hedges: [
+    ...hedgeRow(2300, 360),
+    { x: 100, y: 1500, w: 120, h: 60, look: 'rock' }, { x: 500, y: 1500, w: 120, h: 60, look: 'rock' },
+  ],
+  senbei: { pickups: [{ x: 300, y: 3280 }, { x: 420, y: 3280 }, { x: 180, y: 2480 }, { x: 540, y: 2480 }, { x: 360, y: 2050 }, { x: 290, y: 1620 }, { x: 430, y: 1620 }] },
+  hungry: [
+    { id: 'c1', kind: 'stag', x: 160, y: 2600, mode: 'chase', sense: 320, speed: 200, eat: 2.6, triggerY: 3200 },
+    { id: 'b1', kind: 'doe', x: 360, y: 2325, mode: 'block', sense: 280, speed: 210, eat: 2.4 },
+    { id: 'c2', kind: 'doe', x: 580, y: 3100, mode: 'chase', sense: 320, speed: 205, eat: 2.4, triggerY: 2550 },
+    { id: 'c3', kind: 'stag', x: 150, y: 1050, mode: 'chase', sense: 320, speed: 205, eat: 2.4, triggerY: 1550 },
+    { id: 'c4', kind: 'fawn', x: 570, y: 980, mode: 'chase', sense: 320, speed: 215, eat: 2.2, triggerY: 1450 },
+  ],
+  coins: [
+    { x: 360, y: 3180 }, { x: 200, y: 2900 }, { x: 520, y: 2800 },
+    { x: 360, y: 2450 }, { x: 360, y: 2200 }, { x: 140, y: 2150, kind: 'gold' },
+    { x: 360, y: 1900 }, { x: 360, y: 1620 },
+    { x: 360, y: 1300, kind: 'premium', air: true },
+    { x: 360, y: 1000 }, { x: 260, y: 800 }, { x: 460, y: 800 }, { x: 360, y: 450 },
+  ],
+  chapters: [
+    { above: 3150, text: 'せんべいを、拾っておこう。' },
+    { above: 2500, text: '来た！ 鹿の方へ、投げて止めよう。' },
+    { above: 1800, text: '後ろからも、来る。' },
+    { above: 1450, text: '左右から、2頭！' },
+    { above: 700, text: 'あと少し。' },
+    { above: -Infinity, text: 'ゴールは、目の前。' },
+  ],
+  hints: {
+    poop: POOP_HINT, fall: FALL_HINT, wall: WALL_HINT,
+    caught: 'つかまった…！\n鹿の方を向いて、せんべいを投げよう。\n食べている間に、走りぬける。\n跳んでいる間も、つかまらない。',
+  },
+};
+
 /** 2-4: おとりで道をつくる。狭いすきまに、鹿が立っている。せんべいで、どかす。 */
 export const LEVEL_2_4: LevelDefinition = {
-  id: '1-8', stage: 1, title: 'おとりで道をつくる', // 旧2-4
+  id: '旧2-4', stage: 1, title: 'おとりで道をつくる', // 2026-11-15 外した(投げるせんべいの新1-8へ)
   intro: 'すきまに、鹿が立っている。',
   start: { x: 360, y: 3400 },
   poops: [...row(3100, 384), ...row(2500, 256), ...row(1900, 512), ...row(1300, 256), ...row(800, 448)],
@@ -697,7 +813,7 @@ export const LEVEL_2_4: LevelDefinition = {
 
 /** 2-5: 群れの中を抜けて、奥の子鹿へ。 */
 export const LEVEL_2_5: LevelDefinition = {
-  id: '1-9', stage: 1, title: '群れを抜けて', // 旧2-5
+  id: '旧2-5', stage: 1, title: '群れを抜けて', // 2026-11-15 外した(投げるせんべいの新1-9へ)
   intro: '奥の子鹿へ。群れの中を、抜けよう。',
   start: { x: 360, y: 3400 },
   poops: [...row(3150, 256), ...row(2600, 512), ...row(2050, 384), ...row(1500, 256), ...row(1000, 448)],
@@ -812,8 +928,8 @@ export const STAGE_1: LevelSlot[] = [
   { id: '1-5', title: LEVEL_1_5.title, summary: 'ここまでの、全部入り', level: LEVEL_1_5 },
   { id: '1-6', title: LEVEL_1_6_POND.title, summary: '曲がり道と、池の飛び石', level: LEVEL_1_6_POND },
   { id: '1-7', title: LEVEL_1_8.title, summary: '壁が、せまってくる', level: LEVEL_1_8 },
-  { id: '1-8', title: LEVEL_2_4.title, summary: 'おとりで、道をあける', level: LEVEL_2_4 },
-  { id: '1-9', title: LEVEL_2_5.title, summary: '群れを、抜ける', level: LEVEL_2_5 },
+  { id: '1-8', title: LEVEL_1_8_SENBEI.title, summary: 'せんべいを投げて、どいてもらう', level: LEVEL_1_8_SENBEI },
+  { id: '1-9', title: LEVEL_1_9_CHASE.title, summary: '追ってくる鹿を、せんべいで止める', level: LEVEL_1_9_CHASE },
   { id: '1-10', title: LEVEL_1_10.title, summary: 'WORLD 1 の最終関門', level: LEVEL_1_10 },
 ];
 

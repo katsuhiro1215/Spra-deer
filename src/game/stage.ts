@@ -83,3 +83,17 @@ export type PondDefinition = { x: number; y: number; w: number; h: number };
 export type StoneDefinition = { id: string; x: number; y: number; r: number; sink?: number; move?: { dx: number; period: number }; lily?: boolean };
 /** コイン。kind が無ければシルバー。air=高い所にあり、跳ばないと取れない。 */
 export type CoinDefinition = { x: number; y: number; kind?: 'gold' | 'premium'; air?: boolean };
+
+// ---- 投げるせんべい(設計書 28章 B1) ----
+/**
+ * せんべいが好きな鹿。
+ * - block: 道に立って、ふさいでいる(触れても大丈夫だが、通れない)。せんべいを食べ終わると、元の場所へ戻る。
+ * - chase: Spraが triggerY より奥へ来ると追ってくる(触れるとつかまる。跳んでいる間は大丈夫)。食べ終わると、また追う。
+ * sense 以内にせんべいが落ちると、そちらへ走って、eat 秒食べる。
+ */
+export type HungryDefinition = {
+  id: string; kind: 'stag' | 'doe' | 'fawn'; x: number; y: number;
+  mode: 'block' | 'chase'; sense: number; speed: number; eat?: number; triggerY?: number;
+};
+/** 道に落ちているせんべい(拾うと持てる。最大3枚)と、最初から持っている枚数。 */
+export type SenbeiDefinition = { pickups: Point[]; start?: number };
