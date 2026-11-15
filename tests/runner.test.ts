@@ -223,6 +223,42 @@ test('カーブでは、外側へ押される(右カーブなら左へ)', () => 
   assert.equal(flat.x, 0, 'まっすぐな道では、押されない');
 });
 
+test('どの面でも、カーブで外の端へ押されても、内側へ戻れる(端で左右がきかなくならない)', () => {
+  for (const l of RUNNER_LEVELS) {
+    if (!l.curve) continue;
+    const c = courseOf(l);
+    // 外へ押す力がいちばん強い所(速さも見込む)
+    let best = 0;
+    let worst = 0;
+    for (let s = 100; s < l.length - 100; s++) {
+      const k = Math.abs(roadCurv(c, s)) * (l.rules.speed0 + (l.rules.speed1 - l.rules.speed0) * (s / l.length));
+      if (k > worst) { worst = k; best = s; }
+    }
+    const out = roadCurv(c, best) > 0 ? -1 : 1; // 押される向き
+    const r = new Run({ ...c, obstacles: [], coins: [] });
+    r.start();
+    r.s = best - 3;
+    r.x = out * PLAY_HALF;
+    const inward = out > 0 ? { left: true, right: false, jump: false } : { left: false, right: true, jump: false };
+    for (let i = 0; i < 90; i++) r.step(DT, inward); // 0.75秒(雨・雪は動き出しが鈍いので、少し長め)
+    const moved = (PLAY_HALF - out * r.x);
+    assert.ok(moved > 1.2, `${l.id}: s=${best} 端から ${moved.toFixed(2)}m しか戻れない`);
+  }
+});
+
+test('ジャンプ台: 飛び出すとダッシュ(しばらく速くなる)', () => {
+  const c: Course = { obstacles: [], coins: [], length: 1000, rules: { speed0: 16, speed1: 16, steerAccel: 42, steerSpeed: 6.8 }, bumps: [{ s: 50, len: 9, h: 1.8 }] };
+  const r = new Run(c);
+  r.start();
+  r.s = 30;
+  const before = r.speed;
+  for (let i = 0; i < 400 && r.boost === 0; i++) r.step(DT, { left: false, right: false, jump: false });
+  assert.ok(r.boost > 0, 'ダッシュしない');
+  assert.ok(r.speed > before * 1.3, `速くならない: ${before} → ${r.speed}`);
+  for (let i = 0; i < 400; i++) r.step(DT, { left: false, right: false, jump: false });
+  assert.ok(Math.abs(r.speed - before) < 0.01, '時間がたつと、元の速さにもどる');
+});
+
 test('回復薬: ハートが1つふえる(3つまで)。置いてある面だけ', () => {
   const rain = courseOf(runnerById('3-5')!);
   const potions = rain.coins.filter((c) => c.kind === 'potion');
@@ -369,7 +405,7 @@ test('ジャンプ台のある面では、空中のコインを取れる', () =>
   const c = courseOf(l);
   assert.ok((c.bumps?.length ?? 0) >= 1, '3-10にジャンプ台がある');
   const r = play(c, bot);
-  const air = c.coins.filter((cn) => cn.y >= 1.9 && cn.y < 3 && c.bumps!.some((b) => cn.s > b.s && cn.s < b.s + 8));
+  const air = c.coins.filter((cn) => cn.y >= 2 && cn.y < 4 && c.bumps!.some((b) => cn.s > b.s && cn.s < b.s + 8));
   const got = air.filter((cn) => r.collected.has(cn.id)).length;
   assert.ok(got >= air.length * 0.5, `空中のコイン ${got}/${air.length}`);
 });

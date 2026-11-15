@@ -20,6 +20,11 @@ const GRAVITY = 32;
 export const MAX_LIVES = 3;
 /** カーブで、外側へ押される強さ(大きいほど、曲がり角で操作が要る) */
 const DRIFT_GAIN = 7;
+/** 外へ押される速さの上限(左右の最高速度に対する割合)。これより強いと、端から戻れなくなる */
+export const DRIFT_MAX = 0.45;
+/** ジャンプ台から飛び出したときのダッシュ(速さの倍率と、続く秒数) */
+export const BOOST_MUL = 1.4;
+export const BOOST_TIME = 1.8;
 
 export function baseSpeed(s: number, length: number, rules: Rules = DEFAULT_RULES): number {
   return rules.speed0 + (rules.speed1 - rules.speed0) * Math.min(1, s / length);
@@ -47,6 +52,8 @@ export class Run {
   readonly struck = new Set<number>();
   /** 花見のシートで、さいごに落としたコインの数 */
   spilled = 0;
+  /** ジャンプ台のダッシュの残り時間[秒] */
+  boost = 0;
   private events: SimEvent[] = [];
   private jumpBuf = 0;
   private prevJump = false;
@@ -65,7 +72,11 @@ export class Run {
   }
 
   get speed(): number {
-    return baseSpeed(this.s, this.course.length, this.rules) * this.speedMul * this.slopeMul;
+    return baseSpeed(this.s, this.course.length, this.rules) * this.speedMul * this.slopeMul * this.boostMul;
+  }
+  /** ジャンプ台のダッシュの倍率(飛び出した直後がいちばん速く、だんだん元にもどる)。 */
+  get boostMul(): number {
+    return this.boost > 0 ? 1 + (BOOST_MUL - 1) * Math.min(1, this.boost / (BOOST_TIME * 0.5)) : 1;
   }
   /** 坂での速さの倍率(登りはおそく、下りは速く)。 */
   get slopeMul(): number {
@@ -106,6 +117,7 @@ export class Run {
     // 左右(スリップ中は逆)
     if (this.slip > 0) this.slip = Math.max(0, this.slip - dt);
     if (this.ice > 0) this.ice = Math.max(0, this.ice - dt);
+    if (this.boost > 0) this.boost = Math.max(0, this.boost - dt);
     let dir = (input.right ? 1 : 0) - (input.left ? 1 : 0);
     if (this.slip > 0) dir = -dir;
     const target = dir * this.rules.steerSpeed;
@@ -113,12 +125,16 @@ export class Run {
     const dv = Math.max(-accel * dt, Math.min(accel * dt, target - this.vx));
     this.vx += dv;
     // カーブでは、外側へ押し出される(右カーブなら、左へ)
-    const drift = this.course.curve ? -roadCurv(this.course, this.s) * this.speed * DRIFT_GAIN : 0;
+    // (上限つき: どんなに急なカーブでも、押し返して内側へ戻れる)
+    const cap = this.rules.steerSpeed * DRIFT_MAX;
+    const drift = this.course.curve ? Math.max(-cap, Math.min(cap, -roadCurv(this.course, this.s) * this.speed * DRIFT_GAIN)) : 0;
     // つり橋の上では、橋のゆれで左右へ押される
     const sway = this.onBridge ? bridgeSway(this.t) : 0;
     this.x += (this.vx + drift + sway) * dt;
-    if (this.x > PLAY_HALF) { this.x = PLAY_HALF; this.vx = 0; }
-    if (this.x < -PLAY_HALF) { this.x = -PLAY_HALF; this.vx = 0; }
+    // 端: 外向きの速さだけを止める(内向きの速さまで0にすると、カーブで外へ押されている間、
+    // 毎回0にもどって速さがたまらず、反対を押しても端から離れられなくなる)
+    if (this.x > PLAY_HALF) { this.x = PLAY_HALF; if (this.vx > 0) this.vx = 0; }
+    if (this.x < -PLAY_HALF) { this.x = -PLAY_HALF; if (this.vx < 0) this.vx = 0; }
     if (this.onBridge && Math.abs(this.x) > BRIDGE_HALF) this.fallOffBridge();
 
     // ジャンプ(少し早押しでも受け付ける)
@@ -130,6 +146,11 @@ export class Run {
         this.vy = JUMP_V;
         this.jumpBuf = 0;
         this.events.push({ kind: 'jump' });
+        // ジャンプ台の上で跳んでも、ダッシュ
+        if (this.course.bumps?.some((b) => this.s > b.s - b.len && this.s < b.s + 1.5)) {
+          this.boost = BOOST_TIME;
+          this.events.push({ kind: 'launch' });
+        }
       }
     }
     this.integrateVertical(dt);
@@ -173,6 +194,8 @@ export class Run {
     if (this.y === 0 && this.vy <= 0) {
       if (acc <= 0) return;
       this.events.push({ kind: 'launch' }); // 地面から飛び出した
+      // ジャンプ台から飛び出したら、ダッシュ(しばらく速くなる)
+      if (this.course.bumps?.some((b) => Math.abs(this.s - b.s) < 1.5)) this.boost = BOOST_TIME;
     }
     this.vy += acc * dt;
     this.y += this.vy * dt;

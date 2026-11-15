@@ -476,13 +476,13 @@ export function buildCourse(opts: CourseOptions = {}): Course {
   const bumps: Bump[] = [];
   const rampPattern = (s: number) => {
     const lip = s + 8;
-    bumps.push({ s: lip, len: 8, h: 1.3 });
+    bumps.push({ s: lip, len: 9, h: 1.8 });
     line(s - 7, 0, 3, 2.2);
     // 飛び出したときに通る高さ(速さ13〜24m/sで確かめた)。台の先で跳ぶと、上の2枚も取れる
-    [[1.2, 1.9], [2.8, 2.2], [4.4, 2.2], [6.0, 1.9]].forEach(([ds, y]) => coin(lip + ds, 0, y));
-    coin(lip + 5, 0, 4.8);
-    coin(lip + 7, 0, 5.0);
-    return lip + 22;
+    [[1.5, 2.2], [3, 3.0], [4.5, 3.2], [6, 3.1], [7.5, 2.9]].forEach(([ds, y]) => coin(lip + ds, 0, y));
+    coin(lip + 6, 0, 6.0);
+    coin(lip + 9, 0, 6.6);
+    return lip + 30; // 大ジャンプの着地点まで、罠を置かない
   };
 
   // その場所での、だいたいの走る速さ(電車・雷の時間合わせに使う。ぶつかって遅くなると、安全側にずれる)

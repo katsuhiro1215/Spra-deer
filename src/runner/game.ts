@@ -157,7 +157,7 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
   };
   const paintHud = () => {
     // 操作できない・逆になっている間は、画面に出す(「反応しない」と見えないように)
-    const msg = run.ice > 0 ? 'つるつる中… 曲がれない' : run.slip > 0 ? '操作が逆！' : '';
+    const msg = run.ice > 0 ? 'つるつる中… 曲がれない' : run.slip > 0 ? '操作が逆！' : run.boost > 0 ? 'ダッシュ！' : '';
     if (elStatus.textContent !== msg) elStatus.textContent = msg;
     elStatus.classList.toggle('on', msg !== '');
     elCoins.textContent = String(run.coins);
@@ -376,6 +376,9 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
       if (e.kind === 'thunder') {
         view.flash();
         view.bump(0.15);
+      } else if (e.kind === 'launch' && run.boost > 0) {
+        view.bump(0.12);
+        toast('ジャンプ台！ ダッシュ！', 1400);
       } else if (e.kind === 'charge') {
         if (level.horn) toast('ブオォ〜 法螺貝だ！ 何かが 突進してくる！', 2200);
       } else if (e.kind === 'spill') {
@@ -435,7 +438,7 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
       }
       if (!hinted.has('ramp') && course.bumps?.some((b) => b.s - run.s > 0 && b.s - run.s < 40)) {
         hinted.add('ramp');
-        toast('ジャンプ台！ 先っぽで 跳ぶと 大ジャンプ！', 2800);
+        toast('ジャンプ台！ 乗ると ダッシュ。先っぽで 跳ぶと 大ジャンプ！', 2800);
       }
       if (course.wake !== undefined && !woke && run.progress >= course.wake) {
         woke = true;

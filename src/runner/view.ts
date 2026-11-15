@@ -702,6 +702,7 @@ export class KasugaView {
     this.disposables.push(arrows, stripes);
     const deck = new THREE.MeshStandardMaterial({ color: 0xd9dde4, roughness: 0.55, metalness: 0.1 });
     const arrowMat = new THREE.MeshBasicMaterial({ map: arrows, transparent: true, depthWrite: false, toneMapped: false });
+    this.rampArrows = arrows; // 矢印は、前へ流れるように動かす(ダッシュ台らしく)
     const sideMat = new THREE.MeshStandardMaterial({ map: stripes, roughness: 0.6, side: THREE.DoubleSide });
     for (const b of bumps) {
       const a = b.s - b.len;
@@ -2163,9 +2164,14 @@ export class KasugaView {
     const h = this.host.clientHeight || 640;
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h;
-    this.camera.fov = w / h < 0.6 ? 62 : 62 - Math.min(14, (w / h - 0.6) * 24);
+    this.baseFov = w / h < 0.6 ? 62 : 62 - Math.min(14, (w / h - 0.6) * 24);
+    this.camera.fov = this.baseFov + this.fovKick;
     this.camera.updateProjectionMatrix();
   }
+  private baseFov = 62;
+  /** ダッシュ中に、画面を少し広角にする量[度] */
+  private fovKick = 0;
+  private rampArrows?: THREE.Texture;
 
   /** ぶつかったときの揺れ。 */
   bump(power = 0.35): void {
@@ -2398,6 +2404,14 @@ export class KasugaView {
     }
     if (this.wheel) this.wheel.rotation.z -= dt * 0.05;
     this.updateWeather(this.clock);
+    // ジャンプ台: 矢印を流し、ダッシュ中は画面を広角にして、速さを感じさせる
+    if (this.rampArrows) this.rampArrows.offset.y -= dt * 1.6;
+    const kick = run.boost > 0 ? 9 * Math.min(1, run.boost / 0.9) : 0;
+    if (Math.abs(kick - this.fovKick) > 0.05) {
+      this.fovKick += (kick - this.fovKick) * Math.min(1, dt * 6);
+      this.camera.fov = this.baseFov + this.fovKick;
+      this.camera.updateProjectionMatrix();
+    }
     // 雷の光は、やわらかく戻す
     this.flashV = Math.max(0, this.flashV - dt * 3);
     this.renderer.toneMappingExposure = this.theme.exposure + this.cine * 0.15 + this.flashV * 0.55;
