@@ -230,7 +230,10 @@ export class KasugaView {
 
     this.buildGround();
     if (theme.setting === 'town') {
-      this.buildTownScenery();
+      // 山を下りて街に入る面は、手前を杉の山道にする
+      const from = level.townFrom ? course.length * level.townFrom : 0;
+      if (from > 0) this.buildSandoScenery(-20, from);
+      this.buildTownScenery(from);
     } else {
       this.buildSandoScenery(); // 山道も、灯籠・鳥居をのぞいて同じ木々
       if (theme.setting === 'sando') this.buildTorii();
@@ -241,6 +244,7 @@ export class KasugaView {
     else if (theme.goal === 'todaiji') this.buildTodaiji();
     else if (theme.goal === 'horyuji') this.buildHoryuji();
     else if (theme.goal === 'omiwa') this.buildOmiwa();
+    else if (theme.goal === 'heijo') this.buildHeijo();
     else this.buildSummit();
     // ゴールの景色は、ゴールの道の高さ(坂を登った・下った先)に置く
     const hEnd = this.gy(course.length);
@@ -549,8 +553,8 @@ export class KasugaView {
     }
   }
 
-  // ---- 参道: 灯籠と杉並木 ----
-  private buildSandoScenery(): void {
+  // ---- 参道: 灯籠と杉並木(from〜to の間) ----
+  private buildSandoScenery(from = -20, to = this.end + 60): void {
     const th = this.theme;
     const stone = new THREE.MeshStandardMaterial({ color: th.snowCaps ? 0xc9ccd0 : 0xaaa69b, roughness: 0.95 });
     const glow = new THREE.MeshStandardMaterial({ color: 0xffd98a, emissive: 0xffb040, emissiveIntensity: th.lampGlow, roughness: 0.6 });
@@ -564,7 +568,7 @@ export class KasugaView {
       { geo: new THREE.SphereGeometry(0.1, 10, 8), mat: stone, pos: [0, 2.36, 0] },
     ];
     const lp: Placement[] = [];
-    for (let s = 10; s < this.end - 8; s += 13) {
+    for (let s = 10; s < Math.min(to, this.end - 8); s += 13) {
       for (const sx of [-1, 1]) lp.push(this.rp(s, sx * (ROAD_HALF + 1.5), { rotY: Math.PI / 4, scale: 1.3 }));
     }
     if (th.setting === 'sando') {
@@ -592,7 +596,7 @@ export class KasugaView {
     }
     const rnd = rngFor(99);
     const tp: Placement[] = [];
-    for (let s = -20; s < this.end + 60; s += 4.6) {
+    for (let s = from; s < to; s += 4.6) {
       for (const sx of [-1, 1]) {
         if (rnd() < 0.18) continue;
         const near = 8 + rnd() * 6;
@@ -604,7 +608,7 @@ export class KasugaView {
 
     const bushMat = new THREE.MeshStandardMaterial({ color: th.snowCaps ? 0xe9f1f7 : 0x4f9446, roughness: 1 });
     const bp: Placement[] = [];
-    for (let s = 0; s < this.end; s += 7) {
+    for (let s = Math.max(0, from); s < Math.min(to, this.end); s += 7) {
       for (const sx of [-1, 1]) if (rnd() < 0.7) bp.push(this.rp(s + rnd() * 6, sx * (ROAD_HALF + 3 + rnd() * 3), { scale: 0.6 + rnd() * 0.6 }));
     }
     addInstanced(this.scene, [{ geo: new THREE.SphereGeometry(1, 10, 8), mat: bushMat, pos: [0, 0.6, 0] }], bp);
@@ -622,9 +626,10 @@ export class KasugaView {
   }
 
   // ---- 街道: 街灯・並木・ビル ----
-  private buildTownScenery(): void {
+  private buildTownScenery(from = 0): void {
     const th = this.theme;
     const rnd = rngFor(321);
+    const openEnd = th.goal === 'bay' || th.goal === 'heijo'; // ゴールの景色が見えるよう、ゴール近くは建物を減らす
     // 街灯
     const pole = new THREE.MeshStandardMaterial({ color: 0x3c4048, roughness: 0.6, metalness: 0.3 });
     const bulb = new THREE.MeshStandardMaterial({ color: 0xfff0c8, emissive: 0xffc060, emissiveIntensity: th.lampGlow, roughness: 0.5 });
@@ -635,7 +640,7 @@ export class KasugaView {
     ];
     const lp: Placement[] = [];
     const halos: THREE.Vector3[] = [];
-    for (let s = 8; s < this.course.length + 40; s += 22) {
+    for (let s = 8 + Math.ceil(from / 22) * 22; s < this.course.length + 40; s += 22) {
       lp.push(this.rp(s, -(ROAD_HALF + 1.2)));
       lp.push(this.rp(s + 11, ROAD_HALF + 1.2, { rotY: Math.PI }));
       // 灯りの位置は、街灯の腕の先(道の内側へ1.35m)
@@ -650,7 +655,7 @@ export class KasugaView {
     const trunk = new THREE.MeshStandardMaterial({ color: 0x6b4a2e, roughness: 1 });
     const leaf = new THREE.MeshStandardMaterial({ color: 0x55803a, roughness: 0.95, flatShading: true });
     const tp: Placement[] = [];
-    for (let s = 0; s < this.course.length + 40; s += 9) {
+    for (let s = from; s < this.course.length + 40; s += 9) {
       for (const sx of [-1, 1]) if (rnd() < 0.75) tp.push(this.rp(s + rnd() * 4, sx * (ROAD_HALF + 2.6 + rnd() * 1.4), { scale: 0.7 + rnd() * 0.5 }));
     }
     addInstanced(this.scene, [
@@ -683,11 +688,11 @@ export class KasugaView {
       this.disposables.push(lightMap);
       const mat = new THREE.MeshStandardMaterial({ map: tex, emissiveMap: lightMap, emissive: 0xffffff, emissiveIntensity: th.night ? 0.8 : 0.35, roughness: 0.85 });
       const places: Placement[] = [];
-      for (let s = 30; s < this.course.length + 40; s += 11) {
+      for (let s = 30 + from; s < this.course.length + 40; s += 11) {
         for (const sx of [-1, 1]) {
           if (rnd() * 4 > 1 + (k === 0 ? 1.6 : 0.5)) continue;
           const nearEnd = s > this.course.length - 80;
-          if (nearEnd && rnd() < 0.85) continue; // 海が見えるよう、ゴール近くは開ける
+          if (openEnd && nearEnd && rnd() < 0.85) continue; // 海・門が見えるよう、ゴール近くは開ける
           const x = sx * (ROAD_HALF + 8 + t.w / 2 + rnd() * 22);
           places.push(this.rp(s + rnd() * 9, x, { y: t.h / 2 }));
         }
@@ -1013,9 +1018,9 @@ export class KasugaView {
   }
 
   /** 南大門のような、大きな門(道がまんなかを通る)。 */
-  private bigGate(): THREE.Group {
+  private bigGate(color = 0x8a3a22): THREE.Group {
     const g = new THREE.Group();
-    const wood = new THREE.MeshStandardMaterial({ color: 0x8a3a22, roughness: 0.7, emissive: 0x1a0600 });
+    const wood = new THREE.MeshStandardMaterial({ color, roughness: 0.7, emissive: 0x1a0600 });
     const roof = new THREE.MeshStandardMaterial({ color: 0x4a3d33, roughness: 0.95 });
     const white = new THREE.MeshStandardMaterial({ color: 0xe8dfcc, roughness: 0.9 });
     for (const sx of [-1, 1]) for (const k of [0, 1]) {
@@ -1080,8 +1085,8 @@ export class KasugaView {
 
   private buildLandmark(lm: Landmark): void {
     const s = lm.at * this.course.length;
-    const model = lm.kind === 'pagoda' ? this.pagoda(3, 6.2) : this.hall(15, 9, 5);
-    const w = this.roadW(s, lm.side * (ROAD_HALF + (lm.kind === 'pagoda' ? 9 : 12)));
+    const model = lm.kind === 'pagoda' ? this.pagoda(3, 6.2) : lm.kind === 'pagoda5' ? this.pagoda(5, 6.6) : this.hall(15, 9, 5);
+    const w = this.roadW(s, lm.side * (ROAD_HALF + (lm.kind === 'hall' ? 12 : 9)));
     model.position.set(w.x, this.terrainAt(w.x, w.z, s).h, w.z);
     model.rotation.y = -w.psi;
     this.scene.add(model);
@@ -1230,6 +1235,44 @@ export class KasugaView {
     }
   }
 
+  // ---- 平城宮跡: 朱色の朱雀門(ゴール)・広い原っぱ・奥の大極殿 ----
+  private buildHeijo(): void {
+    const L = this.course.length;
+    // 朱雀門は、ゴールの少し先(ゴールした鹿は、門の手前で止まって見上げる)
+    const gz = -(L + 48);
+    const gate = this.bigGate(0xd0462a);
+    gate.scale.setScalar(0.8);
+    gate.position.set(0, 0, gz);
+    this.scene.add(gate);
+    // 門の左右にのびる、築地塀(白い壁と屋根)
+    const wallM = new THREE.MeshStandardMaterial({ color: 0xefe6d2, roughness: 0.9 });
+    const roofM = new THREE.MeshStandardMaterial({ color: 0x4a3d33, roughness: 0.95 });
+    for (const sx of [-1, 1]) {
+      const wall = new THREE.Mesh(new THREE.BoxGeometry(120, 4.2, 1.6), wallM);
+      wall.position.set(sx * 75, 2.1, gz);
+      const cap = new THREE.Mesh(new THREE.BoxGeometry(122, 0.7, 3), roofM);
+      cap.position.set(sx * 75, 4.5, gz);
+      this.scene.add(wall, cap);
+    }
+    // 奥の大極殿
+    const hall = this.hall(44, 20, 9);
+    hall.position.set(0, 0, -(L + 220));
+    hall.scale.setScalar(1.3);
+    this.scene.add(hall);
+    // 夕日
+    const sunDisc = new THREE.Mesh(new THREE.CircleGeometry(22, 40), new THREE.MeshBasicMaterial({ color: 0xffc070, fog: false }));
+    sunDisc.position.set(-90, 30, -(L + 380));
+    this.scene.add(sunDisc);
+    // 遠くの生駒山(この先の大阪へつづく)
+    const mtn = new THREE.MeshStandardMaterial({ color: 0x7a6a8e, roughness: 1, flatShading: true });
+    for (let i = 0; i < 8; i++) {
+      const h = 40 + ((i * 31) % 26);
+      const m = new THREE.Mesh(new THREE.ConeGeometry(80 + (i % 3) * 20, h, 6), mtn);
+      m.position.set(-360 + i * 100, h / 2 - 3, -(L + 520 + (i % 2) * 40));
+      this.scene.add(m);
+    }
+  }
+
   // ---- 若草山の山頂: 木のゴールゲート・山なみ ----
   private buildSummit(): void {
     const L = this.course.length;
@@ -1339,6 +1382,46 @@ export class KasugaView {
           pu.position.set(ex, 0.78, 0.46);
           obj.add(e, pu);
         }
+      } else if (o.kind === 'fence' && o.deco === 'crossing') {
+        // 踏切の遮断機: 黄色と黒のしま模様の棒(すき間の側が、棒の先)
+        const w = o.halfW * 2;
+        const arm = new THREE.Mesh(new THREE.BoxGeometry(w, 0.16, 0.16), this.crossingStripe());
+        arm.position.set(0, 0.95, 0);
+        arm.castShadow = true;
+        obj.add(arm);
+        for (const ex of [-o.halfW, o.halfW]) {
+          if (Math.abs(o.x + ex) < ROAD_HALF - 0.1) continue; // 棒の先(すき間の側)には柱を立てない
+          const post = new THREE.Mesh(new THREE.BoxGeometry(0.3, 1.2, 0.3), new THREE.MeshStandardMaterial({ color: 0x2a2a30, roughness: 0.6 }));
+          post.position.set(ex, 0.6, 0);
+          obj.add(post);
+        }
+      } else if (o.kind === 'train') {
+        obj.add(this.trainModel(o.amp));
+        this.buildTrack(o);
+      } else if (o.kind === 'bolt') {
+        const ring = new THREE.Mesh(
+          new THREE.RingGeometry(0.88, 1.4, 40).rotateX(-Math.PI / 2),
+          new THREE.MeshBasicMaterial({ color: 0xffd21a, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false }),
+        );
+        ring.position.y = 0.06;
+        const fill = new THREE.Mesh(
+          new THREE.CircleGeometry(1.35, 40).rotateX(-Math.PI / 2),
+          new THREE.MeshBasicMaterial({ color: 0xfff2a0, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false }),
+        );
+        fill.position.y = 0.05;
+        const bolt = new THREE.Mesh(
+          new THREE.PlaneGeometry(4, 34).translate(0, 17, 0),
+          new THREE.MeshBasicMaterial({ map: this.boltTexture(), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false, fog: false, side: THREE.DoubleSide }),
+        );
+        bolt.visible = false;
+        const scorch = new THREE.Mesh(
+          new THREE.CircleGeometry(1.1, 24).rotateX(-Math.PI / 2),
+          new THREE.MeshBasicMaterial({ color: 0x1a1410, transparent: true, opacity: 0.55, depthWrite: false }),
+        );
+        scorch.position.y = 0.04;
+        scorch.visible = false;
+        obj.add(ring, fill, bolt, scorch);
+        sprite = bolt;
       } else if (o.kind === 'fence') {
         const w = o.halfW * 2;
         const n = Math.max(2, Math.round(w / 1.1) + 1);
@@ -1445,6 +1528,159 @@ export class KasugaView {
       this.scene.add(obj);
       this.obstacleObjs.push({ o, obj, spin, sprite, crit });
     }
+  }
+
+  private stripeMat?: THREE.Material;
+  /** 踏切の遮断機の、黄色と黒のしま模様。 */
+  private crossingStripe(): THREE.Material {
+    if (!this.stripeMat) {
+      const tex = canvasTexture(64, (g, n) => {
+        for (let i = 0; i < 4; i++) {
+          g.fillStyle = i % 2 ? '#1d1d22' : '#ffc21a';
+          g.fillRect((i * n) / 4, 0, n / 4, n);
+        }
+      }, true);
+      tex.repeat.set(3, 1);
+      this.disposables.push(tex);
+      this.stripeMat = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.5, emissive: 0x2a1c00 });
+    }
+    return this.stripeMat;
+  }
+
+  /** 電車(2両。長い向きが、道を横切る向き)。近鉄ふうの、赤とクリーム色。 */
+  private trainModel(len: number): THREE.Group {
+    const g = new THREE.Group();
+    const red = new THREE.MeshStandardMaterial({ color: 0xa31f2a, roughness: 0.45, metalness: 0.2 });
+    const cream = new THREE.MeshStandardMaterial({ color: 0xf2e6c8, roughness: 0.5 });
+    const roof = new THREE.MeshStandardMaterial({ color: 0x9aa0a8, roughness: 0.6, metalness: 0.3 });
+    const dark = new THREE.MeshStandardMaterial({ color: 0x1e2228, roughness: 0.8 });
+    const win = new THREE.MeshStandardMaterial({ color: 0x2c3e55, roughness: 0.15, metalness: 0.4, emissive: 0xffd28a, emissiveIntensity: 0.25 });
+    const lamp = new THREE.MeshBasicMaterial({ color: 0xfff4c0 });
+    const carL = len / 2 - 0.4;
+    for (const k of [-1, 1]) {
+      const cx = (k * len) / 4;
+      const lower = new THREE.Mesh(new THREE.BoxGeometry(carL, 1.5, 2.9), red);
+      lower.position.set(cx, 1.35, 0);
+      const upper = new THREE.Mesh(new THREE.BoxGeometry(carL, 1.4, 2.9), cream);
+      upper.position.set(cx, 2.8, 0);
+      const top = new THREE.Mesh(new THREE.BoxGeometry(carL - 0.2, 0.35, 2.6), roof);
+      top.position.set(cx, 3.67, 0);
+      const under = new THREE.Mesh(new THREE.BoxGeometry(carL - 1, 0.6, 2.2), dark);
+      under.position.set(cx, 0.3, 0);
+      for (const m of [lower, upper, top]) m.castShadow = true;
+      g.add(lower, upper, top, under);
+      // 窓(両側)
+      for (let i = 0; i < 6; i++) {
+        const wx = cx - carL / 2 + 1.6 + (i * (carL - 3.2)) / 5;
+        for (const sz of [-1, 1]) {
+          const w = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.9, 0.05), win);
+          w.position.set(wx, 2.85, sz * 1.47);
+          g.add(w);
+        }
+      }
+    }
+    // 前と後ろの顔(大きな窓とライト)
+    for (const k of [-1, 1]) {
+      const fx = k * (len / 2 - 0.15);
+      const face = new THREE.Mesh(new THREE.BoxGeometry(0.1, 1.0, 2.2), win);
+      face.position.set(fx + k * 0.05, 2.8, 0);
+      g.add(face);
+      for (const sz of [-0.85, 0.85]) {
+        const l = new THREE.Mesh(new THREE.CircleGeometry(0.2, 16).rotateY((k * Math.PI) / 2), lamp);
+        l.position.set(fx + k * 0.12, 1.5, sz);
+        g.add(l);
+      }
+    }
+    return g;
+  }
+
+  private signals: { o: Obstacle; lamps: THREE.Mesh[] }[] = [];
+  /** 線路(道を横切る2本のレール)と、警報機(赤いランプ・バッテン印)。 */
+  private buildTrack(o: Obstacle): void {
+    const w = this.roadW(o.s, 0);
+    const track = new THREE.Group();
+    // 道の外の砂利(道の上は、道の面のまま)
+    const ballastM = new THREE.MeshStandardMaterial({ color: 0x6d6862, roughness: 1 });
+    for (const sx of [-1, 1]) {
+      const ballast = new THREE.Mesh(new THREE.BoxGeometry(100, 0.12, 3.6), ballastM);
+      ballast.position.set(sx * (ROAD_HALF + 0.2 + 50), 0, 0);
+      ballast.receiveShadow = true;
+      track.add(ballast);
+    }
+    const steel = new THREE.MeshStandardMaterial({ color: 0xb8bcc4, roughness: 0.3, metalness: 0.8 });
+    for (const z of [-0.72, 0.72]) {
+      const rail = new THREE.Mesh(new THREE.BoxGeometry(200, 0.14, 0.12), steel);
+      rail.position.set(0, 0.07, z);
+      track.add(rail);
+    }
+    const sleepers: Placement[] = [];
+    for (let x = -60; x <= 60; x += 0.9) if (Math.abs(x) > ROAD_HALF + 0.3) sleepers.push({ x, z: 0 });
+    addInstanced(track, [{ geo: new THREE.BoxGeometry(0.28, 0.1, 2.4), mat: new THREE.MeshStandardMaterial({ color: 0x5a4636, roughness: 1 }), pos: [0, 0.02, 0] }], sleepers, false);
+    track.position.set(w.x, this.gy(o.s), w.z);
+    track.rotation.y = -w.psi;
+    this.scene.add(track);
+    // 警報機(道の両わき、線路の手前)
+    const lamps: THREE.Mesh[] = [];
+    const postM = new THREE.MeshStandardMaterial({ color: 0xf2f2f2, roughness: 0.5 });
+    const blackM = new THREE.MeshStandardMaterial({ color: 0x1d1d22, roughness: 0.5 });
+    for (const sx of [-1, 1]) {
+      const p = this.roadW(o.s - 2.6, sx * (ROAD_HALF + 0.9));
+      const sig = new THREE.Group();
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.1, 3.4, 10), postM);
+      pole.position.y = 1.7;
+      const bar = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.32, 0.08), blackM);
+      bar.position.y = 2.3;
+      sig.add(pole, bar);
+      for (const r of [Math.PI / 5, -Math.PI / 5]) {
+        const cross = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.22, 0.05), this.crossingStripe());
+        cross.position.set(0, 3.2, 0.02);
+        cross.rotation.z = r;
+        sig.add(cross);
+      }
+      for (const lx of [-0.5, 0.5]) {
+        const lampM = new THREE.MeshStandardMaterial({ color: 0x5a1010, emissive: 0xff2010, emissiveIntensity: 0, roughness: 0.4 });
+        const l = new THREE.Mesh(new THREE.SphereGeometry(0.19, 14, 10), lampM);
+        l.position.set(lx, 2.3, 0.12);
+        sig.add(l);
+        lamps.push(l);
+      }
+      sig.position.set(p.x, this.gy(o.s), p.z);
+      sig.rotation.y = -p.psi;
+      this.scene.add(sig);
+    }
+    this.signals.push({ o, lamps });
+  }
+
+  private boltTex?: THREE.CanvasTexture;
+  /** 雷のいなずま(ぎざぎざの光)。 */
+  private boltTexture(): THREE.CanvasTexture {
+    if (!this.boltTex) {
+      const c = document.createElement('canvas');
+      c.width = 64;
+      c.height = 512;
+      const g = c.getContext('2d')!;
+      const rnd = rngFor(13);
+      const pts: [number, number][] = [];
+      for (let y = 0; y <= 512; y += 40) pts.push([32 + (y === 0 || y >= 512 ? 0 : (rnd() - 0.5) * 34), y]);
+      for (const [lw, col] of [[18, 'rgba(255,230,120,0.35)'], [8, 'rgba(255,245,180,0.85)'], [3, '#ffffff']] as const) {
+        g.strokeStyle = col;
+        g.lineWidth = lw;
+        g.lineJoin = 'round';
+        g.beginPath();
+        pts.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y)));
+        g.stroke();
+      }
+      this.boltTex = new THREE.CanvasTexture(c);
+      this.boltTex.colorSpace = THREE.SRGBColorSpace;
+      this.disposables.push(this.boltTex);
+    }
+    return this.boltTex;
+  }
+
+  /** 雷が落ちたときの、やわらかい光(短く明るくして、すぐ戻す。点滅はさせない) */
+  private flashV = 0;
+  flash(): void {
+    this.flashV = 1;
   }
 
   /** 動物・モンスターの、ポーズごとの絵(同じ絵は1回だけ読み込む)。 */
@@ -1701,6 +1937,32 @@ export class KasugaView {
         continue;
       }
       e.obj.visible = true;
+      if (e.o.kind === 'train') {
+        // 電車: 線路の上を、道を横切って走る
+        e.obj.visible = Math.abs(st.x) < 160;
+        const tw = this.roadW(e.o.s, st.x);
+        e.obj.position.set(tw.x, this.gy(e.o.s), tw.z);
+        e.obj.rotation.y = -this.roadW(e.o.s, 0).psi;
+        continue;
+      }
+      if (e.o.kind === 'bolt') {
+        // 雷: 光る輪(予告) → いなずま → 焦げあと
+        const t0 = run.chargeT.get(e.o.id);
+        const [ring, fill, bolt, scorch] = e.obj.children as THREE.Mesh[];
+        const d = t0 === undefined ? -1 : run.t - t0;
+        const warn = t0 !== undefined && d < e.o.freq;
+        const u = warn ? d / e.o.freq : 0; // 0→1 で、だんだん強く
+        (ring.material as THREE.MeshBasicMaterial).opacity = warn ? 0.65 + 0.35 * Math.abs(Math.sin(d * (6 + u * 10))) : 0;
+        (fill.material as THREE.MeshBasicMaterial).opacity = warn ? 0.18 + u * 0.3 : 0;
+        const strike = t0 !== undefined && d >= e.o.freq && d < e.o.freq + 0.32;
+        bolt.visible = strike;
+        if (strike) {
+          bolt.rotation.y = -this.camPsi + Math.sin(d * 50) * 0.3;
+          bolt.scale.x = 0.8 + Math.random() * 0.5;
+        }
+        scorch.visible = t0 !== undefined && d >= e.o.freq;
+        continue;
+      }
       if (e.crit && e.sprite) {
         // 動物・モンスター: 動き方と状態で、ポーズを切りかえる
         const o = e.o;
@@ -1750,9 +2012,19 @@ export class KasugaView {
       }
     }
 
+    // 踏切の警報機: 電車が動き出したら、左右のランプが交互に光る(鹿が通りすぎるまで)
+    for (const sg of this.signals) {
+      const on = run.chargeT.has(sg.o.id) && run.s < sg.o.s + 6;
+      const phase = Math.floor(this.clock * 2.2) % 2;
+      sg.lamps.forEach((l, i) => {
+        (l.material as THREE.MeshStandardMaterial).emissiveIntensity = on && i % 2 === phase ? 3.2 : 0;
+      });
+    }
     if (this.wheel) this.wheel.rotation.z -= dt * 0.05;
     this.updateWeather(this.clock);
-    this.renderer.toneMappingExposure = this.theme.exposure + this.cine * 0.15;
+    // 雷の光は、やわらかく戻す
+    this.flashV = Math.max(0, this.flashV - dt * 3);
+    this.renderer.toneMappingExposure = this.theme.exposure + this.cine * 0.15 + this.flashV * 0.55;
     this.renderer.render(this.scene, this.camera);
   }
 

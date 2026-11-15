@@ -21,8 +21,10 @@ const HINTS: Record<string, string> = {
   'critter:cross': 'どうぶつが よこぎるよ！ タイミングを見て',
   'critter:hop': 'ぴょんぴょん！ とんでいる あいだに 通ろう',
   'critter:charge': 'つっこんでくる！ よけるか ジャンプ！',
+  crossing: 'カンカン… 踏切だ！ 遮断機は すき間か ジャンプで',
+  bolt: '光る輪に 雷が落ちる！ 輪の外へ よけて！',
 };
-const hintKey = (o: Obstacle) => (o.kind === 'critter' ? `critter:${o.behavior}` : o.kind);
+const hintKey = (o: Obstacle) => (o.kind === 'critter' ? `critter:${o.behavior}` : o.deco ?? o.kind);
 
 export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
   const q = <T extends HTMLElement>(k: string) => root.querySelector<T>(`[data-ks="${k}"]`)!;
@@ -74,7 +76,28 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
       case 'slide': tone(1500, 900, 0.4, 'triangle', 0.05); break;
       case 'clear': [523, 659, 784, 1047].forEach((f, i) => tone(f, f * 1.01, 0.3, 'triangle', 0.1, i * 0.12)); break;
       case 'fail': tone(330, 80, 0.8, 'sawtooth', 0.08); break;
+      // 踏切の「カンカン」(2つの音を交互に、約4秒)
+      case 'bell': for (let i = 0; i < 9; i++) tone(i % 2 ? 760 : 900, i % 2 ? 750 : 890, 0.22, 'square', 0.035, i * 0.45); break;
+      case 'warn': tone(1400, 1600, 0.12, 'sine', 0.04); break;
+      case 'thunder': noise(0.9, 0.16, 380); tone(90, 40, 0.9, 'sawtooth', 0.06); break;
     }
+  };
+  /** ざーっ・ゴロゴロという音(短いノイズ)。 */
+  const noise = (dur: number, vol: number, freq: number) => {
+    if (!ac) return;
+    const len = Math.floor(ac.sampleRate * dur);
+    const buf = ac.createBuffer(1, len, ac.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len) ** 2;
+    const src = ac.createBufferSource();
+    src.buffer = buf;
+    const f = ac.createBiquadFilter();
+    f.type = 'lowpass';
+    f.frequency.value = freq;
+    const g = ac.createGain();
+    g.gain.value = vol;
+    src.connect(f).connect(g).connect(ac.destination);
+    src.start();
   };
 
   // 雨の面だけ、さーっという雨の音(ノイズ)を小さく流す
@@ -306,8 +329,18 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
     }
     for (const e of run.drainEvents()) {
       sound(e);
-      const hitCritter = e.id !== undefined ? byId.get(e.id)?.critter : undefined;
-      if (hitCritter && (e.kind === 'hit' || e.kind === 'slip' || e.kind === 'slow' || e.kind === 'slide')) {
+      const hitObj = e.id !== undefined ? byId.get(e.id) : undefined;
+      const hitCritter = hitObj?.critter;
+      if (e.kind === 'thunder') {
+        view.flash();
+        view.bump(0.15);
+      } else if (e.kind === 'hit' && hitObj?.kind === 'bolt') {
+        view.bump(0.4);
+        toast('ビリビリッ！ 雷に 打たれた…', 2000);
+      } else if (e.kind === 'hit' && hitObj?.kind === 'train') {
+        view.bump(0.5);
+        toast('電車に ぶつかった！', 2000);
+      } else if (hitCritter && (e.kind === 'hit' || e.kind === 'slip' || e.kind === 'slow' || e.kind === 'slide')) {
         view.bump(e.kind === 'hit' ? 0.4 : 0.2);
         toast(CRITTERS[hitCritter].line, 2000);
       } else if (e.kind === 'hit' || e.kind === 'fall') {

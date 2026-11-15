@@ -1,5 +1,5 @@
 // 3D走りゲームの進行計算(見た目に依存しない)。
-import { DEFAULT_RULES, HIT_RADIUS, PLAY_HALF, obstacleRadius, obstacleState, roadBend, roadCurv, roadGrade, type Course, type Obstacle, type ObstacleState, type Rules } from './course.ts';
+import { BOLT_TIME, DEFAULT_RULES, HIT_RADIUS, PLAY_HALF, TRAIN_HALF_DEPTH, obstacleRadius, obstacleState, roadBend, roadCurv, slopeMul, type Course, type Obstacle, type ObstacleState, type Rules } from './course.ts';
 import type { Effect } from './critters.ts';
 
 export interface Input {
@@ -9,7 +9,10 @@ export interface Input {
 }
 
 export type Phase = 'ready' | 'running' | 'cleared' | 'failed';
-export type SimEvent = { kind: 'coin' | 'heal' | 'jump' | 'launch' | 'land' | 'hit' | 'fall' | 'slip' | 'slow' | 'slide' | 'clear' | 'fail'; id?: number };
+export type SimEvent = {
+  kind: 'coin' | 'heal' | 'jump' | 'launch' | 'land' | 'hit' | 'fall' | 'slip' | 'slow' | 'slide' | 'clear' | 'fail' | 'bell' | 'warn' | 'thunder';
+  id?: number;
+};
 
 export const PLAYER_RADIUS = 0.45;
 const JUMP_V = 10.5;
@@ -17,8 +20,6 @@ const GRAVITY = 32;
 export const MAX_LIVES = 3;
 /** カーブで、外側へ押される強さ(大きいほど、曲がり角で操作が要る) */
 const DRIFT_GAIN = 7;
-/** 坂で、速さが変わる強さ(登り10%で約2割おそく、下り10%で約2割速く) */
-const SLOPE_GAIN = 2.2;
 
 export function baseSpeed(s: number, length: number, rules: Rules = DEFAULT_RULES): number {
   return rules.speed0 + (rules.speed1 - rules.speed0) * Math.min(1, s / length);
@@ -42,6 +43,8 @@ export class Run {
   stride = 0;
   readonly collected = new Set<number>();
   readonly consumed = new Set<number>();
+  /** 落ちた雷(音を1回だけ鳴らす) */
+  readonly struck = new Set<number>();
   private events: SimEvent[] = [];
   private jumpBuf = 0;
   private prevJump = false;
@@ -55,7 +58,8 @@ export class Run {
   constructor(course: Course) {
     this.course = course;
     this.rules = course.rules ?? DEFAULT_RULES;
-    this.chargers = course.obstacles.filter((o) => o.behavior === 'charge');
+    // 近づくと動き出すもの(突進する動物・電車・雷)
+    this.chargers = course.obstacles.filter((o) => o.trig !== undefined);
   }
 
   get speed(): number {
@@ -63,8 +67,7 @@ export class Run {
   }
   /** 坂での速さの倍率(登りはおそく、下りは速く)。 */
   get slopeMul(): number {
-    if (!this.course.hills) return 1;
-    return Math.max(0.7, Math.min(1.35, 1 - SLOPE_GAIN * roadGrade(this.course, this.s)));
+    return slopeMul(this.course, this.s);
   }
   get airborne(): boolean {
     return this.y > 0;
@@ -192,9 +195,17 @@ export class Run {
   }
 
   private collide(): void {
-    // 突進する動物は、プレイヤーが近づいたら動き出す
+    // 突進する動物・電車・雷は、プレイヤーが近づいたら動き出す
     for (const o of this.chargers) {
-      if (!this.chargeT.has(o.id) && o.s - this.s < (o.trig ?? 38)) this.chargeT.set(o.id, this.t);
+      if (!this.chargeT.has(o.id) && o.s - this.s < (o.trig ?? 38)) {
+        this.chargeT.set(o.id, this.t);
+        if (o.kind === 'train') this.events.push({ kind: 'bell', id: o.id });
+        if (o.kind === 'bolt') this.events.push({ kind: 'warn', id: o.id });
+      }
+      if (o.kind === 'bolt' && !this.struck.has(o.id) && this.chargeT.has(o.id) && this.t - this.chargeT.get(o.id)! >= o.freq) {
+        this.struck.add(o.id);
+        this.events.push({ kind: 'thunder', id: o.id });
+      }
     }
     for (const o of this.course.obstacles) {
       // 突進するもの以外は、ずっと同じ位置なので、遠いものは調べない
@@ -221,7 +232,26 @@ export class Run {
     }
   }
 
+  /** 雷が、いま落ちているか(予告の輪のあと、BOLT_TIME の間)。 */
+  boltActive(o: Obstacle): boolean {
+    const t0 = this.chargeT.get(o.id);
+    if (t0 === undefined) return false;
+    const d = this.t - t0 - o.freq;
+    return d >= 0 && d < BOLT_TIME;
+  }
+
   private touches(o: Obstacle): boolean {
+    if (o.kind === 'bolt') {
+      if (!this.boltActive(o)) return false;
+      const dx = o.x - this.x;
+      const ds = o.s - this.s;
+      const r = obstacleRadius(o) + PLAYER_RADIUS;
+      return dx * dx + ds * ds < r * r;
+    }
+    if (o.kind === 'train') {
+      const st = this.stateOf(o);
+      return Math.abs(o.s - this.s) < TRAIN_HALF_DEPTH + PLAYER_RADIUS && Math.abs(st.x - this.x) < o.amp / 2 + PLAYER_RADIUS;
+    }
     if (o.kind === 'fence') {
       return Math.abs(o.s - this.s) < HIT_RADIUS.fence + PLAYER_RADIUS * 0.6 && Math.abs(this.x - o.x) < o.halfW + PLAYER_RADIUS * 0.6;
     }

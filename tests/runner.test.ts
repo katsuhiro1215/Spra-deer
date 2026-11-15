@@ -14,6 +14,16 @@ function bot(r: Run): Input {
   let right = false;
   let jump = false;
   for (const o of r.course.obstacles) {
+    if (o.kind === 'train') continue; // 電車は、着く前に通りすぎる
+    if (o.kind === 'bolt') {
+      // 雷: 光る輪の外へ、よける
+      const d = o.s - r.s;
+      if (d > -1.8 && d < 26 && Math.abs(o.x - r.x) < (o.radius ?? 1.35) + PLAYER_RADIUS + 0.5) {
+        if (o.x > r.x || (o.x === r.x && r.x > 0)) left = true;
+        else right = true;
+      }
+      continue;
+    }
     if (o.kind === 'critter') {
       // 動物・モンスター: ぶつかる頃の位置を予想して、ちょうどよい時に跳ぶ(突進は、近づく分も見込む)
       const st = r.stateOf(o);
@@ -332,6 +342,44 @@ test('ジャンプ台のある面では、空中のコインを取れる', () =>
   const air = c.coins.filter((cn) => cn.y >= 1.9 && cn.y < 3 && c.bumps!.some((b) => cn.s > b.s && cn.s < b.s + 8));
   const got = air.filter((cn) => r.collected.has(cn.id)).length;
   assert.ok(got >= air.length * 0.5, `空中のコイン ${got}/${air.length}`);
+});
+
+test('3-4: 若草山から下り、街の踏切を通って、平城宮跡へ', () => {
+  const l = runnerById('3-4')!;
+  const c = courseOf(l);
+  assert.ok(hillY(c, l.length) <= -30, '30m以上下る');
+  assert.equal(l.theme.goal, 'heijo');
+  const trains = c.obstacles.filter((o) => o.kind === 'train');
+  assert.ok(trains.length >= 1, '踏切がある');
+  assert.ok(trains.every((t) => t.s >= l.length * 0.55), '踏切は、街に入ってから');
+  for (const t of trains) assert.ok(c.obstacles.some((o) => o.deco === 'crossing' && Math.abs(o.s - (t.s - 3.2)) < 0.01), '電車には遮断機がある');
+  assert.equal(c.coins.filter((cn) => cn.kind === 'potion').length, 1, '興福寺に回復薬');
+  // ボットが走っても、電車にはぶつからない(電車は、着く少し前に通りすぎる)
+  const r = new Run(c);
+  r.start();
+  let trainHit = false;
+  for (let i = 0; i < 300 / DT && r.phase === 'running'; i++) {
+    r.step(DT, bot(r));
+    for (const e of r.drainEvents()) if (e.kind === 'hit' && trains.some((t) => t.id === e.id)) trainHit = true;
+  }
+  assert.equal(r.phase, 'cleared');
+  assert.ok(!trainHit, '電車にぶつかった');
+});
+
+test('雷: 光る輪の上にいると当たる。よければ当たらない。跳んでもよけられない', () => {
+  const rules = { speed0: 15, speed1: 15, steerAccel: 42, steerSpeed: 6.8 };
+  const bolt = (): Course => ({ obstacles: [{ id: 0, kind: 'bolt', s: 40, x: 0, len: 0, halfW: 0, height: 99, amp: 0, freq: 1.5, phase: 0, trig: 15 * 1.62, radius: 1.35 }], coins: [], length: 1000, rules });
+  const go = (x: number, jump: boolean) => {
+    const r = new Run(bolt());
+    r.start();
+    r.x = x;
+    for (let i = 0; i < 600; i++) r.step(DT, { left: false, right: false, jump: jump && r.s > 37 && r.s < 38 });
+    return r.lives;
+  };
+  assert.equal(go(0, false), 2, 'まんなかにいると当たる');
+  assert.equal(go(0, true), 2, '跳んでも当たる');
+  assert.equal(go(2.6, false), 3, '輪の外なら当たらない');
+  assert.ok(courseOf(runnerById('3-5')!).obstacles.some((o) => o.kind === 'bolt'), '雨の面には雷');
 });
 
 test('コインは同じものを2回取れない', () => {

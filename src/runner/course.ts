@@ -9,7 +9,12 @@ export const COURSE_LENGTH = 1000; // 既定の長さ
 /** ゴールの先、背景の建物(社殿・港)までの距離。 */
 export const GOAL_GAP = 75;
 
-export type ObstacleKind = 'hole' | 'poop' | 'fence' | 'stone' | 'deer' | 'puddle' | 'ice' | 'critter';
+export type ObstacleKind = 'hole' | 'poop' | 'fence' | 'stone' | 'deer' | 'puddle' | 'ice' | 'critter' | 'train' | 'bolt';
+
+/** 雷が落ちている時間[秒](この間に、その場所にいると当たる) */
+export const BOLT_TIME = 0.45;
+/** 電車の、道の前後方向の半分の幅[m] */
+export const TRAIN_HALF_DEPTH = 1.6;
 
 export interface Obstacle {
   id: number;
@@ -27,8 +32,12 @@ export interface Obstacle {
   behavior?: Behavior; // 動き方
   effect?: Effect; // 当たったときの効果
   radius?: number; // 当たりの半径(無ければ、種類ごとの既定)
-  trig?: number; // 突進をはじめる距離(プレイヤーがこの近さに来たら動き出す)
+  trig?: number; // 動きはじめる距離(プレイヤーがこの近さに来たら、突進・電車・雷が動き出す)
+  /** 見た目の種類(crossing=踏切の遮断機。当たりは柵と同じ) */
+  deco?: 'crossing';
 }
+// 電車(kind='train'): s=線路の位置、freq=電車の秒速、amp=電車の長さ、phase=走る向き(+1=右へ)
+// 雷(kind='bolt'): s,x=落ちる場所、freq=予告(光る輪)の秒数。予告のあと BOLT_TIME の間だけ当たる
 
 export interface Coin {
   id: number;
@@ -149,6 +158,14 @@ export function roadGrade(course: Hilly, s: number): number {
   return (hillY(course, s + 0.5) - hillY(course, s - 0.5)) / 1.0;
 }
 
+/** 坂で、速さが変わる強さ(登り10%で約2割おそく、下り10%で約2割速く) */
+export const SLOPE_GAIN = 2.2;
+/** 坂での速さの倍率(登りはおそく、下りは速く)。 */
+export function slopeMul(course: Hilly, s: number): number {
+  if (!course.hills) return 1;
+  return Math.max(0.7, Math.min(1.35, 1 - SLOPE_GAIN * roadGrade(course, s)));
+}
+
 /** 道の高さの曲がりぐあい(2回微分)。てっぺんでは負。体が浮くかどうかの計算に使う。 */
 export function roadBend(course: Hilly, s: number): number {
   if (!course.hills && !course.bumps) return 0;
@@ -157,10 +174,12 @@ export function roadBend(course: Hilly, s: number): number {
 }
 
 /** 各障害物の当たりの大きさ(半径)。 */
-export const HIT_RADIUS: Record<ObstacleKind, number> = { hole: 0, poop: 0.6, fence: 0.35, stone: 0.85, deer: 0.8, puddle: 1.1, ice: 1.5, critter: 0.8 };
-export const OBSTACLE_HEIGHT: Record<ObstacleKind, number> = { hole: 0, poop: 0.55, fence: 1.05, stone: 1.15, deer: 1.25, puddle: 0.3, ice: 0.3, critter: 1.2 };
+export const HIT_RADIUS: Record<ObstacleKind, number> = { hole: 0, poop: 0.6, fence: 0.35, stone: 0.85, deer: 0.8, puddle: 1.1, ice: 1.5, critter: 0.8, train: 0, bolt: 1.35 };
+export const OBSTACLE_HEIGHT: Record<ObstacleKind, number> = { hole: 0, poop: 0.55, fence: 1.05, stone: 1.15, deer: 1.25, puddle: 0.3, ice: 0.3, critter: 1.2, train: 99, bolt: 99 };
 
 const DEER_RANGE = (PLAY_HALF + 1.2) * 2;
+/** 電車が動き出す位置(道の中心から、電車の先頭まで)[m] */
+const TRAIN_START = 60;
 const HOP_HEIGHT = 1.7;
 
 export const obstacleRadius = (o: Obstacle): number => o.radius ?? HIT_RADIUS[o.kind];
@@ -191,6 +210,11 @@ export function obstacleState(o: Obstacle, t: number, t0?: number): ObstacleStat
   if (o.kind === 'deer') {
     const m = pingPong(t, o.freq, o.phase);
     return { x: m.x, s: o.s, y: 0, dir: m.dir };
+  }
+  if (o.kind === 'train') {
+    // 動き出すまでは、ずっと遠く(見えない)。動き出すと、片側から道を横切っていく
+    if (t0 === undefined) return { x: -o.phase * 999, s: o.s, y: 0, dir: 0 };
+    return { x: o.phase * (-TRAIN_START - o.amp / 2 + o.freq * (t - t0)), s: o.s, y: 0, dir: o.phase };
   }
   if (o.kind === 'critter') {
     switch (o.behavior) {
@@ -224,7 +248,7 @@ function mulberry32(seed: number) {
 
 export type PatternName =
   | 'hole' | 'poop' | 'fenceGap' | 'stones' | 'deerCross' | 'holePoop' | 'fenceHole' | 'coinSnake' | 'puddle' | 'ice'
-  | 'critterSleep' | 'critterCross' | 'critterHop' | 'critterCharge' | 'ramp';
+  | 'critterSleep' | 'critterCross' | 'critterHop' | 'critterCharge' | 'ramp' | 'crossing' | 'thunder';
 
 export interface CourseOptions {
   seed?: number;
@@ -246,6 +270,8 @@ export interface CourseOptions {
   wake?: number;
   /** 坂(無ければ、平ら) */
   hills?: HillPoint[];
+  /** この割合より先でだけ出す罠(例: 踏切は、街に入ってから) */
+  after?: Partial<Record<PatternName, number>>;
 }
 
 export function buildCourse(opts: CourseOptions = {}): Course {
@@ -418,8 +444,53 @@ export function buildCourse(opts: CourseOptions = {}): Course {
     return lip + 22;
   };
 
+  // その場所での、だいたいの走る速さ(電車・雷の時間合わせに使う。ぶつかって遅くなると、安全側にずれる)
+  const rules = opts.rules ?? DEFAULT_RULES;
+  const hilly = { hills: opts.hills, length };
+  const estSpeed = (s: number) => {
+    // 手前80mの坂の分も見込む(下り坂では速く着く)
+    let m = 0;
+    for (let k = 0; k < 9; k++) m += slopeMul(hilly, s - k * 10);
+    return (rules.speed0 + (rules.speed1 - rules.speed0) * Math.min(1, s / length)) * Math.max(1, m / 9);
+  };
+
+  // 踏切: 遮断機(すき間あり)と、目の前を通りすぎる電車。電車は、鹿が着く少し前に通りすぎる
+  const crossingPattern = (s: number) => {
+    const track = s + 8;
+    const len = 34;
+    const tv = 24;
+    const dir = sign();
+    const clearT = (TRAIN_START + len + ROAD_HALF + 1) / tv; // 動き出してから、最後尾が道をぬけるまで
+    add({ kind: 'train', s: track, freq: tv, amp: len, phase: dir, trig: estSpeed(track) * (clearT + 0.9) });
+    const gapX = (rand() * 2 - 1) * 1.6;
+    const gapHalf = 1.2;
+    const bs = track - 3.2;
+    add({ kind: 'fence', s: bs, x: (-ROAD_HALF + gapX - gapHalf) / 2, halfW: (gapX - gapHalf + ROAD_HALF) / 2, deco: 'crossing' });
+    add({ kind: 'fence', s: bs, x: (gapX + gapHalf + ROAD_HALF) / 2, halfW: (ROAD_HALF - gapX - gapHalf) / 2, deco: 'crossing' });
+    line(bs - 9, gapX, 4, 2.0);
+    coin(bs, gapX, 1.7);
+    line(track + 3, gapX * 0.5, 3, 2.0);
+    return track + 8;
+  };
+  // 雷: 光る輪のあとに、落ちてくる。輪のない側へよける(跳んでもよけられない)
+  const thunderPattern = (s: number) => {
+    const f = sign();
+    for (let k = 0; k < 3; k++) {
+      const bs = s + k * 14;
+      const x = (k % 2 ? -1.6 : 1.6) * f;
+      const warn = 1.5;
+      // 輪が光ってから、鹿が着く少し前に落ちる
+      add({ kind: 'bolt', s: bs, x, freq: warn, trig: estSpeed(bs) * (warn + 0.12), radius: HIT_RADIUS.bolt });
+      coin(bs, -x * 0.95);
+    }
+    line(s + 36, 0, 3, 2.0);
+    return s + 40;
+  };
+
   const run = (name: PatternName, s: number, p: number) => {
     switch (name) {
+      case 'crossing': return crossingPattern(s);
+      case 'thunder': return thunderPattern(s);
       case 'ramp': return rampPattern(s);
       case 'critterSleep': return critterSleepPattern(s);
       case 'critterCross': return critterCrossPattern(s);
@@ -449,14 +520,17 @@ export function buildCourse(opts: CourseOptions = {}): Course {
   while (s < endObstacles) {
     const p = s / length;
     const awake = opts.wake !== undefined && p >= opts.wake; // 大仏の目が光ったあと
-    const pool: PatternName[] = ['hole', 'poop', 'fenceGap', 'coinSnake', ...extra];
-    if (p > 0.25) pool.push('stones', 'deerCross', ...extra);
+    const after = opts.after ?? {};
+    const ok = (n: PatternName) => p >= (after[n] ?? 0);
+    const ex = extra.filter(ok);
+    const pool: PatternName[] = ['hole', 'poop', 'fenceGap', 'coinSnake', ...ex];
+    if (p > 0.25) pool.push('stones', 'deerCross', ...ex);
     if (p > 0.5) pool.push('holePoop', 'fenceHole', 'stones', 'deerCross');
-    if (awake) pool.push(...extra, ...extra, 'holePoop', 'fenceHole');
+    if (awake) pool.push(...ex, ...ex, 'holePoop', 'fenceHole');
     let name = pool[Math.floor(rand() * pool.length)];
     if (name === prev) name = pool[Math.floor(rand() * pool.length)];
     // この面だけの罠は、運に任せず、中盤までに必ず1回は出す(練習にもなる)
-    const missing = extra.filter((n) => !used.has(n));
+    const missing = ex.filter((n) => !used.has(n));
     if (missing.length && p > 0.22) name = missing[0];
     prev = name;
     used.add(name);

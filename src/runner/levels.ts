@@ -5,8 +5,8 @@ import { buildCourse, type Course, type Curve, type HillPoint, type PatternName,
 export type Weather = 'none' | 'rain' | 'snow';
 /** 道の景色: sando=灯籠と杉の参道 / town=街道(夕焼けの街) / mountain=灯籠のない山道 */
 export type Setting = 'sando' | 'town' | 'mountain';
-/** ゴールの景色: shrine=春日大社 / todaiji=東大寺の大仏殿 / horyuji=法隆寺 / omiwa=大神神社 / bay=大阪湾 / summit=山頂 */
-export type GoalScene = 'shrine' | 'todaiji' | 'horyuji' | 'omiwa' | 'bay' | 'summit';
+/** ゴールの景色: shrine=春日大社 / todaiji=東大寺の大仏殿 / horyuji=法隆寺 / omiwa=大神神社 / bay=大阪湾 / summit=山頂 / heijo=平城宮跡の朱雀門 */
+export type GoalScene = 'shrine' | 'todaiji' | 'horyuji' | 'omiwa' | 'bay' | 'summit' | 'heijo';
 
 export interface Theme {
   setting: Setting;
@@ -39,7 +39,8 @@ export interface Theme {
 /** 道ばたの名所(目印と、回復薬の場所)。at=コース全体に対する割合。 */
 export interface Landmark {
   at: number;
-  kind: 'pagoda' | 'hall';
+  /** pagoda=三重の塔 / pagoda5=五重塔 / hall=金堂 */
+  kind: 'pagoda' | 'pagoda5' | 'hall';
   side: 1 | -1;
   name: string;
 }
@@ -61,6 +62,10 @@ export interface RunnerLevel {
   curve?: Curve;
   /** 坂(無ければ、平ら)。ゴールの100m手前からは平らにする */
   hills?: HillPoint[];
+  /** 街道の面で、ここ(割合)より手前は、杉の山道の景色にする(山を下りて街に入る) */
+  townFrom?: number;
+  /** この割合より先でだけ出す罠(例: 踏切は街に入ってから) */
+  after?: Partial<Record<PatternName, number>>;
   theme: Theme;
   /** 回復薬を置く場所(割合) */
   potions?: number[];
@@ -137,6 +142,18 @@ const MOUNTAIN_MIST: Theme = { ...MOUNTAIN, fogNear: 26, fogFar: 150 };
 const RAIN_HORYUJI: Theme = { ...RAIN, goal: 'horyuji' };
 const SNOW_OMIWA: Theme = { ...SNOW, goal: 'omiwa' };
 
+/** 夕方の街(若草山を下りて、平城宮跡へ) */
+const EVENING_HEIJO: Theme = {
+  setting: 'town', goal: 'heijo', weather: 'none', night: false,
+  sky: ['#3e4f9c', '#b57aa0', '#f3a878', '#ffdcae'],
+  fog: 0xf0c6a6, fogNear: 60, fogFar: 300,
+  hemiSky: 0xffe2c8, hemiGround: 0x7a6e5a, hemi: 0.85,
+  sun: 0xffb070, sunPower: 2.3, sunPos: [-16, 14, -6], env: 0.35, exposure: 1.08,
+  road: { base: '#6a6c72', specks: ['#5c5e64', '#787a80', '#515359'], rough: 0.9 },
+  grass: { base: '#7f9a4e', specks: ['#6f8a42', '#90ab5c', '#62803a'] },
+  lampGlow: 3.2, halo: 0.55, snowCaps: false,
+};
+
 const BAY: Theme = {
   setting: 'town', goal: 'bay', weather: 'none', night: false,
   sky: ['#4a4896', '#bc6c9a', '#f2a068', '#ffd9a0'],
@@ -186,10 +203,30 @@ export const RUNNER_LEVELS: RunnerLevel[] = [
     lines: ['つづら折りが つづく…', 'もうすぐ 山頂だよ', '山頂が 見えてきた！'],
   },
   {
+    id: '3-4', title: '若草山から平城宮跡へ', summary: '下り坂で加速！ 街の踏切に気をつけて',
+    intro: '下り坂は 速いよ！ 街に入ったら 踏切に 気をつけて！',
+    length: 1200, seed: 20261215, difficulty: 0.5,
+    extra: ['ramp', 'crossing', 'critterSleep', 'critterCross', 'critterCharge'], critters: ['tanuki', 'fox', 'pachi', 'bubu'],
+    opening: ['hole', 'ramp', 'poop', 'critterCross'],
+    rules: { speed0: 13, speed1: 20, steerAccel: 40, steerSpeed: 7.0 },
+    curve: { amp: 18, wave: 260 },
+    // 若草山から一気に下る(約45m)。後半は平らな街
+    hills: [
+      { at: 0.05, h: 0 }, { at: 0.17, h: -10 }, { at: 0.23, h: -12 }, { at: 0.35, h: -24 }, { at: 0.41, h: -26 },
+      { at: 0.54, h: -41 }, { at: 0.6, h: -45 },
+    ],
+    townFrom: 0.5,
+    after: { crossing: 0.55 },
+    potions: [0.66],
+    landmarks: [{ at: 0.66, kind: 'pagoda5', side: 1, name: '興福寺' }],
+    theme: EVENING_HEIJO, goalName: '平城宮跡',
+    lines: ['街に 入ったよ！ 踏切に 注意', '興福寺の 五重塔で ひと休み', '朱雀門が 見えてきた！'],
+  },
+  {
     id: '3-5', title: '雨の西の京', summary: '長い田園。薬師寺と唐招提寺で回復',
-    intro: '雨で 地面が すべるよ。みずたまりは おそくなる！',
+    intro: '雨で 地面が すべるよ。みずたまりは おそくなる！ 光る輪は 雷！',
     length: 1400, seed: 20261207, difficulty: 0.4,
-    extra: ['puddle', 'critterSleep', 'critterCross', 'critterHop', 'critterCharge'], critters: ['puni', 'doro', 'noko', 'turtle', 'bubu'],
+    extra: ['puddle', 'thunder', 'critterSleep', 'critterCross', 'critterHop', 'critterCharge'], critters: ['puni', 'doro', 'noko', 'turtle', 'bubu'],
     opening: ['hole', 'puddle', 'critterSleep', 'fenceGap'],
     rules: { speed0: 14, speed1: 21, steerAccel: 22, steerSpeed: 6.8 },
     curve: { amp: 22, wave: 240 },
@@ -235,6 +272,6 @@ export function courseOf(level: RunnerLevel): Course {
   return buildCourse({
     seed: level.seed, length: level.length, difficulty: level.difficulty,
     extra: level.extra, critters: level.critters, opening: level.opening, rules: level.rules, curve: level.curve,
-    potions: level.potions, wake: level.wake, hills: level.hills,
+    potions: level.potions, wake: level.wake, hills: level.hills, after: level.after,
   });
 }

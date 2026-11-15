@@ -733,7 +733,6 @@ export const STAGE_1: LevelSlot[] = [
 
 /** まだ作っていない3D走りの面(行き先のメモ) */
 const PLANNED: Record<string, { title: string; summary: string }> = {
-  '3-4': { title: '若草山から平城宮跡へ', summary: '下りと市街地。近鉄の踏切' },
   '3-7': { title: '吉野 金峯山寺へ', summary: '案を検討中' },
   '3-8': { title: '谷瀬のつり橋から郡山城へ', summary: 'ゆれる橋でバランス' },
   '3-9': { title: '佐保川の桜並木', summary: '桜のトンネルを、奈良公園へ' },
