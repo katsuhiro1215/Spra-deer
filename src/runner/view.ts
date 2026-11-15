@@ -1623,6 +1623,47 @@ export class KasugaView {
       } else if (o.kind === 'train') {
         obj.add(this.trainModel(o.amp));
         this.buildTrack(o);
+      } else if (o.kind === 'bomb') {
+        // ラムガの子分(爆弾): [0]子分の絵(道の外・少し先) [1]赤い輪 [2]赤い円 [3]爆弾 [4]爆発の光 [5]焦げあと
+        const minion = this.minionBoard('bomber', 1.9);
+        minion.position.set(o.x, 0, -6);
+        const ring = new THREE.Mesh(
+          new THREE.RingGeometry(1.05, 1.4, 40).rotateX(-Math.PI / 2),
+          new THREE.MeshBasicMaterial({ color: 0xff3b2f, transparent: true, opacity: 0, depthWrite: false, toneMapped: false }),
+        );
+        ring.position.y = 0.07;
+        const fill = new THREE.Mesh(
+          new THREE.CircleGeometry(1.35, 40).rotateX(-Math.PI / 2),
+          new THREE.MeshBasicMaterial({ color: 0xff6a4a, transparent: true, opacity: 0, depthWrite: false, toneMapped: false }),
+        );
+        fill.position.y = 0.06;
+        const bomb = new THREE.Group();
+        const ball = new THREE.Mesh(new THREE.SphereGeometry(0.42, 18, 14), new THREE.MeshStandardMaterial({ color: 0x2a2433, roughness: 0.4, metalness: 0.3 }));
+        const fuse = new THREE.Mesh(new THREE.SphereGeometry(0.12, 10, 8), new THREE.MeshBasicMaterial({ color: 0xffd23a, toneMapped: false }));
+        fuse.position.y = 0.48;
+        bomb.add(ball, fuse);
+        bomb.visible = false;
+        const flash = new THREE.Mesh(
+          new THREE.SphereGeometry(1, 20, 14),
+          new THREE.MeshBasicMaterial({ color: 0xffb040, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false }),
+        );
+        flash.visible = false;
+        const scorch = new THREE.Mesh(
+          new THREE.CircleGeometry(1.1, 24).rotateX(-Math.PI / 2),
+          new THREE.MeshBasicMaterial({ color: 0x1a1410, transparent: true, opacity: 0.5, depthWrite: false }),
+        );
+        scorch.position.y = 0.04;
+        scorch.visible = false;
+        obj.add(minion, ring, fill, bomb, flash, scorch);
+      } else if (o.kind === 'bat') {
+        // こうもり: [0]絵 [1]地面の影(降りてくるほど濃く)
+        const bat = this.minionBoard('bat', 1.25);
+        const sh = new THREE.Mesh(
+          new THREE.CircleGeometry(0.8, 20).rotateX(-Math.PI / 2),
+          new THREE.MeshBasicMaterial({ color: 0x2a1040, transparent: true, opacity: 0, depthWrite: false }),
+        );
+        sh.position.y = 0.03;
+        obj.add(bat, sh);
       } else if (o.kind === 'bolt') {
         const ring = new THREE.Mesh(
           new THREE.RingGeometry(0.88, 1.4, 40).rotateX(-Math.PI / 2),
@@ -1936,6 +1977,32 @@ export class KasugaView {
   }
 
   /** 動物・モンスターの、ポーズごとの絵(同じ絵は1回だけ読み込む)。 */
+  /** 親(道の向き psi に合わせた入れ物)の中の絵を、カメラのほうへ向ける。縦横比も絵に合わせる */
+  private faceCamera(m: THREE.Mesh, psi: number, _t: number): void {
+    m.rotation.y = -this.camPsi + psi;
+    const img = (m.material as THREE.MeshBasicMaterial).map?.image as { width: number; height: number } | undefined;
+    const h = m.userData.h as number | undefined;
+    if (img && img.height && h) m.scale.x = h * (img.width / img.height);
+  }
+
+  /** ラムガの子分の絵(scripts/build-minions.py で切り出した)。足もとが原点 */
+  private minionTex = new Map<string, THREE.Texture>();
+  private minionBoard(name: string, height: number): THREE.Mesh {
+    let tex = this.minionTex.get(name);
+    if (!tex) {
+      tex = loadTex(`${ASSET}/runner/minions/${name}.png`);
+      this.minionTex.set(name, tex);
+    }
+    const m = new THREE.Mesh(
+      new THREE.PlaneGeometry(1, 1).translate(0, 0.5, 0),
+      new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: 0.45, toneMapped: false, side: THREE.DoubleSide }),
+    );
+    (m.material as THREE.MeshBasicMaterial).color.setScalar(this.theme.night ? 0.85 : 1);
+    m.userData.h = height;
+    m.scale.set(height, height, 1);
+    return m;
+  }
+
   private loadCritterTex(key: string, pose: number): THREE.Texture {
     const id = `${key}_${pose}`;
     let t = this.critterTex.get(id);
@@ -2268,6 +2335,55 @@ export class KasugaView {
         e.obj.children[0].rotation.z = 0.9 * (1 - 2 * Math.min(1, Math.max(0, u)));
         continue;
       }
+      if (e.o.kind === 'bomb') {
+        // 爆弾: 子分が投げる → 赤い輪(ねらった所) → 爆発 → 焦げあと
+        const t0 = run.chargeT.get(e.o.id);
+        const [minion, ring, fill, bomb, flash, scorch] = e.obj.children as THREE.Mesh[];
+        const ow = this.roadW(e.o.s, 0);
+        e.obj.position.set(ow.x, ow.y, ow.z);
+        e.obj.rotation.y = -ow.psi;
+        this.faceCamera(minion, ow.psi, t);
+        const d = t0 === undefined ? -1 : run.t - t0;
+        const aim = run.aim.get(e.o.id) ?? 0;
+        const flying = t0 !== undefined && d < e.o.freq;
+        for (const m of [ring, fill, scorch]) m.position.x = aim;
+        const u = flying ? d / e.o.freq : 0;
+        (ring.material as THREE.MeshBasicMaterial).opacity = flying ? 0.7 + 0.3 * Math.abs(Math.sin(d * (7 + u * 10))) : 0;
+        (fill.material as THREE.MeshBasicMaterial).opacity = flying ? 0.12 + u * 0.3 : 0;
+        bomb.visible = flying;
+        if (flying) {
+          // 子分の手もと(道の外・6m先・高さ1.4m)から、ねらった所へ、山なりに
+          const x0 = e.o.x;
+          bomb.position.set(x0 + (aim - x0) * u, 1.4 * (1 - u) + 0.42 + 5.5 * u * (1 - u), -6 * (1 - u));
+          bomb.rotation.z = d * 8;
+        }
+        const boom = t0 !== undefined && d >= e.o.freq && d < e.o.freq + 0.4;
+        flash.visible = boom;
+        if (boom) {
+          const k = (d - e.o.freq) / 0.4;
+          flash.position.set(aim, 0.6, 0);
+          flash.scale.setScalar(0.6 + 2.2 * k);
+          (flash.material as THREE.MeshBasicMaterial).opacity = 0.9 * (1 - k);
+        }
+        scorch.visible = t0 !== undefined && d >= e.o.freq;
+        continue;
+      }
+      if (e.o.kind === 'bat') {
+        // こうもり: 前の高い所から、ねらった位置へ降りてくる
+        e.obj.visible = st.y > -1;
+        if (!e.obj.visible) continue;
+        const [bat, sh] = e.obj.children as THREE.Mesh[];
+        const bw = this.roadW(st.s, st.x);
+        e.obj.position.set(bw.x, this.gy(st.s), bw.z);
+        e.obj.rotation.y = -bw.psi;
+        this.faceCamera(bat, bw.psi, t);
+        bat.position.y = st.y - 0.3;
+        // はばたき(横に少しのびちぢみ)
+        const hb = bat.userData.h as number;
+        bat.scale.set(hb * 1.64 * (0.85 + 0.15 * Math.abs(Math.sin(t * 14))), hb, 1);
+        (sh.material as THREE.MeshBasicMaterial).opacity = Math.max(0, 0.45 - st.y * 0.07);
+        continue;
+      }
       if (e.o.kind === 'bolt') {
         // 雷: 光る輪(予告) → いなずま → 焦げあと
         const t0 = run.chargeT.get(e.o.id);
@@ -2384,6 +2500,7 @@ export class KasugaView {
     });
     for (const t of this.runTex) t.dispose();
     for (const t of this.critterTex.values()) t.dispose();
+    for (const t of this.minionTex.values()) t.dispose();
     for (const arr of Object.values(this.walkTex)) for (const t of arr) t.dispose();
     for (const d of this.disposables) d.dispose();
     this.renderer.dispose();

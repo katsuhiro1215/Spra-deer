@@ -9,7 +9,7 @@ export const COURSE_LENGTH = 1000; // 既定の長さ
 /** ゴールの先、背景の建物(社殿・港)までの距離。 */
 export const GOAL_GAP = 75;
 
-export type ObstacleKind = 'hole' | 'poop' | 'fence' | 'stone' | 'deer' | 'puddle' | 'ice' | 'critter' | 'train' | 'bolt' | 'leaf' | 'fish' | 'sheet';
+export type ObstacleKind = 'hole' | 'poop' | 'fence' | 'stone' | 'deer' | 'puddle' | 'ice' | 'critter' | 'train' | 'bolt' | 'leaf' | 'fish' | 'sheet' | 'bomb' | 'bat';
 
 /** 金魚: 左の水路(この位置)から、道を横切って右へ跳ぶ */
 export const FISH_X0 = -(3.6 + 2.6);
@@ -54,6 +54,11 @@ export interface Obstacle {
 }
 // 電車(kind='train'): s=線路の位置、freq=電車の秒速、amp=電車の長さ、phase=走る向き(+1=右へ)
 // 雷(kind='bolt'): s,x=落ちる場所、freq=予告(光る輪)の秒数。予告のあと BOLT_TIME の間だけ当たる
+// ラムガの子分(ストーリーの敵。設計書 25-7):
+//  爆弾(kind='bomb'): s=落ちる所、x=投げる子分の立つ位置(道の外)、freq=投げてから落ちるまでの秒数。
+//    投げた瞬間の鹿の左右の位置をねらう(赤い輪)。落ちてから BOLT_TIME の間だけ当たる。跳んでもよけられない
+//  こうもり(kind='bat'): s=鹿とすれちがう所、freq=急降下の秒数。動き出した瞬間の鹿の左右の位置へ降りてくる。
+//    横へよけるか、ジャンプでかわす
 
 export interface Coin {
   id: number;
@@ -209,8 +214,10 @@ export function roadBend(course: Hilly, s: number): number {
 }
 
 /** 各障害物の当たりの大きさ(半径)。 */
-export const HIT_RADIUS: Record<ObstacleKind, number> = { hole: 0, poop: 0.6, fence: 0.35, stone: 0.85, deer: 0.8, puddle: 1.1, ice: 1.5, critter: 0.8, train: 0, bolt: 1.35, leaf: 1.25, fish: 0.5, sheet: 1.2 };
-export const OBSTACLE_HEIGHT: Record<ObstacleKind, number> = { hole: 0, poop: 0.55, fence: 1.05, stone: 1.15, deer: 1.25, puddle: 0.3, ice: 0.3, critter: 1.2, train: 99, bolt: 99, leaf: 0.3, fish: 99, sheet: 0.3 };
+export const HIT_RADIUS: Record<ObstacleKind, number> = { hole: 0, poop: 0.6, fence: 0.35, stone: 0.85, deer: 0.8, puddle: 1.1, ice: 1.5, critter: 0.8, train: 0, bolt: 1.35, leaf: 1.25, fish: 0.5, sheet: 1.2, bomb: 1.3, bat: 0.75 };
+export const OBSTACLE_HEIGHT: Record<ObstacleKind, number> = { hole: 0, poop: 0.55, fence: 1.05, stone: 1.15, deer: 1.25, puddle: 0.3, ice: 0.3, critter: 1.2, train: 99, bolt: 99, leaf: 0.3, fish: 99, sheet: 0.3, bomb: 99, bat: 1.0 };
+/** こうもりが、急降下をはじめる所(すれちがう所の何m先か) */
+export const BAT_AHEAD = 30;
 
 const DEER_RANGE = (PLAY_HALF + 1.2) * 2;
 /** 電車が動き出す位置(道の中心から、電車の先頭まで)[m] */
@@ -236,8 +243,18 @@ function pingPong(t: number, speed: number, phase: number): { x: number; dir: nu
 
 /**
  * 時刻 t での障害物の位置。突進する動物は、動き出した時刻 t0 を渡す(まだなら、渡さない)。
+ * 爆弾・こうもりは、ねらった左右の位置 aim も渡す。
  */
-export function obstacleState(o: Obstacle, t: number, t0?: number): ObstacleState {
+export function obstacleState(o: Obstacle, t: number, t0?: number, aim?: number): ObstacleState {
+  if (o.kind === 'bat') {
+    // 動き出すまでは見えない(y<0)。前の高い所から、ねらった位置へ降りてきて、すれちがったあとは上へ
+    if (t0 === undefined) return { x: 0, s: o.s + BAT_AHEAD, y: -99, dir: 0 };
+    const u = (t - t0) / o.freq;
+    const x = aim ?? o.x;
+    if (u <= 1) return { x, s: o.s + BAT_AHEAD * (1 - u), y: 0.9 + 5 * (1 - u) * (1 - u), dir: 0 };
+    return { x, s: o.s - BAT_AHEAD * 0.6 * (u - 1), y: 0.9 + 4 * (u - 1) * (u - 1), dir: 0 };
+  }
+  if (o.kind === 'bomb') return { x: aim ?? o.x, s: o.s, y: 0, dir: 0 };
   if (o.kind === 'stone') {
     const a = t * o.freq + o.phase;
     return { x: o.x + o.amp * Math.sin(a), s: o.s, y: 0, dir: Math.cos(a) >= 0 ? 1 : -1 };
@@ -291,7 +308,7 @@ function mulberry32(seed: number) {
 export type PatternName =
   | 'hole' | 'poop' | 'fenceGap' | 'stones' | 'deerCross' | 'holePoop' | 'fenceHole' | 'coinSnake' | 'puddle' | 'ice'
   | 'critterSleep' | 'critterCross' | 'critterHop' | 'critterCharge' | 'ramp' | 'crossing' | 'thunder'
-  | 'leafPile' | 'goldfish' | 'hanami';
+  | 'leafPile' | 'goldfish' | 'hanami' | 'minionBomb' | 'minionBat';
 
 export interface CourseOptions {
   seed?: number;
@@ -561,8 +578,33 @@ export function buildCourse(opts: CourseOptions = {}): Course {
     return s + 18;
   };
 
+  // ラムガの子分: 爆弾を投げる(2発)。投げた瞬間の鹿の位置に、赤い輪が出て落ちる
+  const minionBombPattern = (s: number) => {
+    const side = sign();
+    for (let k = 0; k < 2; k++) {
+      const bs = s + 12 + k * 18;
+      const fly = 1.3;
+      add({ kind: 'bomb', s: bs, x: side * (k % 2 ? -1 : 1) * (ROAD_HALF + 1.6), freq: fly, trig: estSpeed(bs) * (fly + 0.1), radius: HIT_RADIUS.bomb, height: 99 });
+    }
+    line(s + 48, 0, 3, 2.2);
+    return s + 54;
+  };
+  // ラムガの子分: こうもりが2匹、鹿の位置へ急降下
+  const minionBatPattern = (s: number) => {
+    for (let k = 0; k < 2; k++) {
+      const bs = s + 14 + k * 20;
+      const dive = 1.15;
+      add({ kind: 'bat', s: bs, x: 0, freq: dive, trig: estSpeed(bs) * (dive + 0.05) + 1, radius: HIT_RADIUS.bat, height: OBSTACLE_HEIGHT.bat });
+      coin(bs, (k % 2 ? 1 : -1) * 2.3);
+    }
+    line(s + 50, 0, 3, 2.2);
+    return s + 56;
+  };
+
   const run = (name: PatternName, s: number, p: number) => {
     switch (name) {
+      case 'minionBomb': return minionBombPattern(s);
+      case 'minionBat': return minionBatPattern(s);
       case 'leafPile': return leafPattern(s);
       case 'goldfish': return goldfishPattern(s);
       case 'hanami': return hanamiPattern(s);
@@ -674,9 +716,12 @@ function placeSpecialCoins(coins: Coin[], obstacles: Obstacle[], bumps: Bump[], 
   const hi = length * 0.92;
   const ramps = bumps.filter((b) => b.s > lo && b.s < hi);
   let premium: Coin | undefined;
-  if (ramps.length) {
-    const b = ramps[Math.floor(ramps.length / 2)];
+  // まんなかのジャンプ台から順に、大ジャンプのコインがある台を探す
+  const order = ramps.map((_, i) => i).sort((a, b) => Math.abs(a - (ramps.length - 1) / 2) - Math.abs(b - (ramps.length - 1) / 2));
+  for (const i of order) {
+    const b = ramps[i];
     premium = coins.find((c) => isPlain(c) && Math.abs(c.s - (b.s + 9)) < 0.01 && c.y > 6);
+    if (premium) break;
   }
   if (!premium) {
     const holes = obstacles.filter((o) => o.kind === 'hole' && o.s > length * 0.5 && o.s < hi && o.halfW > 2);
@@ -688,6 +733,16 @@ function placeSpecialCoins(coins: Coin[], obstacles: Obstacle[], bumps: Bump[], 
       // 高さ3.2m・端に寄せる: 穴を跳ぶとき、跳ぶ場所(いちばん高い所が穴の真ん中)と左右の位置の両方が合ったときだけ届く
       premium = { id: nextId(), s, x: holes.length % 2 ? 2.2 : -2.2, y: 3.2 };
       coins.push(premium);
+    }
+  }
+  if (!premium) {
+    // ジャンプ台も穴もない: 終盤の、罠から離れた所の上の高い所(跳んで、いちばん高い所でだけ届く)
+    for (let q = Math.round(length * 0.75); q < hi; q += 4) {
+      if (obstacles.some((o) => Math.abs(o.s - q) < 12 + o.len)) continue;
+      for (let i = coins.length - 1; i >= 0; i--) if (isPlain(coins[i]) && Math.abs(coins[i].s - q) < 2.5) coins.splice(i, 1);
+      premium = { id: nextId(), s: q, x: q % 8 < 4 ? 2.2 : -2.2, y: 3.2 };
+      coins.push(premium);
+      break;
     }
   }
   if (premium) premium.kind = 'premium';

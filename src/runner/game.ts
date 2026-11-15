@@ -28,6 +28,8 @@ const HINTS: Record<string, string> = {
   leaf: '落ち葉の山！ ふむと すべるよ',
   fish: '金魚が 跳んでくる！ 低い所は ジャンプで くぐれる',
   sheet: '花見の シート！ ふむと コインを 落とすよ',
+  bomb: 'ラムガの子分だ！ 爆弾を 投げてくる。赤い輪の 外へ にげて！',
+  bat: 'こうもりが 急降下！ 横へ よけるか ジャンプ！',
 };
 const hintKey = (o: Obstacle) => (o.kind === 'critter' ? `critter:${o.behavior}` : o.deco ?? o.kind);
 
@@ -92,6 +94,10 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
       case 'coin': tone(1180, 1760, 0.13, 'triangle', 0.08); break;
       case 'gold': audio.sfx('gold'); break;
       case 'premium': audio.sfx('premium'); break;
+      // ラムガの子分: 爆弾を投げる「ひゅるる」・落ちて「ドカン」/こうもりの「キィー」
+      case 'throw': tone(420, 900, 0.5, 'triangle', 0.05); break;
+      case 'boom': noise(0.7, 0.22, 700); tone(130, 40, 0.5, 'sawtooth', 0.08); break;
+      case 'swoop': tone(1700, 600, 0.45, 'sine', 0.05); tone(1900, 700, 0.45, 'triangle', 0.025, 0.05); break;
       case 'heal': audio.sfx('heal'); break;
       case 'jump': audio.sfx('jump'); break;
       // ジャンプ台のダッシュは、きらきら。坂の頂上で浮いただけなら、短い合成音
@@ -460,6 +466,14 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
       } else if (e.kind === 'hit' && hitObj?.kind === 'bolt') {
         view.bump(0.4);
         toast('ビリビリッ！ 雷に 打たれた…', 2000);
+      } else if (e.kind === 'hit' && hitObj?.kind === 'bomb') {
+        view.bump(0.45);
+        toast('ドカーン！ 爆弾に あたった…', 2000);
+      } else if (e.kind === 'hit' && hitObj?.kind === 'bat') {
+        view.bump(0.35);
+        toast('こうもりに ぶつかった！', 2000);
+      } else if (e.kind === 'boom') {
+        view.bump(0.12);
       } else if (e.kind === 'hit' && hitObj?.kind === 'train') {
         view.bump(0.5);
         toast('電車に ぶつかった！', 2000);

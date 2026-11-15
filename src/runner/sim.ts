@@ -10,7 +10,7 @@ export interface Input {
 
 export type Phase = 'ready' | 'running' | 'cleared' | 'failed';
 export type SimEvent = {
-  kind: 'coin' | 'gold' | 'premium' | 'heal' | 'jump' | 'launch' | 'land' | 'hit' | 'fall' | 'slip' | 'slow' | 'slide' | 'clear' | 'fail' | 'bell' | 'warn' | 'thunder' | 'spill' | 'charge';
+  kind: 'coin' | 'gold' | 'premium' | 'throw' | 'boom' | 'swoop' | 'heal' | 'jump' | 'launch' | 'land' | 'hit' | 'fall' | 'slip' | 'slow' | 'slide' | 'clear' | 'fail' | 'bell' | 'warn' | 'thunder' | 'spill' | 'charge';
   id?: number;
 };
 
@@ -67,6 +67,8 @@ export class Run {
   readonly rules: Rules;
   /** 突進する動物が動き出した時刻(障害物の id → 時刻) */
   readonly chargeT = new Map<number, number>();
+  /** 爆弾・こうもりが、ねらった左右の位置(動き出した瞬間の鹿の位置) */
+  readonly aim = new Map<number, number>();
   private readonly chargers: Obstacle[];
 
   constructor(course: Course) {
@@ -224,7 +226,7 @@ export class Run {
 
   /** 障害物の、いまの位置(突進する動物は、近づいてくる)。 */
   stateOf(o: Obstacle): ObstacleState {
-    return obstacleState(o, this.t, this.chargeT.get(o.id));
+    return obstacleState(o, this.t, this.chargeT.get(o.id), this.aim.get(o.id));
   }
 
   /** 当たったときの効果をかける。 */
@@ -261,6 +263,14 @@ export class Run {
         if (o.kind === 'train') this.events.push({ kind: 'bell', id: o.id });
         if (o.kind === 'bolt') this.events.push({ kind: 'warn', id: o.id });
         if (o.behavior === 'charge') this.events.push({ kind: 'charge', id: o.id });
+        if (o.kind === 'bomb' || o.kind === 'bat') {
+          this.aim.set(o.id, Math.max(-PLAY_HALF, Math.min(PLAY_HALF, this.x)));
+          this.events.push({ kind: o.kind === 'bomb' ? 'throw' : 'swoop', id: o.id });
+        }
+      }
+      if (o.kind === 'bomb' && !this.struck.has(o.id) && this.chargeT.has(o.id) && this.t - this.chargeT.get(o.id)! >= o.freq) {
+        this.struck.add(o.id);
+        this.events.push({ kind: 'boom', id: o.id });
       }
       if (o.kind === 'bolt' && !this.struck.has(o.id) && this.chargeT.has(o.id) && this.t - this.chargeT.get(o.id)! >= o.freq) {
         this.struck.add(o.id);
@@ -293,7 +303,7 @@ export class Run {
     }
   }
 
-  /** 雷が、いま落ちているか(予告の輪のあと、BOLT_TIME の間)。 */
+  /** 雷・爆弾が、いま落ちているか(予告の輪のあと、BOLT_TIME の間)。 */
   boltActive(o: Obstacle): boolean {
     const t0 = this.chargeT.get(o.id);
     if (t0 === undefined) return false;
@@ -309,9 +319,15 @@ export class Run {
       const dy = st.y - this.y;
       return dy > -0.3 && dy < 1.3 && Math.abs(st.x - this.x) < HIT_RADIUS.fish + PLAYER_RADIUS && Math.abs(o.s - this.s) < 0.6 + PLAYER_RADIUS;
     }
-    if (o.kind === 'bolt') {
+    if (o.kind === 'bat') {
+      // こうもり: 鹿の体の高さまで降りてきて、すれちがうとき(高く跳んでいれば、下をくぐる。高さは collide で見る)
+      const st = this.stateOf(o);
+      if (st.y < 0) return false;
+      return Math.abs(st.s - this.s) < 0.7 + PLAYER_RADIUS && Math.abs(st.x - this.x) < obstacleRadius(o) + PLAYER_RADIUS;
+    }
+    if (o.kind === 'bolt' || o.kind === 'bomb') {
       if (!this.boltActive(o)) return false;
-      const dx = o.x - this.x;
+      const dx = (o.kind === 'bomb' ? this.aim.get(o.id) ?? o.x : o.x) - this.x;
       const ds = o.s - this.s;
       const r = obstacleRadius(o) + PLAYER_RADIUS;
       return dx * dx + ds * ds < r * r;

@@ -40,6 +40,15 @@ function bot(r: Run): Input {
       }
       continue;
     }
+    if (o.kind === 'bomb') continue; // 爆弾は、下でまとめて(いちばん近いものを優先)
+    if (o.kind === 'bat') {
+      // こうもり: すれちがう直前に跳ぶ(体の高さに降りてくるので)
+      const st = r.stateOf(o);
+      if (st.y < 0) continue;
+      const dd = st.s - r.s;
+      if (dd > 0 && dd < 7 && Math.abs(st.x - r.x) < 1.6 && !r.airborne) jump = true;
+      continue;
+    }
     if (o.kind === 'bolt') {
       // 雷: 光る輪の外へ、よける
       const d = o.s - r.s;
@@ -88,6 +97,24 @@ function bot(r: Run): Input {
         if (r.x >= PLAY_HALF - 0.1) { right = false; left = true; }
       }
     }
+  }
+  // 爆弾: 投げられた(ねらいが決まった)うち、いちばん近いものの赤い輪の外へ。よけられる側(端までの余り)へ逃げる。
+  // ほかの判断より優先する(左右が打ち消し合うと、その場に止まってしまうため)
+  let bomb: { ax: number; d: number; rr: number } | undefined;
+  for (const o of r.course.obstacles) {
+    if (o.kind !== 'bomb' || r.struck.has(o.id)) continue;
+    const ax = r.aim.get(o.id);
+    const d = o.s - r.s;
+    if (ax === undefined || d < -1.8 || d > 30) continue;
+    if (!bomb || d < bomb.d) bomb = { ax, d, rr: (o.radius ?? 1.3) + PLAYER_RADIUS + 0.35 };
+  }
+  if (bomb && Math.abs(bomb.ax - r.x) < bomb.rr) {
+    const roomLeft = bomb.ax - bomb.rr - -PLAY_HALF;
+    const roomRight = PLAY_HALF - (bomb.ax + bomb.rr);
+    const goLeft = roomLeft >= 0 && (roomRight < 0 || r.x < bomb.ax || (r.x === bomb.ax && roomLeft >= roomRight));
+    left = goLeft;
+    right = !goLeft;
+    return { left, right, jump };
   }
   // 何もよける必要がなければ、道の中央へもどる(カーブで外へ押されるので)
   if (!left && !right && Math.abs(r.x) > 0.5) {
