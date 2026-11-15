@@ -1,8 +1,10 @@
 import * as Phaser from 'phaser';
 import { VIEW, GOAL, RULES } from './game/stage.ts';
-import { ALL_PLAYABLE_SLOTS, PLAYABLE, STAGES, levelById, type LevelDefinition } from './game/levels.ts';
+import { ALL_PLAYABLE_SLOTS, PLAYABLE, levelById, type LevelDefinition } from './game/levels.ts';
 import { createWorld, step, type World, type Event } from './game/world.ts';
 import { Progress } from './progress.ts';
+import { Wallet, clearRewards } from './wallet.ts';
+import { titleHTML, homeHTML, worldHTML, shopHTML, friendsHTML, settingsHTML, tiredHTML, statusBar, type Tab } from './home.ts';
 import { ParkView, walkKey, deerKey } from './view.ts';
 import deerWalk from './game/deer-walk.json';
 import walk from './game/spru-walk.json';
@@ -14,6 +16,7 @@ import './styles.scss';
 
 const el = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const progress = new Progress();
+const wallet = new Wallet();
 const STOLEN_DEFAULT = 'せんべいを、取られた…！\n鹿は、せんべいの匂いで寄ってくる。';
 const CAUGHT_HINT = '鹿が追いかけてきた…！\n止まると追いつかれる。\nジャンプで鹿を越えるのもアリ。';
 
@@ -61,10 +64,11 @@ const sound = new Sound();
 const soundButton = document.createElement('button');
 soundButton.id = 'sound'; soundButton.textContent = '音 OFF'; soundButton.setAttribute('aria-label', '効果音をオンにする'); soundButton.setAttribute('aria-pressed', 'false');
 el('game-wrap').append(soundButton);
-soundButton.addEventListener('click', () => {
+const toggleSound = () => {
   sound.enabled = !sound.enabled; sound.unlock(); sound.syncMusic(); soundButton.textContent = sound.enabled ? '音 ON' : '音 OFF';
   soundButton.setAttribute('aria-pressed', String(sound.enabled)); soundButton.setAttribute('aria-label', sound.enabled ? '効果音をオフにする' : '効果音をオンにする');
-});
+};
+soundButton.addEventListener('click', toggleSound);
 
 class Boot extends Phaser.Scene {
   private failed = false;
@@ -110,57 +114,88 @@ class Park extends Phaser.Scene {
   constructor() { super('Park'); }
   create() {
     this.view = new ParkView(this, this.level);
-    this.controls = new Controls(() => this.pause(), () => { if (this.mode === 'playing' || this.mode === 'paused' || this.mode === 'dying' || this.mode === 'result') this.begin(this.level); });
+    this.controls = new Controls(() => this.pause(), () => { if (this.mode === 'playing' || this.mode === 'paused' || this.mode === 'dying' || this.mode === 'result') { this.abandon(); this.tryBegin(this.level); } });
     el('pause').addEventListener('click', () => this.pause());
     window.addEventListener('blur', () => { if (this.mode === 'playing') this.pause(); });
     document.addEventListener('visibilitychange', () => { if (document.hidden && this.mode === 'playing') this.pause(); });
     el('overlay').addEventListener('click', e => {
       const button = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-action]');
       const action = button?.dataset.action, target = levelById(button?.dataset.level ?? '');
-      if (action === 'select') this.select();
-      if ((action === 'start' || action === 'next') && target && progress.isUnlocked(target.id)) this.begin(target);
+      if (!action || button?.getAttribute('aria-disabled') === 'true') return;
+      if (action === 'select') { this.abandon(); this.world_(this.stageOf(this.level.id)); }
+      if (action === 'home') { this.abandon(); this.home(); }
+      if (action === 'tab') this.tab(button!.dataset.tab as Tab);
+      if (action === 'world') this.world_(Number(button!.dataset.stage));
+      if (action === 'story') this.toast('ストーリーは、準備中です。');
+      if (action === 'sound') { toggleSound(); this.tab('settings'); }
+      if (action === 'buy-potion') this.buyPotion();
+      if ((action === 'start' || action === 'next') && target && progress.isUnlocked(target.id)) this.tryBegin(target);
       // 3D走りゲームの面(ステージ3)は、別のページ(/run/)で遊ぶ
       const runId = button?.dataset.level ?? '';
-      if ((action === 'run' || (action === 'next' && !target)) && runId && progress.isUnlocked(runId)) location.href = `/run/?level=${runId}`;
-      if (action === 'retry') this.begin(this.level);
+      if ((action === 'run' || (action === 'next' && !target)) && runId && progress.isUnlocked(runId)) {
+        if (wallet.canPlay()) location.href = `/run/?level=${runId}`; else this.tired('home');
+      }
+      if (action === 'retry') { this.abandon(); this.tryBegin(this.level); }
       if (action === 'resume') this.resume();
-      if (action === 'title') this.title();
+      if (action === 'title') { this.abandon(); this.title(); }
     });
-    // 走りゲームのページから「面えらびへ」で戻ってきたときは、面えらびから始める
-    if (location.hash === '#select') this.select(); else this.title();
+    // 走りゲームのページから「面えらびへ」で戻ってきたときは、そのワールドの面えらびから始める
+    const m = /^#world-(\d+)$/.exec(location.hash);
+    if (m) this.world_(Number(m[1])); else if (location.hash === '#select') this.home(); else this.title();
+    // 体力の回復(残り時間)を、1秒ごとに書きかえる
+    window.setInterval(() => {
+      const live = el('overlay').querySelector('[data-live="status"]');
+      if (live) live.outerHTML = statusBar(wallet);
+    }, 1000);
     if (process.env.NODE_ENV !== 'production') Object.defineProperty(window, '__DEER__', { configurable: true, get: () => JSON.parse(JSON.stringify({ mode: this.mode, ...this.world, record: progress.get(this.level.id), canSave: progress.canSave })) });
   }
   private idle(mode: 'title' | 'select') {
     this.mode = mode; this.controls.enable(false); this.world = createWorld(this.level); this.view.reset(); sound.music('home');
     el('hud').hidden = el('controls').hidden = true; el('message').textContent = '';
+    el('game-wrap').classList.toggle('menu', mode === 'select');
   }
-  private title() {
-    this.idle('title');
-    // 構成は tane.spra.jp に合わせる（空→丘、キャラ3体、極太の丸ゴシックのロゴ、丘の上の大きなボタン）。
-    el('overlay').innerHTML = `<div class="screen title-screen"><div class="title-head"><p class="brand-line"><b>S</b>spra</p><h2 class="wordmark" aria-label="Spraと鹿。"><span class="w-spru">Spra</span><span class="w-to">と</span><span class="w-deer">鹿</span><span class="w-dot">。</span></h2><p class="subtitle">足元には、ご用心。</p></div><div class="hero"><img class="hero-fawn" src="/assets/hero/fawn.png" alt="子鹿"><img class="hero-spru" src="/assets/hero/spru.png" alt="Spra"><img class="hero-stag" src="/assets/hero/stag.png" alt="雄鹿"><span class="speech">こっち、空いてるよ。</span></div><div class="hill"><button class="play" data-action="select">あそぶ</button><p class="howto">ドラッグで移動、ボタンでジャンプ。<br>鹿に、悪気はありません。たぶん。</p><nav class="legal-links"><a href="/terms/">利用規約</a><a href="/privacy/">プライバシーポリシー</a></nav></div></div>`;
+  private title() { this.idle('title'); el('overlay').innerHTML = titleHTML(); }
+  private home() { this.idle('select'); el('overlay').innerHTML = homeHTML(progress, wallet); }
+  private world_(stage: number) {
+    if (!(stage > 0)) { this.home(); return; }
+    this.idle('select'); el('overlay').innerHTML = worldHTML(stage, progress, wallet);
   }
-  private select() {
+  private tab(t: Tab, note = '') {
+    if (t === 'home') { this.home(); return; }
     this.idle('select');
-    const groups = STAGES.map(group => {
-      const cleared = progress.clearedCount(group.stage), total = group.slots.filter(s => s.level || s.runnerId).length;
-      const head = `<header><span class="eyebrow">STAGE ${group.stage}</span><h3>${group.title}</h3>${total ? `<span class="count">${cleared} / ${total}</span>` : ''}</header>`;
-      if (!group.slots.length) return `<section class="stage-group">${head}<p class="soon-note">準備中です。</p></section>`;
-      const cards = group.slots.map(slot => {
-        if (!slot.level && !slot.runnerId) return `<div class="level-card soon"><b>${slot.id}</b><span class="lv-name">${slot.title}<small>準備中</small></span></div>`;
-        const record = progress.get(slot.id), open = progress.isUnlocked(slot.id);
-        const status = !open ? 'ロック中' : record.best !== null ? `ベスト ${record.best.toFixed(1)}秒` : '未クリア';
-        return `<button class="level-card${record.clears ? ' done' : ''}" data-action="${slot.runnerId ? 'run' : 'start'}" data-level="${slot.id}"${open ? '' : ' disabled'}><b>${slot.id}</b><span class="lv-name">${slot.title}<small>${slot.summary}</small></span><span class="lv-best">${status}</span></button>`;
-      }).join('');
-      return `<section class="stage-group">${head}<div class="levels">${cards}</div></section>`;
-    }).join('');
-    el('overlay').innerHTML = `<div class="screen select-screen"><div class="select-head"><button class="secondary" data-action="title">タイトルへ</button><h2>面をえらぶ</h2></div>${groups}</div>`;
+    el('overlay').innerHTML = t === 'shop' ? shopHTML(wallet, note) : t === 'friends' ? friendsHTML(wallet) : settingsHTML(wallet, sound.enabled);
   }
+  private stageOf(id: string): number { return ALL_PLAYABLE_SLOTS.find(l => l.id === id)?.stage ?? 1; }
+  /** 遊んでいる面を、とちゅうでやめる(失敗と同じく体力が減る。設計書 25-2) */
+  private abandon() {
+    if (this.mode === 'playing' || this.mode === 'paused' || this.mode === 'dying') { wallet.fail(); this.mode = 'result'; }
+  }
+  /** 体力があれば面を始める。足りなければ、回復の案内 */
+  private tryBegin(level: LevelDefinition) {
+    if (wallet.canPlay()) { this.begin(level); return; }
+    this.level = level; this.tired('level');
+  }
+  /** 体力が足りない案内を、どこから開いたか(level=面を始めようとした) */
+  private tiredFrom: 'level' | 'home' = 'home';
+  private tired(from: 'level' | 'home') {
+    this.idle('select'); this.tiredFrom = from;
+    el('overlay').innerHTML = tiredHTML(wallet, from === 'level' ? 'select' : 'home');
+  }
+  private buyPotion() {
+    const inModal = !!el('overlay').querySelector('.modal-card');
+    const ok = wallet.buyPotion();
+    // 体力不足の案内から買ったときは、そのまま面へ
+    if (inModal && ok && this.tiredFrom === 'level') { this.begin(this.level); return; }
+    if (inModal) { this.tired(this.tiredFrom); return; }
+    this.tab('shop', ok ? '体力が回復した！' : 'シルバーコインが たりません。');
+  }
+  private toast(text: string) { el('message').textContent = text; window.setTimeout(() => { if (el('message').textContent === text) el('message').textContent = ''; }, 2000); }
   private begin(level: LevelDefinition) {
     this.level = level; this.view.setLevel(level);
     this.world = createWorld(level); this.view.reset(); this.accumulator = 0; this.visualTime = 0; this.lossAge = 0;
     this.mode = 'playing'; this.controls.enable(true); progress.attempt(level.id); sound.unlock(); sound.music('play');
     el('hud-level').textContent = `面 ${level.id}`; el('hud-title').textContent = level.title;
-    el('hud').hidden = el('controls').hidden = false; el('overlay').innerHTML = ''; this.lastChapter = '';
+    el('hud').hidden = el('controls').hidden = false; el('overlay').innerHTML = ''; this.lastChapter = ''; el('game-wrap').classList.remove('menu');
     this.message(level.intro, 4); this.setControls(level);
     el('game').focus({ preventScroll: true }); this.hud();
   }
@@ -194,6 +229,11 @@ class Park extends Phaser.Scene {
   private finish() {
     this.mode = 'result'; const w = this.world, level = this.level, clear = w.outcome === 'clear';
     const newBest = clear && progress.clear(level.id, w.time);
+    // 体力とコイン(設計書 25-2・25-3)。2Dの面は、クリアでシルバー20枚(面の中のコインを入れるまでの仮の値)
+    const got = clear ? clearRewards(wallet, level.id, { silver: 20 }) : null;
+    if (!clear) wallet.fail();
+    // 小さい画面でも結果のカードが収まるよう、行を増やさず、いちばん下の注意書きの場所に出す
+    const reward = got ? `<p class="save-note reward-line">+${got.silver} <i class="coin silver"></i>${got.gold ? `　+${got.gold} <i class="coin gold"></i>` : ''}</p>` : `<p class="save-note reward-line lose">体力 −2(のこり ${wallet.stamina})</p>`;
     sound.music(clear ? 'clear' : 'fail');
     // 次の面は、通常の面と3D走りの面をまとめた順で決める(2-5の次は、3D走りの3-1)
     const order = ALL_PLAYABLE_SLOTS, nextSlot = clear ? order[order.findIndex(x => x.id === level.id) + 1] : undefined;
@@ -204,7 +244,7 @@ class Park extends Phaser.Scene {
     const copy = clear ? (level.delivery ? 'せんべいは、無事に届いた。\n鹿は、もぐもぐ満足そう。' : level.sweep ? '奈良公園は、きれいになった。\n鹿は、また落とす気まんまん。' : level.cross ? '動物たちの動きを、見事に読んだ。' : level.rescue ? '子鹿は、ほっと一安心。\nSpraの後ろで、ご機嫌。' : '数々のしかけを、見事に突破。\n鹿は、何も知らない顔。') : (w.outcome === 'dirty' || w.outcome === 'hit' || w.outcome === 'lost') ? (level.hints.caught ?? CAUGHT_HINT) : w.outcome === 'stolen' ? (level.hints.caught ?? STOLEN_DEFAULT) : w.outcome === 'fall' ? level.hints.fall : w.outcome === 'wall' ? level.hints.wall : w.outcome === 'caught' ? (level.hints.caught ?? CAUGHT_HINT) : level.hints.poop;
     const primary = next ? `<button class="primary" data-action="${next.runner ? 'run' : 'next'}" data-level="${next.id}">次の面へ（${next.id}） <span>▶</span></button>` : `<button class="primary" data-action="retry">${clear ? 'もう一度あそぶ' : 'すぐに、もう一回'} <span>▶</span></button>`;
     const secondary = `<div class="secondary-row">${next ? '<button class="secondary" data-action="retry">もう一度あそぶ</button>' : ''}<button class="secondary" data-action="select">面選択へ</button></div>`;
-    el('overlay').innerHTML = `<div class="screen modal-screen result-screen"><div class="modal-card"><span class="eyebrow">${clear ? newBest ? '自己ベスト更新！' : `${level.id} クリア` : `${attempts}回目の挑戦`}</span><img class="result-spru" src="/assets/${clear ? 'spru-clear' : 'spru-oops'}.png" alt="${clear ? '喜ぶSpra' : '困ったSpra'}"><h2>${title}</h2><p class="result-copy">${copy.replaceAll('\n', '<br>')}</p><div class="result-stats"><div><span>${clear ? 'クリアタイム' : 'ここまでの時間'}</span><strong>${w.time.toFixed(1)}<small>秒</small></strong></div><div><span>${clear ? stat[0] : 'ゴールへの進み具合'}</span><strong>${clear ? stat[1] : this.progress()}<small>${clear ? stat[2] : '%'}</small></strong></div></div>${primary}${secondary}<p class="save-note">${clear ? progress.canSave ? '自己ベストはこのブラウザに保存されます。' : 'この環境では記録を保存できません。' : 'Rキーでも再挑戦。しかけの場所は同じです。'}</p></div></div>`;
+    el('overlay').innerHTML = `<div class="screen modal-screen result-screen"><div class="modal-card"><span class="eyebrow">${clear ? newBest ? '自己ベスト更新！' : `${level.id} クリア` : `${attempts}回目の挑戦`}</span><img class="result-spru" src="/assets/${clear ? 'spru-clear' : 'spru-oops'}.png" alt="${clear ? '喜ぶSpra' : '困ったSpra'}"><h2>${title}</h2><p class="result-copy">${copy.replaceAll('\n', '<br>')}</p><div class="result-stats"><div><span>${clear ? 'クリアタイム' : 'ここまでの時間'}</span><strong>${w.time.toFixed(1)}<small>秒</small></strong></div><div><span>${clear ? stat[0] : 'ゴールへの進み具合'}</span><strong>${clear ? stat[1] : this.progress()}<small>${clear ? stat[2] : '%'}</small></strong></div></div>${primary}${secondary}${reward}</div></div>`;
     el('overlay').querySelector<HTMLButtonElement>('.primary')?.focus({ preventScroll: true }); this.hud();
   }
   private progress() {

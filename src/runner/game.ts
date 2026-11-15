@@ -1,5 +1,6 @@
 // 3D走りゲームの組み立て: 入力・画面表示(HUD)・効果音・ループ・記録。
 import { Progress } from '../progress.ts';
+import { Wallet, clearRewards, waitText, STAMINA_MAX, STAMINA_FAIL } from '../wallet.ts';
 import type { Obstacle } from './course.ts';
 import { CRITTERS } from './critters.ts';
 import { RUNNER_LEVELS, courseOf, type RunnerLevel } from './levels.ts';
@@ -51,6 +52,8 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
     return el;
   });
   let saved: Snapshot | null = null;
+  const wallet = new Wallet();
+  let charged = false; // この回の失敗で、体力をもう減らしたか
   let continued = false;
   q('lv-id').textContent = `面 ${level.id}`;
   q('lv-title').textContent = level.title;
@@ -173,6 +176,16 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
   let resultTimer = 0;
 
   let recorded = false;
+  /** 体力の行(はじめる・結果のカード) */
+  const paintStamina = () => {
+    const st = wallet.stamina;
+    const txt = `体力 ${st} / ${STAMINA_MAX}` + (st < STAMINA_FAIL ? `(回復まで ${waitText(wallet.waitToPlay)})` : '');
+    for (const k of ['s-stamina', 'r-stamina']) {
+      const e = q(k);
+      e.textContent = txt;
+      e.classList.toggle('low', st < STAMINA_FAIL);
+    }
+  };
   const showResult = () => {
     const cleared = run.phase === 'cleared';
     const time = run.t.toFixed(1);
@@ -182,7 +195,19 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
     if (cleared && !recorded) {
       recorded = true;
       newBest = progress.clear(level.id, run.t, !continued); // 途中から続けたときは、タイムを記録しない
+      // ごほうび(設計書 25-3): 取ったコインはシルバーとして持ち帰り。はじめてのクリア・★3でゴールド
+      const got = clearRewards(wallet, level.id, { silver: run.coins, star3: stars === 3 });
+      q('r-reward').textContent = `+${got.silver} シルバー` + (got.gold ? `　+${got.gold} ゴールド` : '');
+      q('r-reward').classList.remove('lose');
     }
+    if (!cleared && !charged) {
+      // 失敗: 体力が2減る(設計書 25-2)
+      charged = true;
+      wallet.fail();
+      q('r-reward').textContent = `体力 −${STAMINA_FAIL}`;
+      q('r-reward').classList.add('lose');
+    }
+    paintStamina();
     const best = progress.get(level.id).best;
     q('r-title').textContent = cleared ? `${level.goalName}に とうちゃく！` : 'ざんねん… もうすこしだった';
     q('r-stars').textContent = cleared ? '★'.repeat(stars) + '☆'.repeat(3 - stars) : '';
@@ -207,6 +232,14 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
   };
 
   const begin = (from: Snapshot | null = null) => {
+    if (!wallet.canPlay()) {
+      // 体力が足りない: 始めない(ホームのアイテムで回復薬が使える)
+      paintStamina();
+      toast(`体力が たりません(回復まで ${waitText(wallet.waitToPlay)})`, 3000);
+      return;
+    }
+    charged = false;
+    q('r-reward').textContent = '';
     if (!ac) {
       try {
         const Ctor = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
@@ -482,7 +515,14 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
     view,
   };
 
+  paintStamina();
+
   return () => {
+    // 走っている途中でページを離れたら、失敗と同じく体力が減る(設計書 25-2)
+    if (run.phase === 'running' && !charged) {
+      charged = true;
+      wallet.fail();
+    }
     cancelAnimationFrame(raf);
     window.clearTimeout(toastTimer);
     window.clearTimeout(resultTimer);

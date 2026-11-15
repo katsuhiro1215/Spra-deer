@@ -76,10 +76,11 @@ export function RunShell() {
                 <b>コイン</b> たくさん あつめよう
               </li>
             </ul>
+            <p className="ks-stamina" data-ks="s-stamina" />
             <button type="button" className="ks-btn" data-ks="go">
               はじめる
             </button>
-            <a className="ks-link" href="/#select">
+            <a className="ks-link" href="/#world-3">
               ← 面えらびへ
             </a>
           </div>
@@ -89,6 +90,7 @@ export function RunShell() {
           <div className="ks-card">
             <h2 data-ks="r-title" />
             <p className="ks-stars" data-ks="r-stars" />
+            <p className="ks-reward" data-ks="r-reward" />
             <dl className="ks-stats">
               <div><dt>コイン</dt><dd data-ks="r-coins" /></div>
               <div><dt>のこりハート</dt><dd data-ks="r-hearts" /></div>
@@ -101,10 +103,11 @@ export function RunShell() {
             <button type="button" className="ks-btn" data-ks="cont" hidden>
               途中から つづける
             </button>
+            <p className="ks-stamina" data-ks="r-stamina" />
             <button type="button" className="ks-btn ks-btn-sub" data-ks="retry">
               もういちど
             </button>
-            <a className="ks-link" href="/#select">
+            <a className="ks-link" href="/#world-3">
               ← 面えらびへ
             </a>
           </div>

@@ -412,3 +412,24 @@
 .ks-status.on {
   opacity: 1;
 }
+
+/* 体力・ごほうび(設計書 25-2・25-3) */
+.ks-stamina {
+  margin: 10px 0 8px;
+  font-size: 15px;
+  font-weight: 800;
+  color: #3b7f26;
+}
+.ks-stamina.low {
+  color: #b0563a;
+}
+.ks-reward {
+  margin: 0 0 10px;
+  min-height: 1em;
+  font-size: 18px;
+  font-weight: 900;
+  color: #3b7f26;
+}
+.ks-reward.lose {
+  color: #b0563a;
+}

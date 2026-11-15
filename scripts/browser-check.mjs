@@ -20,11 +20,19 @@ const watch = page => {
 };
 const state = page => page.evaluate(() => window.__DEER__);
 const snap = (page, name) => page.screenshot({ path: `${output}/${name}.png` });
+/** トップ →「はじめる」→ ホーム → ワールドの面えらび(設計書 25-5) */
+const toWorld = async (page, stage) => {
+  // トップなら「はじめる」、ホームまわりなら下のバーの「ホーム」
+  if ((await state(page)).mode === 'title') await page.locator('[data-action="home"]').click();
+  else await page.locator('[data-action="tab"][data-tab="home"]').click();
+  await page.waitForFunction(() => window.__DEER__?.mode === 'select' && !!document.querySelector('.hs-worlds'));
+  await page.locator(`[data-action="world"][data-stage="${stage}"]`).click();
+};
 const open = async (context, levelId) => {
   const page = await context.newPage(); watch(page);
   await page.goto(url);
   await page.waitForFunction(() => window.__DEER__?.mode === 'title');
-  await page.locator('[data-action="select"]').click();
+  await toWorld(page, Number(levelId.split('-')[0]));
   await page.locator(`[data-level="${levelId}"]`).click();
   await page.waitForFunction(id => window.__DEER__?.mode === 'playing' && window.__DEER__.level.id === id, levelId);
   return page;
@@ -37,13 +45,17 @@ try {
   await first.goto(url);
   await first.waitForFunction(() => window.__DEER__?.mode === 'title');
   await snap(first, '01-title-mobile');
-  await first.locator('[data-action="select"]').click();
+  await first.locator('[data-action="home"]').click();
   await first.waitForFunction(() => window.__DEER__?.mode === 'select');
-  await snap(first, '02-select-fresh');
-  assert.equal(await first.locator('[data-level="1-1"]').isDisabled(), false);
+  await snap(first, '02-home-fresh');
+  assert.equal(await first.locator('.hs-world').count(), 8, 'ワールド1〜8のカード');
+  assert.ok(await first.locator('.hs-stamina').isVisible(), '体力が見える');
   // 開発中は全面解放（src/progress.ts の UNLOCK_ALL）。公開前に false へ戻すときは、ここを「1-2 は選べない」に戻す。
-  for (const id of ['1-2', '1-10', '2-1', '3-1', '4-1']) assert.equal(await first.locator(`[data-level="${id}"]`).isDisabled(), false, `${id} is selectable while developing`);
-  assert.equal(await first.locator('.soon-note').count(), 0, 'every stage has at least one level');
+  for (const id of ['1-1', '1-2', '1-10', '2-1', '3-1', '4-1']) {
+    await toWorld(first, Number(id.split('-')[0]));
+    assert.equal(await first.locator(`[data-level="${id}"]`).isDisabled(), false, `${id} is selectable while developing`);
+  }
+  await snap(first, '02-select-fresh');
   await fresh.close();
   console.log('Fresh visitor: every level is selectable (development unlock)');
 
@@ -145,8 +157,8 @@ try {
   await sp.goto(url);
   await sp.waitForFunction(() => window.__DEER__?.mode === 'title');
   await snap(sp, '11-small-title');
-  assert.ok(await sp.locator('[data-action="select"]').isVisible());
-  await sp.locator('[data-action="select"]').click(); await snap(sp, '12-small-select');
+  assert.ok(await sp.locator('[data-action="home"]').isVisible());
+  await toWorld(sp, 1); await snap(sp, '12-small-select');
   await sp.locator('[data-level="1-3"]').click();
   await sp.waitForFunction(() => window.__DEER__?.mode === 'playing');
   const layout = await sp.evaluate(() => {
