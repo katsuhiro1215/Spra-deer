@@ -1,7 +1,11 @@
 import { ALL_PLAYABLE_SLOTS } from './game/levels.ts';
 
 export type LevelRecord = { best: number | null; attempts: number; clears: number };
-const KEY = 'spra-deer:progress:v1';
+const KEY = 'spra-deer:progress:v2';
+/** 2026-11-15 の WORLD 1 再編の前の記録(v1)。新しい番号 → 古い番号。外した面の記録は引きつがない */
+const OLD_KEY = 'spra-deer:progress:v1';
+const FROM_V1: Record<string, string> = { '1-6': '2-3', '1-7': '1-8', '1-8': '2-4', '1-9': '2-5' };
+const UNCHANGED_V1 = new Set(['1-1', '1-2', '1-3', '1-4', '1-5', '1-10']);
 /** 開発中は、すべての面を最初から遊べる。公開前に false に戻す（前の面をクリアすると次の面が開く、本来の動きになる）。 */
 export const UNLOCK_ALL = true;
 const empty = (): LevelRecord => ({ best: null, attempts: 0, clears: 0 });
@@ -14,7 +18,19 @@ export class Progress {
 
   constructor() {
     try {
-      const saved = JSON.parse(localStorage.getItem(KEY) || 'null');
+      let saved = JSON.parse(localStorage.getItem(KEY) || 'null');
+      if (!saved) {
+        // 古い記録があれば、新しい番号に置きかえて引きつぐ
+        const old = JSON.parse(localStorage.getItem(OLD_KEY) || 'null');
+        const ol = old && typeof old === 'object' ? old.levels : null;
+        if (ol && typeof ol === 'object') {
+          const levels: Record<string, unknown> = {};
+          for (const [id, r] of Object.entries(ol)) if (!/^[12]-/.test(id) || UNCHANGED_V1.has(id)) levels[id] = r;
+          for (const [to, from] of Object.entries(FROM_V1)) if (ol[from]) levels[to] = ol[from];
+          saved = { levels };
+          localStorage.setItem(KEY, JSON.stringify(saved));
+        }
+      }
       const levels = saved && typeof saved === 'object' ? saved.levels : null;
       if (levels && typeof levels === 'object') {
         // 知らない面の記録は無視する（データ側から面を消しても壊れない）。

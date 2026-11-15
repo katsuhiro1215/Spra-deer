@@ -125,3 +125,24 @@ test('面のひらき方: ワールドの中は順番、次のワールドは前
   assert.equal(p.isUnlocked(w1[3].id), true, '1-4 は 1-3 のクリアで開く');
   assert.equal(p.isUnlocked('9-9'), false, '無い面は選べない');
 });
+
+test('WORLD 1 の再編(2026-11-15)の前の記録を、新しい番号へ引きつぐ', () => {
+  const store = memoryStore();
+  const rec = (best: number) => ({ best, attempts: 2, clears: 1 });
+  store.setItem('spra-deer:progress:v1', JSON.stringify({ levels: { '1-1': rec(10), '1-6': rec(11), '1-8': rec(12), '2-3': rec(13), '2-5': rec(14), '3-2': rec(15) } }));
+  const g = globalThis as { localStorage?: Storage };
+  const before = g.localStorage;
+  g.localStorage = store;
+  try {
+    const p = new Progress();
+    assert.equal(p.get('1-1').best, 10, '番号が同じ面はそのまま');
+    assert.equal(p.get('1-6').best, 13, '新1-6 = 旧2-3(旧1-6の記録は引きつがない)');
+    assert.equal(p.get('1-7').best, 12, '新1-7 = 旧1-8');
+    assert.equal(p.get('1-9').best, 14, '新1-9 = 旧2-5');
+    assert.equal(p.get('1-8').best, null, '旧2-4の記録は無かった');
+    assert.equal(p.get('3-2').best, 15, 'WORLD 3 はそのまま');
+    assert.ok(store.getItem('spra-deer:progress:v2'), '新しい保存先に書く');
+  } finally {
+    g.localStorage = before;
+  }
+});

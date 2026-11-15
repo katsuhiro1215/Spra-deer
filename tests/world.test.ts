@@ -423,7 +423,7 @@ test('level data is sound: unique ids, safe start, final chapter, reachable gaps
     for (const c of level.chasers) assert.ok(c.triggerY <= level.start.y - 100, `${level.id}: chaser ${c.id} must start after the player moves`);
   }
   assert.equal(STAGES[0].slots.length, 10);
-  assert.equal(STAGES[1].slots.length, 5);
+  assert.equal(STAGES[1].slots.length, 0); // WORLD 2 はせんべい焼きを作るまで空(旧ステージ2の配達は WORLD 1 へ)
   assert.deepEqual(STAGES.slice(2, 5).map(g => g.slots.length), [10, 1, 1]); // 3=3D走り(作る枠を含む) 4=掃除 5=保留
   for (const level of PLAYABLE.filter(l => l.delivery)) {
     for (const t of level.delivery!.thieves) assert.ok(Math.hypot(t.x - level.start.x, t.y - level.start.y) > 350, `${level.id}: ${t.id} too close to start`);

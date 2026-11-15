@@ -245,7 +245,7 @@ export const LEVEL_1_5: LevelDefinition = {
 
 /** 1-6: 前からも、後ろからも。鹿が正面から突っ込み、後ろからも追う。止まれない中で、壁と雨と穴。 */
 export const LEVEL_1_6: LevelDefinition = {
-  id: '1-6', stage: 1, title: '前からも、後ろからも',
+  id: '旧1-6', stage: 1, title: '前からも、後ろからも', // 2026-11-15 WORLD 1 の再編で外した(追う鹿の言いかえ)
   intro: '鹿が、前から来る！？',
   start: { x: 360, y: 3400 },
   poops: [...row(3150, 256), ...row(2550, 512), ...row(2000, 256), ...block(1500), ...row(1000, 448)],
@@ -287,7 +287,7 @@ export const LEVEL_1_6: LevelDefinition = {
 
 /** 1-7: 雨の降る道。鹿は落とし、空からも降る。降る場所が、すきまをふさぐ。 */
 export const LEVEL_1_7: LevelDefinition = {
-  id: '1-7', stage: 1, title: '雨の降る道',
+  id: '旧1-7', stage: 1, title: '雨の降る道', // 2026-11-15 WORLD 1 の再編で外した(降るうんこは、ほかの面に入っている)
   intro: '上から、降ってくる！',
   start: { x: 360, y: 3400 },
   poops: [...row(3150, 384), ...row(2600, 256), ...row(2050, 512), ...row(1500, 384), ...row(950, 256)],
@@ -335,7 +335,7 @@ export const LEVEL_1_7: LevelDefinition = {
 
 /** 1-8: せまる壁。左右から閉じる壁、壁を跳んだ先のうんこ、追いかける鹿。 */
 export const LEVEL_1_8: LevelDefinition = {
-  id: '1-8', stage: 1, title: 'せまる壁',
+  id: '1-7', stage: 1, title: 'せまる壁', // 旧1-8
   intro: '壁は、毎回同じ場所に出る。',
   start: { x: 360, y: 3400 },
   poops: [...row(3150, 384), ...block(2300), ...row(1700, 256), ...block(1100)],
@@ -381,7 +381,7 @@ export const LEVEL_1_8: LevelDefinition = {
 
 /** 1-9: 総力戦の手前。追いかける鹿が3頭、雨、走るうんこ、おとりの穴。立ち止まれない。 */
 export const LEVEL_1_9: LevelDefinition = {
-  id: '1-9', stage: 1, title: '立ち止まれない',
+  id: '旧1-9', stage: 1, title: '立ち止まれない', // 2026-11-15 WORLD 1 の再編で外した(追う鹿の言いかえ)
   intro: '今度は、3頭。',
   start: { x: 360, y: 3400 },
   poops: [...row(3150, 256), ...row(2650, 512), ...row(2150, 256), ...row(1650, 448), ...row(1150, 256), ...row(800, 448)],
@@ -482,7 +482,7 @@ const STOLEN_HINT = 'せんべいを、取られた…！\n鹿は、せんべい
 
 /** 2-1: はじめての配達。せんべいを持って、目印の鹿へ。道は穴とうんこ。 */
 export const LEVEL_2_1: LevelDefinition = {
-  id: '2-1', stage: 2, title: 'はじめての配達',
+  id: '旧2-1', stage: 1, title: 'はじめての配達', // 2026-11-15 WORLD 1 の再編で外した(届けるだけ)
   intro: 'せんべいを、あの鹿へ届けよう。',
   start: { x: 360, y: 3400 },
   poops: [...row(3150, 384), ...row(2500, 448), ...row(1750, 256), ...row(1050, 384)],
@@ -509,7 +509,7 @@ export const LEVEL_2_1: LevelDefinition = {
 
 /** 2-2: 届け先は、子鹿。大きさの違う鹿の中から、指定された鹿へ。別の鹿に近づくと、せんべいを取られる。 */
 export const LEVEL_2_2: LevelDefinition = {
-  id: '2-2', stage: 2, title: '届け先は、子鹿',
+  id: '旧2-2', stage: 1, title: '届け先は、子鹿', // 2026-11-15 WORLD 1 の再編で外した(見分けるだけ)
   intro: '届け先は、子鹿。他の鹿には近づかないで。',
   start: { x: 360, y: 3400 },
   poops: [...row(3150, 256), ...row(2550, 512), ...row(1900, 384), ...row(1250, 256)],
@@ -546,8 +546,9 @@ export const LEVEL_2_2: LevelDefinition = {
 
 /** 2-3: 横取りしに来る鹿。置いたせんべいを食べている間に、距離をかせぐ。 */
 export const LEVEL_2_3: LevelDefinition = {
-  id: '2-3', stage: 2, title: '横取りしにくる鹿',
-  intro: 'ボタンで、せんべいを置ける。鹿はそっちへ行く。',
+  id: '1-6', stage: 1, title: '横取りしにくる鹿', // 旧2-3
+  // 配達の入門(旧2-1・2-2)を外したので、届けることも、ここで伝える
+  intro: 'せんべいを、奥の鹿へ届けよう。\nボタンで置くと、ほかの鹿はそっちへ行く。',
   start: { x: 360, y: 3400 },
   poops: [...row(3150, 384), ...row(2650, 256), ...row(2000, 512), ...row(1350, 384), ...row(900, 256)],
   deers: [],
@@ -579,7 +580,7 @@ export const LEVEL_2_3: LevelDefinition = {
 
 /** 2-4: おとりで道をつくる。狭いすきまに、鹿が立っている。せんべいで、どかす。 */
 export const LEVEL_2_4: LevelDefinition = {
-  id: '2-4', stage: 2, title: 'おとりで道をつくる',
+  id: '1-8', stage: 1, title: 'おとりで道をつくる', // 旧2-4
   intro: 'すきまに、鹿が立っている。',
   start: { x: 360, y: 3400 },
   poops: [...row(3100, 384), ...row(2500, 256), ...row(1900, 512), ...row(1300, 256), ...row(800, 448)],
@@ -614,7 +615,7 @@ export const LEVEL_2_4: LevelDefinition = {
 
 /** 2-5: 群れの中を抜けて、奥の子鹿へ。 */
 export const LEVEL_2_5: LevelDefinition = {
-  id: '2-5', stage: 2, title: '群れを抜けて',
+  id: '1-9', stage: 1, title: '群れを抜けて', // 旧2-5
   intro: '奥の子鹿へ。群れの中を、抜けよう。',
   start: { x: 360, y: 3400 },
   poops: [...row(3150, 256), ...row(2600, 512), ...row(2050, 384), ...row(1500, 256), ...row(1000, 448)],
@@ -717,18 +718,21 @@ export const LEVEL_5_1: LevelDefinition = {
   },
 };
 
-/** ステージ1の枠。 */
+/**
+ * WORLD 1「Spraの大冒険」の10面(2026-11-15 Owner決定の案A)。旧ステージ2(せんべい配達)を入れ、
+ * 似ている面・簡単すぎる面(旧1-6・1-7・1-9・2-1・2-2)を外した。並びは、しかけが毎回かわるように。
+ */
 export const STAGE_1: LevelSlot[] = [
   { id: '1-1', title: LEVEL_1_1.title, summary: '安全そうな道を、よく見よう', level: LEVEL_1_1 },
   { id: '1-2', title: LEVEL_1_2.title, summary: 'ふさがれた道を、跳ぶ', level: LEVEL_1_2 },
   { id: '1-3', title: LEVEL_1_3.title, summary: '横から、壁が出てくる', level: LEVEL_1_3 },
   { id: '1-4', title: LEVEL_1_4.title, summary: '鹿が、追いかけてくる', level: LEVEL_1_4 },
-  { id: '1-5', title: LEVEL_1_5.title, summary: '全部まとめて挑戦', level: LEVEL_1_5 },
-  { id: '1-6', title: LEVEL_1_6.title, summary: '正面からも、鹿が来る', level: LEVEL_1_6 },
-  { id: '1-7', title: LEVEL_1_7.title, summary: '空から、降ってくる', level: LEVEL_1_7 },
-  { id: '1-8', title: LEVEL_1_8.title, summary: '壁が、せまってくる', level: LEVEL_1_8 },
-  { id: '1-9', title: LEVEL_1_9.title, summary: '3頭の鹿から逃げる', level: LEVEL_1_9 },
-  { id: '1-10', title: LEVEL_1_10.title, summary: 'ステージ1の最終関門', level: LEVEL_1_10 },
+  { id: '1-5', title: LEVEL_1_5.title, summary: 'ここまでの、全部入り', level: LEVEL_1_5 },
+  { id: '1-6', title: LEVEL_2_3.title, summary: 'せんべいで、鹿を引きつける', level: LEVEL_2_3 },
+  { id: '1-7', title: LEVEL_1_8.title, summary: '壁が、せまってくる', level: LEVEL_1_8 },
+  { id: '1-8', title: LEVEL_2_4.title, summary: 'おとりで、道をあける', level: LEVEL_2_4 },
+  { id: '1-9', title: LEVEL_2_5.title, summary: '群れを、抜ける', level: LEVEL_2_5 },
+  { id: '1-10', title: LEVEL_1_10.title, summary: 'WORLD 1 の最終関門', level: LEVEL_1_10 },
 ];
 
 /** まだ作っていない3D走りの面(行き先のメモ)。2026-11-15に3-1〜3-10がそろったので、今は空 */
@@ -736,15 +740,8 @@ const PLANNED: Record<string, { title: string; summary: string }> = {};
 
 export const STAGES: { stage: number; title: string; slots: LevelSlot[] }[] = [
   { stage: 1, title: '足元にご用心', slots: STAGE_1 },
-  {
-    stage: 2, title: '鹿せんべい配達', slots: [
-      { id: '2-1', title: LEVEL_2_1.title, summary: 'せんべいを、持っていく', level: LEVEL_2_1 },
-      { id: '2-2', title: LEVEL_2_2.title, summary: '指定された鹿を、見分ける', level: LEVEL_2_2 },
-      { id: '2-3', title: LEVEL_2_3.title, summary: '横取りされる前に、おとり', level: LEVEL_2_3 },
-      { id: '2-4', title: LEVEL_2_4.title, summary: 'おとりで、道をあける', level: LEVEL_2_4 },
-      { id: '2-5', title: LEVEL_2_5.title, summary: '群れを、抜ける', level: LEVEL_2_5 },
-    ],
-  },
+  // WORLD 2 は、新しい「せんべい焼き」を作るまで空(準備中)。旧ステージ2(配達)は WORLD 1 へ入れた
+  { stage: 2, title: '鹿せんべい大作戦', slots: [] },
   {
     // ステージ3は、Three.js の3D走りゲーム(/run/)。作った面は runner/levels.ts、まだの面は行き先だけ書いた「準備中」
     stage: 3, title: '鹿、走る。', slots: Array.from({ length: 10 }, (_, i) => `3-${i + 1}`).map(id => {

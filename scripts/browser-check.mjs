@@ -51,7 +51,7 @@ try {
   assert.equal(await first.locator('.hs-world').count(), 8, 'ワールド1〜8のカード');
   assert.ok(await first.locator('.hs-stamina').isVisible(), '体力が見える');
   // 開発中は全面解放（src/progress.ts の UNLOCK_ALL）。公開前に false へ戻すときは、ここを「1-2 は選べない」に戻す。
-  for (const id of ['1-1', '1-2', '1-10', '2-1', '3-1', '4-1']) {
+  for (const id of ['1-1', '1-2', '1-6', '1-10', '3-1', '4-1']) {
     await toWorld(first, Number(id.split('-')[0]));
     assert.equal(await first.locator(`[data-level="${id}"]`).isDisabled(), false, `${id} is selectable while developing`);
   }
