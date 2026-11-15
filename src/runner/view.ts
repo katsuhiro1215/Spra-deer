@@ -155,9 +155,8 @@ export class KasugaView {
   private runTex: THREE.Texture[] = [];
   /** コインの形(種類ごと: 0=シルバー 1=ゴールド 2=プレミアム) */
   private coinSets: { disc: THREE.InstancedMesh; rim: THREE.InstancedMesh }[] = [];
-  /** コースのコインの番号 → 種類・種類の中での番号 */
+  /** コースのコインの番号 → 種類 */
   private coinTier: number[] = [];
-  private coinLocal: number[] = [];
   /** プレミアムコインの光(取ったら消す) */
   private premiumHalo?: { id: number; s: number; x: number; y: number; obj: THREE.Sprite };
   private obstacleObjs: { o: Obstacle; obj: THREE.Object3D; spin?: THREE.Object3D; sprite?: THREE.Mesh; crit?: { def: CritterDef; tex: Record<'normal' | 'angry' | 'sleep' | 'dizzy', THREE.Texture>; pose: string } }[] = [];
@@ -166,7 +165,6 @@ export class KasugaView {
   private potionObjs: { id: number; s: number; x: number; y: number; obj: THREE.Group }[] = [];
   private awake = false;
   private walkTex: Record<string, THREE.Texture[]> = {};
-  private lastCoinState: Uint8Array;
   private shake = 0;
   private camX = 0;
   private host: HTMLElement;
@@ -267,7 +265,6 @@ export class KasugaView {
     this.buildObstacles();
     this.buildCoins();
     this.buildWeather();
-    this.lastCoinState = new Uint8Array(course.coins.length).fill(2); // 2=まだ一度も配置していない
 
     const dg = new THREE.PlaneGeometry(1.7, 2.267);
     dg.translate(0, 1.13, 0);
@@ -535,14 +532,17 @@ export class KasugaView {
   }
 
   /** 坂のある面の地面: 道の高さに合わせた、高さのある1枚(道の近くは細かく、遠くは粗く)。 */
-  private buildTerrain(mat: THREE.Material, L: number): THREE.Mesh {
+  private buildTerrain(mat: THREE.Material, L: number): THREE.Group {
+    // 軽くする(スマホ向け): 道の近く(±20m)は2mおき、その外は4mおき。前後は2mおき
     const cols: number[] = [];
     for (const x of [-340, -260, -200, -160, -130, -105, -88]) cols.push(x);
-    for (let x = -76; x <= 76; x += 2) cols.push(x);
+    for (let x = -76; x < -20; x += 4) cols.push(x);
+    for (let x = -20; x <= 20; x += 2) cols.push(x);
+    for (let x = 24; x <= 76; x += 4) cols.push(x);
     for (const x of [88, 105, 130, 160, 200, 260, 340]) cols.push(x);
     const z0 = 80;
     const z1 = -(L + 120);
-    const dz = 1.5;
+    const dz = 2;
     const rows = Math.ceil((z0 - z1) / dz) + 1;
     const nc = cols.length;
     const pos = new Float32Array(rows * nc * 3);
@@ -562,24 +562,55 @@ export class KasugaView {
         uv[(j * nc + i) * 2 + 1] = Z / 6;
       }
     }
-    const idx: number[] = [];
-    for (let j = 0; j < rows - 1; j++) {
-      for (let i = 0; i < nc - 1; i++) {
-        const a = j * nc + i;
-        const b = a + 1;
-        const c = a + nc;
-        const e = c + 1;
-        idx.push(a, c, b, b, c, e);
+    const quads = (j0: number, j1: number): number[] => {
+      const idx: number[] = [];
+      for (let j = j0; j < j1; j++) {
+        for (let i = 0; i < nc - 1; i++) {
+          const a = j * nc + i;
+          const b = a + 1;
+          const c = a + nc;
+          const e = c + 1;
+          idx.push(a, c, b, b, c, e);
+        }
       }
+      return idx;
+    };
+    // 法線は全体で計算する(区切りの所で、光の当たり方が変わらないように)
+    const full = new THREE.BufferGeometry();
+    const posAttr = new THREE.BufferAttribute(pos, 3);
+    const uvAttr = new THREE.BufferAttribute(uv, 2);
+    full.setAttribute('position', posAttr);
+    full.setAttribute('uv', uvAttr);
+    full.setIndex(quads(0, rows - 1));
+    full.computeVertexNormals();
+    const normal = full.getAttribute('normal');
+    full.setIndex(null); // 全体の三角形の一覧は、法線の計算にだけ使う
+    // 200mずつに区切る。見えない区切り(後ろ・遠く)は描かない(カメラの見える範囲は420m)
+    const group = new THREE.Group();
+    const per = Math.round(200 / dz);
+    let minY = Infinity;
+    let maxY = -Infinity;
+    for (let k = 1; k < pos.length; k += 3) {
+      minY = Math.min(minY, pos[k]);
+      maxY = Math.max(maxY, pos[k]);
     }
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
-    g.setIndex(idx);
-    g.computeVertexNormals();
-    const m = new THREE.Mesh(g, mat);
-    m.receiveShadow = true;
-    return m;
+    for (let j0 = 0; j0 < rows - 1; j0 += per) {
+      const j1 = Math.min(rows - 1, j0 + per);
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', posAttr);
+      g.setAttribute('uv', uvAttr);
+      g.setAttribute('normal', normal);
+      g.setIndex(quads(j0, j1));
+      // 位置の配列は全体で共有しているので、区切りごとの大きさは手で決める
+      const za = z0 - j0 * dz;
+      const zb = z0 - j1 * dz;
+      g.boundingBox = new THREE.Box3(new THREE.Vector3(cols[0], minY, zb), new THREE.Vector3(cols[nc - 1], maxY, za));
+      g.boundingSphere = g.boundingBox.getBoundingSphere(new THREE.Sphere());
+      const m = new THREE.Mesh(g, mat);
+      m.receiveShadow = true;
+      group.add(m);
+    }
+    return group;
   }
 
   /** つり橋: 板の床・手すりのロープ・2本の太いケーブルと吊り糸・両端の塔・谷底の川。 */
@@ -2027,15 +2058,16 @@ export class KasugaView {
     const tierOf = (c: { kind?: string }) => (c.kind === 'gold' ? 1 : c.kind === 'premium' ? 2 : 0);
     const counts = [0, 0, 0];
     this.coinTier = this.course.coins.map((c) => tierOf(c));
-    this.coinLocal = this.course.coins.map((c) => counts[tierOf(c)]++);
-    const discGeo = new THREE.CylinderGeometry(0.4, 0.4, 0.1, 28).rotateX(Math.PI / 2);
-    const rimGeo = new THREE.TorusGeometry(0.4, 0.06, 10, 28);
+    for (const c of this.course.coins) counts[tierOf(c)]++;
+    // 軽くする(スマホ向け): コインは数百枚あり、全部を毎フレーム描くので、形は粗めに・影は落とさない
+    const discGeo = new THREE.CylinderGeometry(0.4, 0.4, 0.1, 18).rotateX(Math.PI / 2);
+    const rimGeo = new THREE.TorusGeometry(0.4, 0.06, 6, 18);
     this.coinSets = kinds.map((k, i) => {
       const disc = new THREE.InstancedMesh(discGeo, k.disc, Math.max(1, counts[i]));
       const rim = new THREE.InstancedMesh(rimGeo, k.rim, Math.max(1, counts[i]));
       for (const m of [disc, rim]) {
         m.frustumCulled = false;
-        m.castShadow = true;
+        m.castShadow = false;
         // まだ置いていない(数が0の種類の、空の1つ)は見せない
         for (let j = 0; j < m.count; j++) m.setMatrixAt(j, new THREE.Matrix4().makeScale(0, 0, 0));
         this.scene.add(m);
@@ -2265,26 +2297,31 @@ export class KasugaView {
     }
 
     // コイン
+    // 軽くする(スマホ向け): 近くの取れるコインだけを、前から詰めて描く(遠い・取ったコインは描かない)
     const coins = this.course.coins;
     const spin = t * 2.6;
+    const used = [0, 0, 0];
     for (let i = 0; i < coins.length; i++) {
       const cn = coins[i];
-      const near = cn.s - run.s < 170 && cn.s - run.s > -1.5; // 取りそこねて後ろに行ったコインはカメラの前を通らないよう消す
-      const alive = !run.collected.has(cn.id) && near;
-      if (!alive && this.lastCoinState[i] === 0) continue;
-      this.lastCoinState[i] = alive ? 1 : 0;
-      const k = alive && cn.kind !== 'potion' ? (cn.kind === 'premium' ? 1.7 : cn.kind === 'gold' ? 1.3 : 1) : 0;
+      if (cn.kind === 'potion') continue;
+      // 取りそこねて後ろに行ったコインは、カメラの前を通らないよう消す
+      if (cn.s - run.s > 170 || cn.s - run.s < -1.5 || run.collected.has(cn.id)) continue;
+      const k = cn.kind === 'premium' ? 1.7 : cn.kind === 'gold' ? 1.3 : 1;
       this.tmpQ.setFromEuler(this.tmpE.set(0, spin + i * 0.7, 0));
       const cw = this.roadW(cn.s, cn.x);
       this.tmpM.compose(this.tmpP.set(cw.x, cw.y + cn.y + Math.sin(t * 3 + i) * 0.06, cw.z), this.tmpQ, this.tmpS.set(k, k, k));
-      const set = this.coinSets[this.coinTier[i]];
-      set.disc.setMatrixAt(this.coinLocal[i], this.tmpM);
-      set.rim.setMatrixAt(this.coinLocal[i], this.tmpM);
+      const tier = this.coinTier[i];
+      const set = this.coinSets[tier];
+      set.disc.setMatrixAt(used[tier], this.tmpM);
+      set.rim.setMatrixAt(used[tier], this.tmpM);
+      used[tier]++;
     }
-    for (const set of this.coinSets) {
+    this.coinSets.forEach((set, tier) => {
+      set.disc.count = used[tier];
+      set.rim.count = used[tier];
       set.disc.instanceMatrix.needsUpdate = true;
       set.rim.instanceMatrix.needsUpdate = true;
-    }
+    });
     if (this.premiumHalo) {
       const h = this.premiumHalo;
       const on = !run.collected.has(h.id) && h.s - run.s < 170 && h.s - run.s > -1.5;
