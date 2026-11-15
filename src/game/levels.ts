@@ -1,5 +1,5 @@
 import { FIELD } from './stage.ts';
-import type { HungryDefinition, LineDefinition, NightDefinition, SenbeiDefinition } from './stage.ts';
+import type { ArenaDefinition, HungryDefinition, LineDefinition, NightDefinition, SenbeiDefinition } from './stage.ts';
 import { RUNNER_LEVELS } from '../runner/levels.ts';
 import type { ChaserDefinition, CoinDefinition, CrosserDefinition, CrossDefinition, DeliveryDefinition, HedgeDefinition, PondDefinition, RescueDefinition, StoneDefinition, SweepDefinition, GoalDefinition, Point, RainDefinition, SliderDefinition, TrapDefinition, WallDefinition } from './stage.ts';
 
@@ -59,6 +59,8 @@ export type LevelDefinition = {
   lines?: LineDefinition[];
   /** 夜の面(灯りのまわりしか見えない)。 */
   night?: NightDefinition;
+  /** 閉じこめられる広場。 */
+  arena?: ArenaDefinition;
   chapters: Chapter[];
   /** 失敗の原因と、次の攻略方法（失敗の種類ごと）。water=池に落ちた */
   hints: { poop: string; fall: string; wall: string; caught?: string; water?: string };
@@ -487,27 +489,27 @@ export const LEVEL_1_9: LevelDefinition = {
   },
 };
 
-/** 1-10: ステージ1の最終関門。これまでのしかけが、全部。 */
+/** 1-10: ステージ1の最終関門。これまでのしかけが、全部。後半は、閉じこめられる広場(2026-11-16、設計書 28章 A3)。 */
 export const LEVEL_1_10: LevelDefinition = {
   id: '1-10', stage: 1, title: '最終関門',
   intro: 'ここまでの、全部。',
   start: { x: 360, y: 3400 },
-  poops: [...row(3200, 512), ...block(3080), ...row(2500, 256), ...block(1950), ...row(1400, 448), ...row(900, 256)],
+  poops: [...row(3200, 512), ...block(3080), ...row(2500, 256), ...block(1950), { x: 330, y: 1120 }, { x: 420, y: 1330 }, ...row(900, 256)],
   deers: [],
-  // 道の形(2026-11-16): 最後のうんこ列の前で、右から左へ回りこむ
-  hedges: [{ x: 100, y: 1060, w: 300, h: 50 }],
+  // 広場(1000〜1500): 入ると後ろの門が閉まる。8秒、追う鹿2頭と、足もとへ降るうんこから逃げきると、前の門が開く
+  arena: { top: 1000, bottom: 1470, enterY: 1445, survive: 8, every: 1.1, warn: .75 },
+  hedges: [{ x: 190, y: 1160, w: 70, h: 70, look: 'rock' }, { x: 470, y: 1230, w: 70, h: 70, look: 'rock' }],
   coins: [
     { x: 512, y: 3300 }, { x: 560, y: 2930 }, { x: 256, y: 2500 }, { x: 470, y: 2380 },
     { x: 575, y: 2620, kind: 'gold' }, // 壁の手前、右のすみ
-    { x: 520, y: 1800 }, { x: 448, y: 1400 }, { x: 520, y: 1000 }, { x: 256, y: 900 },
-    { x: 150, y: 1200, kind: 'premium', air: true }, // 降ってくる所の、左の奥(跳ぶと取れる)
+    { x: 520, y: 1800 }, { x: 160, y: 1400 }, { x: 560, y: 1380 }, { x: 360, y: 1230, kind: 'gold' }, { x: 160, y: 1060 }, { x: 560, y: 1060 }, { x: 256, y: 900 },
+    { x: 150, y: 1300, kind: 'premium', air: true }, // 広場の左(逃げながら、跳ぶと取れる)
     { x: 560, y: 600, kind: 'gold' },
   ],
   traps: [
     { id: 'landing-hole', x: 180, y: 2900, width: 280, height: 130, warning: .05, trigger: 'land', landReach: 110, silent: true },
     { id: 'hole-1', x: 190, y: 2350, width: 130, height: 100, warning: .3, silent: true },
     { id: 'landing-hole-2', x: 160, y: 1730, width: 300, height: 120, warning: .05, trigger: 'land', landReach: 110, silent: true },
-    { id: 'hole-2', x: 400, y: 1250, width: 130, height: 100, warning: .3, silent: true },
     { id: 'hole-3', x: 190, y: 760, width: 130, height: 100, warning: .3, silent: true },
     { id: 'goal-hole', x: 395, y: 250, width: 100, height: 160, warning: .3, trigger: 'goal', silent: true },
     { id: 'big-hole', x: 210, y: 420, width: 300, height: 110, warning: .5, silent: true, trigger: 'y', triggerY: 640 },
@@ -521,14 +523,12 @@ export const LEVEL_1_10: LevelDefinition = {
     { id: 'slider', x: 570, y: 3010, toX: 500, toY: 3150, within: 420, speed: 560 },
     { id: 'dash', x: 600, y: 1550, toX: 150, toY: 1550, within: 170, speed: 560, trigger: 'near' },
   ],
-  rain: [
-    { id: 'rain-1', triggerY: 1150, delay: .2, warn: .7, aim: 'player' },
-    { id: 'rain-2', triggerY: 1080, delay: .2, warn: .7, aim: 'player' },
-    { id: 'rain-3', triggerY: 1010, delay: .2, warn: .7, aim: 'player' },
-  ],
+  rain: [],
   chasers: [
     { id: 'stag', kind: 'stag', x: 360, y: 2650, triggerY: 2200, speed: 210 },
-    { id: 'doe', kind: 'doe', x: 580, y: 1500, triggerY: 1300, speed: 215 },
+    // 広場の鹿(門が開くと、座る)
+    { id: 'arena-doe', kind: 'doe', x: 150, y: 1060, triggerY: 1445, speed: 165, arena: true },
+    { id: 'arena-fawn', kind: 'fawn', x: 570, y: 1080, triggerY: 1445, speed: 180, arena: true },
   ],
   goal: { x: 360, y: 300, moveTo: { x: 550, y: 300, within: 260, speed: 420 } },
   chapters: [
@@ -536,7 +536,8 @@ export const LEVEL_1_10: LevelDefinition = {
     { above: 2700, text: '壁も、来る。' },
     { above: 2200, text: '鹿も、来る。' },
     { above: 1750, text: 'ふさがれた道は、跳ぶしかない。' },
-    { above: 1200, text: '上からも、来る。' },
+    { above: 1450, text: 'ひらけた広場…？' },
+    { above: 950, text: '逃げきった！ あと少し。' },
     { above: 700, text: '…旗は、動かないよね？' },
     { above: -Infinity, text: 'あと少し。旗のところへ！' },
   ],
@@ -544,7 +545,7 @@ export const LEVEL_1_10: LevelDefinition = {
     poop: 'ここまでの全部が、お待ちかね。\nどこで何が来るかは、毎回同じ。\n一つずつ、覚えて越えよう。',
     fall: '着地した場所や、すきまの先、\nゴールの前に、穴がある。\n一度見たら、次は避けられる。',
     wall: WALL_HINT,
-    caught: '鹿に追いつかれた…！\n止まらず、壁は跳び越えよう。\n降ってくるうんこは、動きながら避ける。',
+    caught: '鹿に追いつかれた…！\n広場では、止まらず大きく回ろう。\n岩をはさむと、鹿は回り道をする。',
   },
 };
 

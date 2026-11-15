@@ -55,7 +55,7 @@ class Sound {
   }
   play(kind: Event['kind']) {
     if (!this.enabled || this.context?.state !== 'running') return;
-    const notes: Partial<Record<Event['kind'], [number, number, number]>> = { jump: [390, 730, .13], warning: [160, 110, .17], collapse: [110, 38, .28], poop: [180, 75, .22], fall: [390, 85, .4], clear: [540, 1080, .42], wall: [120, 45, .3], slide: [320, 190, .12], crush: [150, 40, .35], chase: [200, 330, .2], caught: [260, 90, .3], drop: [240, 120, .14], bait: [330, 220, .1], eat: [200, 260, .12], pickup: [880, 1320, .12], throw: [300, 520, .1], senbeiLand: [260, 180, .08], splash: [420, 120, .25], lure: [620, 880, .14], stolen: [260, 90, .3], sweep: [260, 420, .12], found: [500, 900, .2], lost: [260, 90, .3], coin: [1180, 1760, .12], gold: [880, 1760, .3], premium: [660, 1320, .5], sink: [300, 120, .3], water: [420, 90, .45] };
+    const notes: Partial<Record<Event['kind'], [number, number, number]>> = { jump: [390, 730, .13], warning: [160, 110, .17], collapse: [110, 38, .28], poop: [180, 75, .22], fall: [390, 85, .4], clear: [540, 1080, .42], wall: [120, 45, .3], slide: [320, 190, .12], crush: [150, 40, .35], chase: [200, 330, .2], caught: [260, 90, .3], drop: [240, 120, .14], bait: [330, 220, .1], eat: [200, 260, .12], gateClose: [140, 60, .35], gateOpen: [520, 780, .3], pickup: [880, 1320, .12], throw: [300, 520, .1], senbeiLand: [260, 180, .08], splash: [420, 120, .25], lure: [620, 880, .14], stolen: [260, 90, .3], sweep: [260, 420, .12], found: [500, 900, .2], lost: [260, 90, .3], coin: [1180, 1760, .12], gold: [880, 1760, .3], premium: [660, 1320, .5], sink: [300, 120, .3], water: [420, 90, .45] };
     const data = notes[kind]; if (!data) return;
     const [start, end, duration] = data, ctx = this.context;
     const oscillator = ctx.createOscillator(), gain = ctx.createGain();
@@ -288,6 +288,9 @@ class Park extends Phaser.Scene {
     const section = this.level.chapters.find(c => p.y > c.above)?.text ?? '';
     if (section !== this.lastChapter) { this.lastChapter = section; if (this.world.time >= this.messageUntil) this.message(section, 3); }
     if (this.world.time > this.messageUntil) el('message').textContent = '';
+    // 広場: 閉じこめられている間は、残りの秒数
+    const arena = this.world.arena, ad = this.level.arena;
+    if (arena?.state === 'closed' && ad && this.world.time >= this.messageUntil) el('message').textContent = `逃げきれ！ あと ${Math.max(1, Math.ceil(ad.survive - arena.time))} 秒`;
   }
   update(_now: number, delta: number) {
     if (!this.view) return;
@@ -301,6 +304,8 @@ class Park extends Phaser.Scene {
           this.view.event(event, this.visualTime); sound.play(event.kind);
           if (event.kind === 'warning') this.message('ミシッ…！ 足元が揺れてる！', 1.5);
           if (event.kind === 'collapse') this.message('そこ、床が抜けるの！？', 1.4);
+          if (event.kind === 'gateClose') this.message('閉じこめられた！', 1.2);
+          if (event.kind === 'gateOpen') this.message('門が、ひらいた！ 先へ！', 2);
         }
         if (this.world.outcome !== 'playing') {
           this.mode = 'dying'; this.lossAge = 0; this.controls.enable(false); this.world.player.moving = false;

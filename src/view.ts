@@ -239,6 +239,11 @@ export class ParkView {
   /** 飛び石・はすの葉(沈む石はゆれて、沈むと消える)と、コイン。 */
   private renderTerrain(w: World) {
     const g = this.terrainFx.clear();
+    for (const gate of w.gates) {
+      g.fillStyle(0x3d4a30, .25).fillRect(gate.x, gate.y + gate.h - 6, gate.w, 14);
+      g.fillStyle(0x9a6b3f).fillRect(gate.x, gate.y + 8, gate.w, 10).fillRect(gate.x, gate.y + 24, gate.w, 10);
+      for (let x = gate.x + 10; x < gate.x + gate.w; x += 44) g.fillStyle(0x7a5130).fillRoundedRect(x, gate.y - 14, 16, gate.h + 16, 5).fillStyle(0xb98a56).fillRect(x + 3, gate.y - 10, 4, gate.h + 6);
+    }
     for (const st of w.stones) {
       if (st.sunk) {
         g.lineStyle(3, 0xd8f0f7, .7 - st.down * .2).strokeEllipse(st.cx, st.y, st.r * 2.2 + st.down * 20, st.r * 1.1 + st.down * 10);
@@ -323,6 +328,12 @@ export class ParkView {
       this.labels.push({ text, born: now, y: text.y });
     }
     if (e.kind === 'crush') this.scene.cameras.main.shake(220, .01);
+    if (e.kind === 'gateClose' || e.kind === 'gateOpen') {
+      if (e.kind === 'gateClose') this.scene.cameras.main.shake(260, .008);
+      const text = this.label(e.x, e.y - 40, e.kind === 'gateClose' ? 'ガシャン！' : 'ひらいた！', 32, '#755338').setDepth(8000);
+      text.setStroke('#fff9dc', 6);
+      this.labels.push({ text, born: now, y: text.y });
+    }
     if (e.kind === 'pickup' || e.kind === 'splash' || e.kind === 'lure') {
       const word = { pickup: 'せんべい！', splash: 'ぽちゃん…', lure: 'あっ、せんべい！' }[e.kind];
       const text = this.label(e.x, e.y - (e.kind === 'lure' ? 120 : 50), word, 24, '#755338').setDepth(8000);
@@ -544,6 +555,15 @@ export class ParkView {
       if (w.outcome === 'playing') this.senbei(this.deerFx, w.player.x + 20, w.player.y - 58, 11, 1);
     }
     // 降ってくるうんこ: 影が濃くなり、うんこが落ちてくる
+    const arena = w.level.arena;
+    for (const d of w.drops) {
+      if (!arena || d.t < 0) continue;
+      const t = Math.min(1, d.t / arena.warn);
+      this.deerFx.fillStyle(0x3d3a24, .12 + t * .3).fillEllipse(d.x, d.y + 6, 30 + t * 36, 14 + t * 16);
+      const fall = (1 - t) * (1 - t) * 720;
+      const g = this.rainGraphic ?? (this.rainGraphic = this.scene.add.graphics().setDepth(9500));
+      g.fillStyle(0x78553b).fillCircle(d.x, d.y - fall - 14, 15).fillStyle(0xaa8460).fillEllipse(d.x - 3, d.y - fall - 19, 14, 8);
+    }
     for (const r of w.rain) {
       if (r.state !== 'warn') continue;
       const def = w.level.rain.find(x => x.id === r.id)!, t = Math.min(1, r.timer / def.warn);
@@ -559,7 +579,8 @@ export class ParkView {
     this.visualTime = now;
     const p = w.player;
     // Leave room above the park so the finish flag stays below the fixed HUD.
-    const target = Phaser.Math.Clamp(p.y - 800, -240, 2820);
+    const lock = w.arena?.state === 'closed' && this.level.arena;
+    const target = lock ? lock.top - 400 : Phaser.Math.Clamp(p.y - 800, -240, 2820);
     this.cameraY = Phaser.Math.Linear(this.cameraY, target, 1 - Math.exp(-dt * 12));
     this.scene.cameras.main.setScroll(0, this.cameraY);
     this.trapGraphics.clear();

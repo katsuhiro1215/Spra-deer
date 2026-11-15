@@ -1,11 +1,11 @@
-import { FIELD, GOAL, RULES, type CoinDefinition, type HedgeDefinition, type HungryDefinition, type LineDefinition, type StoneDefinition, type CrosserDefinition, type RescueDefinition, type ThiefDefinition, type ChaserDefinition, type GoalDefinition, type Point, type TrapDefinition, type WallDefinition, type SliderDefinition } from './stage.ts';
+import { FIELD, GOAL, RULES, type CoinDefinition, type HedgeDefinition, type HungryDefinition, type LineDefinition, type ArenaDefinition, type StoneDefinition, type CrosserDefinition, type RescueDefinition, type ThiefDefinition, type ChaserDefinition, type GoalDefinition, type Point, type TrapDefinition, type WallDefinition, type SliderDefinition } from './stage.ts';
 import type { DeerDefinition, LevelDefinition } from './levels.ts';
 import { facingOf, type Facing } from './facing.ts';
 /** throw: せんべいを投げる(向いている方へ)。 */
 export type Input = { x: number; y: number; jump?: boolean; throw?: boolean };
 export type Trap = TrapDefinition & { state: 'intact' | 'shaking' | 'open'; elapsed: number };
 export type Event = {
-  kind: 'coin' | 'gold' | 'premium' | 'sink' | 'water' | 'jump' | 'land' | 'warning' | 'collapse' | 'poop' | 'fall' | 'clear' | 'dropWarning' | 'drop' | 'wall' | 'slide' | 'crush' | 'goalMove' | 'chase' | 'caught' | 'bait' | 'eat' | 'stolen' | 'sweep' | 'found' | 'lost' | 'miss' | 'pickup' | 'throw' | 'senbeiLand' | 'splash' | 'lure';
+  kind: 'coin' | 'gold' | 'premium' | 'sink' | 'water' | 'jump' | 'land' | 'warning' | 'collapse' | 'poop' | 'fall' | 'clear' | 'dropWarning' | 'drop' | 'wall' | 'slide' | 'crush' | 'goalMove' | 'chase' | 'caught' | 'bait' | 'eat' | 'stolen' | 'sweep' | 'found' | 'lost' | 'miss' | 'pickup' | 'throw' | 'senbeiLand' | 'splash' | 'lure' | 'gateClose' | 'gateOpen';
   x: number; y: number; id?: string;
 };
 /** 歩く鹿。walk=歩く, warn=止まって予告中。 */
@@ -16,7 +16,7 @@ export type Deer = {
 /** 横から出てくる壁。progress 0=隠れている, 1=道をふさいでいる。 */
 export type Wall = WallDefinition & { length: number; state: 'idle' | 'in' | 'hold' | 'out' | 'done'; progress: number; timer: number };
 /** 追いかけてくる鹿。 */
-export type Chaser = { id: string; kind: ChaserDefinition['kind']; x: number; y: number; dir: 1 | -1; state: 'idle' | 'chase'; walked: number };
+export type Chaser = { id: string; kind: ChaserDefinition['kind']; x: number; y: number; dir: 1 | -1; state: 'idle' | 'chase' | 'rest'; walked: number };
 /** 降ってくるうんこ。wait=落ち始めを待つ, warn=影が出ている, done=落ちた。 */
 export type Rain = { id: string; state: 'idle' | 'wait' | 'warn' | 'done'; timer: number; tx: number; ty: number };
 /** 今のゴール。動くゴールなら、位置が変わる。 */
@@ -51,6 +51,8 @@ export type World = {
   stones: Stone[]; coins: Coin[];
   /** 投げるせんべい: 鹿・投げたせんべい・道に落ちているせんべい・持っている枚数・投げた数 */
   lines: LineWalker[];
+  /** 広場: idle=まだ入っていない, closed=閉じこめられている(time=経過秒), open=逃げきった。gates=今、閉まっている門。drops=降ってくるうんこ(t=影が出てからの秒) */
+  arena: { state: 'idle' | 'closed' | 'open'; time: number; next: number } | null; gates: HedgeDefinition[]; drops: (Point & { t: number })[];
   hungry: Hungry[]; thrown: Thrown[]; pickups: (Point & { taken: boolean })[]; held: number; throws: number;
   /** 取ったコイン(シルバー)・ゴールドの数、プレミアムを取ったか */
   silver: number; gold: number; premium: boolean;
@@ -95,6 +97,7 @@ export function createWorld(level: LevelDefinition): World {
     stones: (level.stones ?? []).map(s => ({ ...s, cx: s.x, stand: 0, sunk: false, down: 0 })),
     coins: (level.coins ?? []).map(c => ({ ...c, taken: false })),
     lines: (level.lines ?? []).flatMap((def, k) => Array.from({ length: def.count }, (_, i) => ({ id: `${def.id}-${i}`, line: k, kind: def.kind, x: lineX(def, i, 0), y: def.y, dir: (def.speed >= 0 ? 1 : -1) as 1 | -1, walked: 0 }))),
+    arena: level.arena ? { state: 'idle', time: 0, next: 0 } : null, gates: level.arena ? [arenaGate(level.arena, 'top')] : [], drops: [],
     hungry: (level.hungry ?? []).map(h => ({ id: h.id, kind: h.kind, mode: h.mode, x: h.x, y: h.y, dir: 1, state: 'idle', timer: 0, walked: 0, target: -1 })),
     thrown: [], pickups: (level.senbei?.pickups ?? []).map(p => ({ ...p, taken: false })), held: level.senbei?.start ?? 0, throws: 0,
     silver: 0, gold: 0, premium: false,
@@ -168,6 +171,7 @@ function stepChasers(w: World, dt: number) {
   w.level.chasers.forEach((def, i) => {
     const c = w.chasers[i];
     if (c.state === 'idle' && p.y <= def.triggerY) { c.state = 'chase'; w.events.push({ kind: 'chase', x: c.x, y: c.y, id: c.id }); }
+    if (c.state === 'chase' && def.arena && w.arena?.state === 'open') c.state = 'rest'; // 広場の鹿は、門が開くと座る
     if (c.state !== 'chase') return;
     walkTo(w, c, p.x, p.y, def.speed * dt); // 植え込みがあれば、ふちにそって動く(無い面では、まっすぐ追う)
   });
@@ -333,7 +337,32 @@ function pickCoins(w: World) {
 }
 // ---- 投げるせんべい(設計書 28章 B1) ----
 export const SENBEI = { max: 3, reach: 30, dist: 250, flight: .45, arrive: 26, eat: 2.6, block: 38, deer: 20, cool: .35 };
-const hedgeAt = (w: World, x: number, y: number, r: number) => (w.level.hedges ?? []).some(h => inHedge({ x, y }, h, r));
+const hedgeAt = (w: World, x: number, y: number, r: number) => (w.level.hedges ?? []).some(h => inHedge({ x, y }, h, r)) || w.gates.some(h => inHedge({ x, y }, h, r));
+/** 広場の門(道の幅いっぱいの柵)。top=前の門(広場の上のふち), bottom=後ろの門(下のふち)。 */
+export function arenaGate(a: ArenaDefinition, side: 'top' | 'bottom'): HedgeDefinition {
+  return side === 'top' ? { x: 60, y: a.top - 40, w: 600, h: 40, look: 'rock' } : { x: 60, y: a.bottom, w: 600, h: 40, look: 'rock' };
+}
+/** 広場: 入ると後ろの門が閉まる。survive 秒逃げきると前の門が開く。その間、足もとへうんこが降る。 */
+function stepArena(w: World, dt: number) {
+  const a = w.arena, def = w.level.arena, p = w.player;
+  if (!a || !def) return;
+  if (a.state === 'idle' && p.y <= def.enterY) {
+    a.state = 'closed'; a.time = 0; a.next = .8; w.gates.push(arenaGate(def, 'bottom'));
+    w.events.push({ kind: 'gateClose', x: p.x, y: def.bottom });
+  }
+  for (const d of w.drops) {
+    if (d.t < 0) continue;
+    d.t += dt;
+    if (d.t >= def.warn) { d.t = -1; w.poops.push({ x: d.x, y: d.y }); w.events.push({ kind: 'drop', x: d.x, y: d.y }); }
+  }
+  if (a.state !== 'closed') return;
+  a.time += dt;
+  if (a.time >= a.next && a.time < def.survive - def.warn) { a.next += def.every; w.drops.push({ x: p.x, y: p.y, t: 0 }); }
+  if (a.time >= def.survive) {
+    a.state = 'open'; w.gates = w.gates.filter(g => g.y !== def.top - 40);
+    w.events.push({ kind: 'gateOpen', x: 360, y: def.top });
+  }
+}
 /** 鹿を、植え込みをよけながら(横・縦を別々に)、tx, ty へ dist だけ動かす。着いたら true。 */
 function walkTo(w: World, a: { x: number; y: number; dir: 1 | -1; walked: number }, tx: number, ty: number, dist: number): boolean {
   const dx = tx - a.x, dy = ty - a.y, d = Math.hypot(dx, dy);
@@ -429,8 +458,8 @@ function blockDeer(w: World, fromX: number, fromY: number) {
 }
 /** 植え込みに入らないよう、動いた分をもどす(横・縦を別々に見て、壁ぞいにすべれるように)。 */
 function blockHedges(w: World, fromX: number, fromY: number) {
-  const hedges = w.level.hedges;
-  if (!hedges?.length) return;
+  const hedges = [...(w.level.hedges ?? []), ...w.gates];
+  if (!hedges.length) return;
   const p = w.player;
   const hit = (x: number, y: number) => hedges.some(h => inHedge({ x, y }, h));
   if (!hit(p.x, p.y)) return;
@@ -493,6 +522,7 @@ export function step(w: World, input: Input, dt = RULES.step): void {
   stepWalls(w, dt);
   stepSliders(w, dt, jumped);
   stepGoal(w, dt);
+  stepArena(w, dt);
   stepChasers(w, dt);
   stepThieves(w, dt);
   stepCrossers(w);

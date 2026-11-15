@@ -30,6 +30,8 @@ export type ChaserDefinition = {
   id: string; kind: 'stag' | 'doe' | 'fawn';
   x: number; y: number; // 最初にいる場所（画面の下のほう）
   triggerY: number; speed: number;
+  /** 広場の鹿。広場の門が開くと、満足して座る(もう追わない)。 */
+  arena?: boolean;
 };
 /**
  * 上から降ってくるうんこ。player が triggerY より奥へ来て delay 秒後に、落ちる場所へ影が出て、warn 秒後に落ちる。
@@ -107,3 +109,11 @@ export type SenbeiDefinition = { pickups: Point[]; start?: number };
 export type LineDefinition = { id: string; kind: 'rickshaw' | 'deer'; y: number; x0: number; speed: number; count: number; spacing: number; deer?: 'stag' | 'doe' | 'fawn' };
 /** 夜の面。灯り(灯籠)のまわりと、Spraの足もと・人力車のちょうちんのまわりだけが見える。radius=灯りの半径、player=Spraのまわりの半径。 */
 export type NightDefinition = { lights: Point[]; radius?: number; player?: number };
+
+// ---- 広場(設計書 28章 A3) ----
+/**
+ * 閉じこめられる広場。top〜bottom の間(道の幅いっぱい)。Spraが enterY より奥へ入ると、後ろの門が閉まり、カメラが止まる。
+ * survive 秒のあいだ、every 秒ごとにSpraの足もとへうんこが降り(影が出て warn 秒後に落ちる)、広場の鹿(arena: true)が追ってくる。
+ * 逃げきると、前の門が開く。前の門は、最初から閉まっている。
+ */
+export type ArenaDefinition = { top: number; bottom: number; enterY: number; survive: number; every: number; warn: number };
