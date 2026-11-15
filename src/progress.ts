@@ -34,9 +34,9 @@ export class Progress {
     try { localStorage.setItem(KEY, JSON.stringify({ levels: Object.fromEntries(this.levels) })); } catch { this.canSave = false; }
   }
   attempt(id: string) { this.edit(id, r => { r.attempts++; }); }
-  /** クリアを記録し、自己ベストを更新したら true。 */
-  clear(id: string, time: number): boolean {
-    const isBest = this.get(id).best === null || time < this.get(id).best!;
+  /** クリアを記録し、自己ベストを更新したら true。recordTime=false(途中から続けたとき)は、タイムを記録しない。 */
+  clear(id: string, time: number, recordTime = true): boolean {
+    const isBest = recordTime && (this.get(id).best === null || time < this.get(id).best!);
     this.edit(id, r => { r.clears++; if (isBest) r.best = time; });
     return isBest;
   }

@@ -4,8 +4,8 @@ import { buildCourse, type Course, type Curve, type HillPoint, type PatternName,
 
 /** 天気: leaves=舞う落ち葉 / petals=桜吹雪 */
 export type Weather = 'none' | 'rain' | 'snow' | 'leaves' | 'petals';
-/** 道の景色: sando=灯籠と杉の参道 / town=街道(夕焼けの街) / mountain=灯籠のない山道 / river=左に水路のある川ぞいの道 */
-export type Setting = 'sando' | 'town' | 'mountain' | 'river';
+/** 道の景色: sando=灯籠と杉の参道 / town=街道(夕焼けの街) / mountain=灯籠のない山道 / river=左に水路のある川ぞいの道 / city=高いビルの大都会 */
+export type Setting = 'sando' | 'town' | 'mountain' | 'river' | 'city';
 /**
  * ゴールの景色: shrine=春日大社 / todaiji=東大寺の大仏殿 / horyuji=法隆寺 / omiwa=大神神社 / bay=大阪湾 / summit=山頂
  * heijo=平城宮跡の朱雀門 / zaodo=金峯山寺の蔵王堂 / castle=郡山城 / park=奈良公園
@@ -78,6 +78,10 @@ export interface RunnerLevel {
   bridge?: { from: number; to: number };
   /** 突進する動物が動き出すとき、法螺貝が鳴る(吉野) */
   horn?: boolean;
+  /** 区間ごとの景色(at=はじまる割合)。長い面で、街→山→大都会と変える */
+  scenes?: { at: number; setting: Setting; name?: string }[];
+  /** チェックポイント(割合と名前)。ここを過ぎたあとに失敗すると、ここから続けられる */
+  checkpoints?: { at: number; name: string }[];
   theme: Theme;
   /** 回復薬を置く場所(割合) */
   potions?: number[];
@@ -345,12 +349,28 @@ export const RUNNER_LEVELS: RunnerLevel[] = [
     lines: ['桜の トンネルだ！', '若草山が 見えてきた', '奈良公園に 帰ってきた！'],
   },
   {
-    id: '3-10', title: '大阪湾をめざせ！', summary: '最長の最終面。街をぬけて、海まで',
-    intro: '脱走した鹿は、大阪湾をめざす！ 長いよ、速いよ、気をつけて！',
-    length: 1800, seed: 20261220, difficulty: 0.8,
-    extra: ['ramp'], rules: { speed0: 15, speed1: 25, steerAccel: 42, steerSpeed: 7.0 },
+    id: '3-10', title: '大阪湾をめざせ！', summary: '最長の最終面。生駒山をこえ、大都会をぬけて海へ',
+    intro: '最後の 長い旅！ 生駒山を こえて 大阪湾へ！ チェックポイントから 続けられるよ',
+    length: 2400, seed: 20261220, difficulty: 0.8,
+    extra: ['ramp', 'crossing', 'critterSleep', 'critterCross', 'critterHop', 'critterCharge'], critters: ['fox', 'tanuki', 'goro', 'kage', 'bubu', 'pachi'],
+    opening: ['hole', 'critterSleep', 'poop', 'fenceGap'],
+    rules: { speed0: 15, speed1: 25, steerAccel: 42, steerSpeed: 7.0 },
+    curve: { amp: 18, wave: 240 },
+    // 奈良の街(平ら)→生駒山を約45m登り、一気に下る→大阪の大都会(平ら)→海
+    hills: [
+      { at: 0.2, h: 0 }, { at: 0.29, h: 18 }, { at: 0.32, h: 20 }, { at: 0.42, h: 42 }, { at: 0.45, h: 44 },
+      { at: 0.55, h: 22 }, { at: 0.58, h: 20 }, { at: 0.67, h: 0 },
+    ],
+    after: { crossing: 0.67 },
+    scenes: [
+      { at: 0, setting: 'town', name: '奈良の街' },
+      { at: 0.2, setting: 'mountain', name: '生駒山' },
+      { at: 0.67, setting: 'city', name: '大阪' },
+    ],
+    checkpoints: [{ at: 0.45, name: '生駒山の頂上' }, { at: 0.7, name: '大阪の街' }],
+    potions: [0.46, 0.72],
     theme: BAY, goalName: '大阪湾',
-    lines: ['街を ぬけて いくぞ！', '潮の かおりが してきた', '海が 見えてきた！ 観覧車も！'],
+    lines: ['生駒山を こえた！ 下り坂は 速いよ', '大阪の 大都会を ぬけるぞ！', '海が 見えてきた！ 観覧車も！'],
   },
 ];
 
@@ -361,5 +381,6 @@ export function courseOf(level: RunnerLevel): Course {
     seed: level.seed, length: level.length, difficulty: level.difficulty,
     extra: level.extra, critters: level.critters, opening: level.opening, rules: level.rules, curve: level.curve,
     potions: level.potions, wake: level.wake, hills: level.hills, after: level.after, bridge: level.bridge,
+    safe: level.checkpoints?.map((c) => c.at),
   });
 }

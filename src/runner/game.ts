@@ -40,6 +40,18 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
     [course.length * 0.92, level.lines[2]],
   ];
   const nextLevel = RUNNER_LEVELS[RUNNER_LEVELS.findIndex((l) => l.id === level.id) + 1];
+  // チェックポイント: 通過したときの状態を覚えておき、失敗したら、そこから続けられる
+  type Snapshot = { s: number; name: string; coins: number; collected: Set<number>; t: number };
+  const CPS = (level.checkpoints ?? []).map((c) => ({ s: c.at * course.length, name: c.name }));
+  const cpEls = CPS.map((c) => {
+    const el = document.createElement('span');
+    el.className = 'ks-progress-cp';
+    el.style.left = `${(c.s / course.length) * 100}%`;
+    q('mark').before(el);
+    return el;
+  });
+  let saved: Snapshot | null = null;
+  let continued = false;
   q('lv-id').textContent = `面 ${level.id}`;
   q('lv-title').textContent = level.title;
   q('lv-goal').textContent = level.goalName;
@@ -169,14 +181,19 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
     let newBest = false;
     if (cleared && !recorded) {
       recorded = true;
-      newBest = progress.clear(level.id, run.t);
+      newBest = progress.clear(level.id, run.t, !continued); // 途中から続けたときは、タイムを記録しない
     }
     const best = progress.get(level.id).best;
     q('r-title').textContent = cleared ? `${level.goalName}に とうちゃく！` : 'ざんねん… もうすこしだった';
     q('r-stars').textContent = cleared ? '★'.repeat(stars) + '☆'.repeat(3 - stars) : '';
     q('r-coins').textContent = `${run.coins} / ${total}`;
     q('r-hearts').textContent = '♥'.repeat(Math.max(0, run.lives)) || '—';
-    q('r-time').textContent = cleared ? `${time} 秒${newBest ? '（ベスト更新！）' : ''}` : `${Math.floor(run.progress * 100)} % まで`;
+    q('r-time').textContent = cleared
+      ? `${time} 秒${continued ? '（途中から）' : newBest ? '（ベスト更新！）' : ''}`
+      : `${Math.floor(run.progress * 100)} % まで`;
+    const cont = q<HTMLButtonElement>('cont');
+    cont.hidden = cleared || !saved;
+    if (saved) cont.textContent = `${saved.name}から つづける`;
     q('r-best').textContent = best === null ? '—' : `${best.toFixed(1)} 秒`;
     // クリアしたら次の面へ(最後の面なら、面えらびへ)
     const next = q<HTMLAnchorElement>('next');
@@ -189,7 +206,7 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
     elResult.classList.add('on');
   };
 
-  const begin = () => {
+  const begin = (from: Snapshot | null = null) => {
     if (!ac) {
       try {
         const Ctor = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
@@ -205,18 +222,37 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
     woke = false;
     miles = new Set();
     recorded = false;
+    continued = !!from;
+    if (from) {
+      // チェックポイントから: 位置・コイン・取ったコインをもどす。後ろの電車・雷・突進は、もう終わった扱い
+      run.s = from.s;
+      run.t = from.t;
+      run.coins = from.coins;
+      for (const id of from.collected) run.collected.add(id);
+      for (const o of course.obstacles) {
+        if (o.trig !== undefined && o.s < from.s + 2) {
+          run.chargeT.set(o.id, -1e6);
+          run.struck.add(o.id);
+        }
+      }
+      for (const [s] of MILESTONES) if (s <= from.s) miles.add(s);
+    } else {
+      saved = null;
+    }
+    cpEls.forEach((el, i) => el.classList.toggle('passed', !!saved && CPS[i].s <= saved.s));
     releaseAll();
     run.start();
-    progress.attempt(level.id);
+    if (!from) progress.attempt(level.id);
     elStart.classList.remove('on');
     elResult.classList.remove('on');
     startRain();
     paintHud();
-    toast(level.intro, 3600);
+    toast(from ? `${from.name}から 再スタート！` : level.intro, 3600);
   };
 
-  q('go').addEventListener('click', begin);
-  q('retry').addEventListener('click', begin);
+  q('go').addEventListener('click', () => begin());
+  q('retry').addEventListener('click', () => begin());
+  q('cont').addEventListener('click', () => begin(saved));
 
   // ---- 入力 ----
   // 左右は「キーボード」と「パッド」の2か所から入る。どちらも、最後に押した向きを優先する。
@@ -407,6 +443,14 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
         tone(110, 70, 1.2, 'sawtooth', 0.08);
         toast('大仏さまの 目が 光った…！ 罠が ふえるよ！', 3400);
       }
+      CPS.forEach((c, i) => {
+        if (run.s >= c.s && (!saved || saved.s < c.s)) {
+          saved = { s: c.s, name: c.name, coins: run.coins, collected: new Set(run.collected), t: run.t };
+          cpEls[i].classList.add('passed');
+          [784, 988, 1175].forEach((f, k) => tone(f, f, 0.16, 'triangle', 0.08, k * 0.09));
+          toast(`チェックポイント！ ${c.name}`, 2200);
+        }
+      });
       for (const [s, msg] of MILESTONES) {
         if (run.s >= s && !miles.has(s)) {
           miles.add(s);

@@ -98,6 +98,9 @@ export function RunShell() {
             <a className="ks-btn ks-btn-next" data-ks="next" href="/run/" hidden>
               次の面へ
             </a>
+            <button type="button" className="ks-btn" data-ks="cont" hidden>
+              途中から つづける
+            </button>
             <button type="button" className="ks-btn ks-btn-sub" data-ks="retry">
               もういちど
             </button>

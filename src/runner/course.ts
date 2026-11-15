@@ -311,6 +311,8 @@ export interface CourseOptions {
   after?: Partial<Record<PatternName, number>>;
   /** つり橋の区間(コース全体に対する割合) */
   bridge?: { from: number; to: number };
+  /** 罠を置かない所(割合。チェックポイント: ここから再スタートするので、すぐ先に罠を置かない) */
+  safe?: number[];
 }
 
 export function buildCourse(opts: CourseOptions = {}): Course {
@@ -587,7 +589,15 @@ export function buildCourse(opts: CourseOptions = {}): Course {
   const used = new Set<PatternName>(opening);
   const endObstacles = length - (critters.length ? 100 : 75); // 突進する動物は手前から走ってくるので、ゴールから離す(3-1は従来どおり)
   const br = opts.bridge ? { from: opts.bridge.from * length, to: opts.bridge.to * length } : undefined;
+  const safe = (opts.safe ?? []).map((f) => f * length);
   while (s < endObstacles) {
+    const z = safe.find((c) => s + 46 > c - 8 && s < c + 40);
+    if (z !== undefined) {
+      // チェックポイント: 手前と、再スタートしてすぐの所には、罠を置かない(コインだけ)
+      line(z + 6, 0, 6, 2.4);
+      s = z + 40;
+      continue;
+    }
     if (br && s + 46 > br.from && s < br.to) {
       // つり橋: ほかの罠は置かず、板のぬけた所(跳びこえる)だけ。ゆれに耐えて渡る
       line(br.from - 2, 0, 6, 2.4);

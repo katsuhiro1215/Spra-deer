@@ -233,7 +233,9 @@ export class KasugaView {
     for (const k of ['doe_l', 'doe_r']) this.walkTex[k] = [0, 1, 2, 3].map((i) => loadTex(`${ASSET}/deer-walk/${k}_${i}.png`));
 
     this.buildGround();
-    if (theme.setting === 'town') {
+    if (level.scenes) {
+      this.buildScenes(level.scenes);
+    } else if (theme.setting === 'town') {
       // 山を下りて街に入る面は、手前を杉の山道にする
       const from = level.townFrom ? course.length * level.townFrom : 0;
       if (from > 0) this.buildSandoScenery(-20, from);
@@ -431,7 +433,8 @@ export class KasugaView {
     const grassEnd = th.goal === 'bay' ? pierEnd : this.end + 330;
     const L = grassEnd + 40;
     if (this.hilly) {
-      this.scene.add(this.buildTerrain(matGrass, L));
+      // ゴールが海なら、地面は岸(pierEnd)まで。その先は海
+      this.scene.add(this.buildTerrain(matGrass, th.goal === 'bay' ? pierEnd - 120 : L));
     } else {
       const gw = 1400;
       // 大きな三角形2枚だと、奥行きの計算の誤差で、道が芝に隠れる所が出る。細かく分けておく
@@ -779,9 +782,117 @@ export class KasugaView {
   }
 
   // ---- 街道: 街灯・並木・ビル ----
-  private buildTownScenery(from = 0): void {
+  /** 区間ごとに景色を変える(長い面: 奈良の街→生駒山→大阪の大都会)。 */
+  private buildScenes(scenes: NonNullable<RunnerLevel['scenes']>): void {
+    const L = this.course.length;
+    scenes.forEach((sc, i) => {
+      const a = i === 0 ? -20 : sc.at * L;
+      // 最後の区間が街なら、街灯・並木はゴールの少し先まで(海の上には置かない)
+      const last = sc.setting === 'town' || sc.setting === 'city' ? L + 40 : this.end + 60;
+      const b = i + 1 < scenes.length ? scenes[i + 1].at * L : last;
+      if (sc.setting === 'town') this.buildTownScenery(Math.max(0, a), b);
+      else if (sc.setting === 'city') this.buildTownScenery(a, b, true);
+      else this.buildSandoScenery(a, b);
+    });
+    // 生駒山の頂上: 赤白の電波塔と看板
+    const ikoma = scenes.find((sc) => sc.name === '生駒山');
+    if (ikoma) {
+      const sTop = this.level.checkpoints?.[0] ? this.level.checkpoints[0].at * L : ikoma.at * L + 300;
+      const red = new THREE.MeshStandardMaterial({ color: 0xd8382a, roughness: 0.6 });
+      const white = new THREE.MeshStandardMaterial({ color: 0xf2f2f2, roughness: 0.6 });
+      for (const [side, off, h] of [[1, 26, 46], [-1, 34, 38], [1, 52, 30]] as const) {
+        const w = this.roadW(sTop + off * 0.4, side * off);
+        const t = new THREE.Group();
+        const n = 8;
+        for (let k = 0; k < n; k++) {
+          const seg = new THREE.Mesh(new THREE.CylinderGeometry(0.9 - k * 0.07, 1.0 - k * 0.07, h / n, 10), k % 2 ? white : red);
+          seg.position.y = h / n / 2 + (k * h) / n;
+          t.add(seg);
+        }
+        const deck = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.2, 0.6, 14), white);
+        deck.position.y = h * 0.7;
+        t.add(deck);
+        t.position.set(w.x, this.terrainAt(w.x, w.z, sTop).h, w.z);
+        this.scene.add(t);
+      }
+      this.scene.add(this.signboard('生駒山', sTop - 6, -1));
+    }
+    // 大阪: 鉄の展望塔と、遠くの大阪城
+    const city = scenes.find((sc) => sc.setting === 'city');
+    if (city) {
+      const s1 = city.at * L + (L - city.at * L) * 0.35;
+      const w = this.roadW(s1, 30);
+      const tower = this.latticeTower();
+      tower.position.set(w.x, this.gy(s1), w.z);
+      this.scene.add(tower);
+      const s2 = city.at * L + (L - city.at * L) * 0.6;
+      const cw = this.roadW(s2, -120);
+      const keep = this.castleKeep();
+      keep.scale.setScalar(1.4);
+      keep.position.set(cw.x, this.gy(s2), cw.z);
+      this.scene.add(keep);
+    }
+    // チェックポイントの門(青いアーチ)
+    for (const cp of this.level.checkpoints ?? []) this.scene.add(this.checkpointGate(cp.at * L, cp.name));
+  }
+
+  /** 通天閣のような、鉄骨の展望塔。 */
+  private latticeTower(): THREE.Group {
+    const g = new THREE.Group();
+    const steel = new THREE.MeshStandardMaterial({ color: 0xb8bcc2, roughness: 0.45, metalness: 0.6 });
+    const neon = new THREE.MeshStandardMaterial({ color: 0xfff2c0, emissive: 0xffb040, emissiveIntensity: 1.6 });
+    // 4本の脚(すそ広がり)
+    for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+      const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.5, 30, 6), steel);
+      leg.position.set(sx * 4, 15, sz * 4);
+      leg.rotation.set(sz * 0.18, 0, -sx * 0.18);
+      g.add(leg);
+    }
+    for (let k = 0; k < 6; k++) {
+      const ring = new THREE.Mesh(new THREE.BoxGeometry(10 - k * 1.3, 0.3, 10 - k * 1.3), steel);
+      ring.position.y = 3 + k * 5;
+      g.add(ring);
+    }
+    const deck = new THREE.Mesh(new THREE.BoxGeometry(7, 5, 7), steel);
+    deck.position.y = 32;
+    const sign = new THREE.Mesh(new THREE.BoxGeometry(7.2, 2.2, 7.2), neon);
+    sign.position.y = 27;
+    const spire = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.8, 12, 8), steel);
+    spire.position.y = 40.5;
+    g.add(deck, sign, spire);
+    for (const m of g.children) m.castShadow = true;
+    return g;
+  }
+
+  /** チェックポイントの門(青と白のアーチに名前)。 */
+  private checkpointGate(s: number, name: string): THREE.Group {
+    const g = new THREE.Group();
+    const post = new THREE.MeshStandardMaterial({ color: 0xf5f2ea, roughness: 0.5 });
+    const blue = new THREE.MeshStandardMaterial({ color: 0x2f9be0, roughness: 0.4, emissive: 0x0a3a60, emissiveIntensity: 0.5 });
+    for (const sx of [-1, 1]) {
+      const p = new THREE.Mesh(new THREE.BoxGeometry(0.8, 7, 0.8), post);
+      p.position.set(sx * (ROAD_HALF + 0.8), 3.5, 0);
+      p.castShadow = true;
+      g.add(p);
+    }
+    const top = new THREE.Mesh(new THREE.BoxGeometry(ROAD_HALF * 2 + 3, 1.8, 0.7), blue);
+    top.position.y = 7.4;
+    g.add(top);
+    const banner = new THREE.Mesh(
+      new THREE.PlaneGeometry(ROAD_HALF * 2 + 2.6, 1.5),
+      new THREE.MeshBasicMaterial({ map: this.bannerTexture(name, ' CHECK'), transparent: true, toneMapped: false }),
+    );
+    banner.position.set(0, 7.4, 0.37);
+    g.add(banner);
+    const w = this.roadW(s, 0);
+    g.position.set(w.x, this.gy(s), w.z);
+    g.rotation.y = -w.psi;
+    return g;
+  }
+
+  private buildTownScenery(from = 0, to = this.course.length + 40, city = false): void {
     const th = this.theme;
-    const rnd = rngFor(321);
+    const rnd = rngFor(321 + Math.floor(from));
     const openEnd = th.goal === 'bay' || th.goal === 'heijo'; // ゴールの景色が見えるよう、ゴール近くは建物を減らす
     // 街灯
     const pole = new THREE.MeshStandardMaterial({ color: 0x3c4048, roughness: 0.6, metalness: 0.3 });
@@ -793,7 +904,7 @@ export class KasugaView {
     ];
     const lp: Placement[] = [];
     const halos: THREE.Vector3[] = [];
-    for (let s = 8 + Math.ceil(from / 22) * 22; s < this.course.length + 40; s += 22) {
+    for (let s = 8 + Math.ceil(from / 22) * 22; s < to; s += 22) {
       lp.push(this.rp(s, -(ROAD_HALF + 1.2)));
       lp.push(this.rp(s + 11, ROAD_HALF + 1.2, { rotY: Math.PI }));
       // 灯りの位置は、街灯の腕の先(道の内側へ1.35m)
@@ -808,8 +919,8 @@ export class KasugaView {
     const trunk = new THREE.MeshStandardMaterial({ color: 0x6b4a2e, roughness: 1 });
     const leaf = new THREE.MeshStandardMaterial({ color: 0x55803a, roughness: 0.95, flatShading: true });
     const tp: Placement[] = [];
-    for (let s = from; s < this.course.length + 40; s += 9) {
-      for (const sx of [-1, 1]) if (rnd() < 0.75) tp.push(this.rp(s + rnd() * 4, sx * (ROAD_HALF + 2.6 + rnd() * 1.4), { scale: 0.7 + rnd() * 0.5 }));
+    for (let s = from; s < to; s += 9) {
+      for (const sx of [-1, 1]) if (rnd() < (city ? 0.45 : 0.75)) tp.push(this.rp(s + rnd() * 4, sx * (ROAD_HALF + 2.6 + rnd() * 1.4), { scale: 0.7 + rnd() * 0.5 }));
     }
     addInstanced(this.scene, [
       { geo: new THREE.CylinderGeometry(0.2, 0.28, 2.4, 8), mat: trunk, pos: [0, 1.2, 0] },
@@ -825,7 +936,13 @@ export class KasugaView {
       g.fillStyle = 'rgba(0,0,0,0.18)';
       g.fillRect(14, n / 2 - 1, n - 28, 2);
     }, true);
-    const types: { w: number; h: number; d: number; wall: string; lit: string }[] = [
+    // 大都会(city)は、ガラスの高いビルを、道の近くにぎっしり
+    const types: { w: number; h: number; d: number; wall: string; lit: string }[] = city ? [
+      { w: 14, h: 52, d: 14, wall: '#8fa6bf', lit: '#ffe6a8' },
+      { w: 16, h: 78, d: 15, wall: '#6f879f', lit: '#fff0c0' },
+      { w: 12, h: 38, d: 12, wall: '#b9a99a', lit: '#ffd88a' },
+      { w: 18, h: 96, d: 16, wall: '#5d7590', lit: '#ffe8b0' },
+    ] : [
       { w: 9, h: 16, d: 9, wall: '#c8b8a8', lit: '#ffd88a' },
       { w: 11, h: 28, d: 10, wall: '#9aa8b8', lit: '#ffe6a8' },
       { w: 8, h: 11, d: 8, wall: '#d6a894', lit: '#ffcf80' },
@@ -841,12 +958,12 @@ export class KasugaView {
       this.disposables.push(lightMap);
       const mat = new THREE.MeshStandardMaterial({ map: tex, emissiveMap: lightMap, emissive: 0xffffff, emissiveIntensity: th.night ? 0.8 : 0.35, roughness: 0.85 });
       const places: Placement[] = [];
-      for (let s = 30 + from; s < this.course.length + 40; s += 11) {
+      for (let s = 30 + from; s < to; s += city ? 9 : 11) {
         for (const sx of [-1, 1]) {
-          if (rnd() * 4 > 1 + (k === 0 ? 1.6 : 0.5)) continue;
-          const nearEnd = s > this.course.length - 80;
+          if (rnd() * 4 > 1 + (k === 0 ? 1.6 : 0.5) + (city ? 0.6 : 0)) continue;
+          const nearEnd = s > this.course.length - (city ? 240 : 80); // 高いビルは、遠くから海をかくすので、手前から減らす
           if (openEnd && nearEnd && rnd() < 0.85) continue; // 海・門が見えるよう、ゴール近くは開ける
-          const x = sx * (ROAD_HALF + 8 + t.w / 2 + rnd() * 22);
+          const x = sx * (ROAD_HALF + (city ? 7 : 8) + t.w / 2 + rnd() * (city ? 30 : 22));
           places.push(this.rp(s + rnd() * 9, x, { y: t.h / 2 }));
         }
       }
@@ -1479,6 +1596,14 @@ export class KasugaView {
   // ---- 郡山城: 石垣の上の白い天守と、桜・堀 ----
   private buildCastle(): void {
     const end = this.course.length + GOAL_GAP;
+    const g = this.castleKeep();
+    g.position.set(0, 0, -(end + 20));
+    this.scene.add(g);
+    this.castleGrounds(end);
+  }
+
+  /** 石垣の上の、白い天守(郡山城・大阪城で使う)。 */
+  private castleKeep(): THREE.Group {
     const g = new THREE.Group();
     const stone = new THREE.MeshStandardMaterial({ color: 0x9c968a, roughness: 0.95, flatShading: true });
     const white = new THREE.MeshStandardMaterial({ color: 0xf4f1e8, roughness: 0.8 });
@@ -1509,8 +1634,11 @@ export class KasugaView {
       fish.position.set(sx * 3.2, y + 0.8, 0);
       g.add(fish);
     }
-    g.position.set(0, 0, -(end + 20));
-    this.scene.add(g);
+    return g;
+  }
+
+  /** 郡山城のまわり: 堀・橋・桜・山なみ。 */
+  private castleGrounds(end: number): void {
     // 堀
     const moat = new THREE.Mesh(new THREE.PlaneGeometry(140, 10).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x3f8aa8, roughness: 0.1 }));
     moat.position.set(0, 0.02, -(end - 8));
@@ -1614,7 +1742,7 @@ export class KasugaView {
     });
   }
 
-  private bannerTexture(text: string): THREE.CanvasTexture {
+  private bannerTexture(text: string, suffix = '  GOAL'): THREE.CanvasTexture {
     const c = document.createElement('canvas');
     c.width = 512;
     c.height = 96;
@@ -1623,7 +1751,10 @@ export class KasugaView {
     g.font = '900 64px "M PLUS Rounded 1c", sans-serif';
     g.textAlign = 'center';
     g.textBaseline = 'middle';
-    g.fillText(`${text}  GOAL`, 256, 52);
+    // 長い名前は、はみ出さないよう文字を小さくする
+    const wTxt = g.measureText(`${text}${suffix}`).width;
+    if (wTxt > 490) g.font = `900 ${Math.floor((64 * 490) / wTxt)}px "M PLUS Rounded 1c", sans-serif`;
+    g.fillText(`${text}${suffix}`, 256, 52);
     const t = new THREE.CanvasTexture(c);
     t.colorSpace = THREE.SRGBColorSpace;
     return t;

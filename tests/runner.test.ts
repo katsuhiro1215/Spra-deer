@@ -73,6 +73,11 @@ function bot(r: Run): Input {
       const t = d / v;
       const ox = obstacleState(o, r.t + t).x;
       if (Math.abs(ox - r.x) < 1.9 && t < 0.3 && t > 0.1) jump = true;
+      // 速くて、跳んだあとの着地が次に間に合わないときは、横へよける
+      if (Math.abs(ox - r.x) < 1.6 && t < 0.5 && (r.airborne || t <= 0.1)) {
+        if (ox > r.x) left = true;
+        else right = true;
+      }
     } else if (o.kind === 'puddle' || o.kind === 'ice') {
       if (Math.abs(o.x - r.x) < HIT_RADIUS[o.kind] + 0.9 && d < v * 0.35 && d > v * 0.1) jump = true;
     } else if (o.kind === 'poop' && d > 0 && d < 9) {
@@ -181,7 +186,7 @@ test('跳ねている間は下を通れる(跳ねる動物)', () => {
   assert.ok(ups.some((y) => y > 0.5) && ups.some((y) => y < 0.5), '浮く時間と、地面にいる時間がある');
 });
 
-test('曲がる道: 出だしとゴール前はまっすぐ。3-1と3-10は、ずっとまっすぐ', () => {
+test('曲がる道: 出だしとゴール前はまっすぐ。3-1は、ずっとまっすぐ', () => {
   for (const l of RUNNER_LEVELS) {
     const c = courseOf(l);
     assert.ok(Math.abs(roadX(c, 0)) < 1e-9, l.id);
@@ -194,7 +199,7 @@ test('曲がる道: 出だしとゴール前はまっすぐ。3-1と3-10は、�
       assert.ok(Math.max(...mid) > 0.1, `${l.id}: カーブが小さすぎる`);
     }
   }
-  assert.ok(!runnerById('3-1')!.curve && !runnerById('3-10')!.curve);
+  assert.ok(!runnerById('3-1')!.curve);
   assert.ok(runnerById('3-3')!.curve!.amp > runnerById('3-2')!.curve!.amp, '山道のほうが、きついカーブ');
 });
 
@@ -454,6 +459,22 @@ test('3-9: 花見のシートでコインを落とす。金魚は低い所で当
   const lowAt = [0.1, 0.2, 0.3, 0.9, 1.0, 1.1, 1.2].map((t) => obstacleState(fish, t));
   assert.ok(lowAt.some((st) => st.y > 0 && st.y < 1.3), '低いときがある');
   assert.equal(obstacleState(fish, 2.0).y, -9, '水の中にいる時間がある');
+});
+
+test('3-10: 奈良の街→生駒山→大阪の大都会→海。チェックポイントの前後には罠がない', () => {
+  const l = runnerById('3-10')!;
+  const c = courseOf(l);
+  assert.deepEqual(l.scenes!.map((s) => s.setting), ['town', 'mountain', 'city']);
+  const top = Math.max(...Array.from({ length: 100 }, (_, i) => hillY(c, (i / 100) * l.length)));
+  assert.ok(top >= 40, `生駒山を40m以上登る: ${top}`);
+  assert.equal(hillY(c, l.length), 0, '海は、出発と同じ高さ');
+  assert.equal(l.checkpoints!.length, 2);
+  for (const cp of l.checkpoints!) {
+    const s = cp.at * l.length;
+    const near = c.obstacles.filter((o) => o.s > s - 8 && o.s < s + 40);
+    assert.equal(near.length, 0, `${cp.name}のまわりに罠: ${near.map((o) => o.kind).join(',')}`);
+  }
+  assert.ok(c.obstacles.filter((o) => o.kind === 'train').every((o) => o.s >= l.length * 0.67), '踏切は大阪に入ってから');
 });
 
 test('コインは同じものを2回取れない', () => {
