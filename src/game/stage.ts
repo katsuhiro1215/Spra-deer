@@ -70,3 +70,16 @@ export type CrosserDefinition = { id: string; kind: 'stag' | 'doe' | 'fawn'; y: 
 export type CrossDefinition = { crossers: CrosserDefinition[] };
 /** ステージ5（救出）。迷子の鹿は、found 以内に近づくとついてくる。連れている鹿が危険に当たると失敗。 */
 export type RescueDefinition = { kind: 'stag' | 'doe' | 'fawn'; x: number; y: number; found: number; lag: number };
+
+// ---- WORLD 1 の作り直し(設計書 28章): 道の形・池・コイン ----
+/** 通れないもの(植え込み・灯籠の列・岩)。道の形(曲がる道・分かれ道・行き止まり)を作る。跳んでも越えられない。 */
+export type HedgeDefinition = { x: number; y: number; w: number; h: number; look?: 'hedge' | 'lantern' | 'rock' };
+/** 池。着地していると落ちる(飛び石・はすの葉の上は大丈夫)。 */
+export type PondDefinition = { x: number; y: number; w: number; h: number };
+/**
+ * 池の飛び石・はすの葉。r=乗れる半径。
+ * sink: 乗ってからこの秒数で沈む(しばらくすると、また浮く)。move: 左右へゆっくり動く(乗っていると運ばれる)。
+ */
+export type StoneDefinition = { id: string; x: number; y: number; r: number; sink?: number; move?: { dx: number; period: number }; lily?: boolean };
+/** コイン。kind が無ければシルバー。air=高い所にあり、跳ばないと取れない。 */
+export type CoinDefinition = { x: number; y: number; kind?: 'gold' | 'premium'; air?: boolean };

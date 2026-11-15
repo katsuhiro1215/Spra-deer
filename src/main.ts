@@ -17,6 +17,7 @@ import './styles.scss';
 const el = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const progress = new Progress();
 const wallet = new Wallet();
+const WATER_HINT = '池に、落ちた…！\n石や はすの葉の上を、跳んで渡ろう。\n乗ると沈む石もある。';
 const STOLEN_DEFAULT = 'せんべいを、取られた…！\n鹿は、せんべいの匂いで寄ってくる。';
 const CAUGHT_HINT = '鹿が追いかけてきた…！\n止まると追いつかれる。\nジャンプで鹿を越えるのもアリ。';
 
@@ -54,7 +55,7 @@ class Sound {
   }
   play(kind: Event['kind']) {
     if (!this.enabled || this.context?.state !== 'running') return;
-    const notes: Partial<Record<Event['kind'], [number, number, number]>> = { jump: [390, 730, .13], warning: [160, 110, .17], collapse: [110, 38, .28], poop: [180, 75, .22], fall: [390, 85, .4], clear: [540, 1080, .42], wall: [120, 45, .3], slide: [320, 190, .12], crush: [150, 40, .35], chase: [200, 330, .2], caught: [260, 90, .3], drop: [240, 120, .14], bait: [330, 220, .1], eat: [200, 260, .12], stolen: [260, 90, .3], sweep: [260, 420, .12], found: [500, 900, .2], lost: [260, 90, .3] };
+    const notes: Partial<Record<Event['kind'], [number, number, number]>> = { jump: [390, 730, .13], warning: [160, 110, .17], collapse: [110, 38, .28], poop: [180, 75, .22], fall: [390, 85, .4], clear: [540, 1080, .42], wall: [120, 45, .3], slide: [320, 190, .12], crush: [150, 40, .35], chase: [200, 330, .2], caught: [260, 90, .3], drop: [240, 120, .14], bait: [330, 220, .1], eat: [200, 260, .12], stolen: [260, 90, .3], sweep: [260, 420, .12], found: [500, 900, .2], lost: [260, 90, .3], coin: [1180, 1760, .12], gold: [880, 1760, .3], premium: [660, 1320, .5], sink: [300, 120, .3], water: [420, 90, .45] };
     const data = notes[kind]; if (!data) return;
     const [start, end, duration] = data, ctx = this.context;
     const oscillator = ctx.createOscillator(), gain = ctx.createGain();
@@ -162,6 +163,7 @@ class Park extends Phaser.Scene {
       const live = el('overlay').querySelector('[data-live="status"]');
       if (live) live.outerHTML = statusBar(wallet);
     }, 1000);
+    if (process.env.NODE_ENV !== 'production') Object.defineProperty(window, '__DEER_PARK__', { configurable: true, get: () => this }); // 開発中だけ: 確認用に、場面を直接さわる
     if (process.env.NODE_ENV !== 'production') Object.defineProperty(window, '__DEER__', { configurable: true, get: () => JSON.parse(JSON.stringify({ mode: this.mode, ...this.world, record: progress.get(this.level.id), canSave: progress.canSave })) });
   }
   private idle(mode: 'title' | 'select') {
@@ -208,6 +210,7 @@ class Park extends Phaser.Scene {
   private begin(level: LevelDefinition) {
     this.level = level; this.view.setLevel(level);
     this.world = createWorld(level); this.view.reset(); this.accumulator = 0; this.visualTime = 0; this.lossAge = 0;
+    if (wallet.hasPremium(level.id)) this.world.coins = this.world.coins.filter(c => c.kind !== 'premium');
     this.mode = 'playing'; this.controls.enable(true); progress.attempt(level.id); sound.unlock(); sound.music('play');
     el('hud-level').textContent = `面 ${level.id}`; el('hud-title').textContent = level.title;
     el('hud').hidden = el('controls').hidden = false; el('overlay').innerHTML = ''; this.lastChapter = ''; el('game-wrap').classList.remove('menu');
@@ -245,18 +248,20 @@ class Park extends Phaser.Scene {
     this.mode = 'result'; const w = this.world, level = this.level, clear = w.outcome === 'clear';
     const newBest = clear && progress.clear(level.id, w.time);
     // 体力とコイン(設計書 25-2・25-3)。2Dの面は、クリアでシルバー20枚(面の中のコインを入れるまでの仮の値)
-    const got = clear ? clearRewards(wallet, level.id, { silver: 20 }) : null;
+    // シルバー: 面の中で取ったコイン+クリアの10枚。ゴールド: 取った金のコイン(+はじめてのクリア)。プレミアム: 持ち帰ると自分のもの
+    const got = clear ? clearRewards(wallet, level.id, { silver: 10 + w.silver, gold: w.gold }) : null;
+    const prem = clear && w.premium && wallet.takePremium(level.id);
     if (!clear) wallet.fail();
     // 小さい画面でも結果のカードが収まるよう、行を増やさず、いちばん下の注意書きの場所に出す
-    const reward = got ? `<p class="save-note reward-line">+${got.silver} <i class="coin silver"></i>${got.gold ? `　+${got.gold} <i class="coin gold"></i>` : ''}</p>` : `<p class="save-note reward-line lose">体力 −2(のこり ${wallet.stamina})</p>`;
+    const reward = got ? `<p class="save-note reward-line">+${got.silver} <i class="coin silver"></i>${got.gold ? `　+${got.gold} <i class="coin gold"></i>` : ''}${prem ? '　+1 <i class="coin premium"></i>' : ''}</p>` : `<p class="save-note reward-line lose">体力 −2(のこり ${wallet.stamina})</p>`;
     sound.music(clear ? 'clear' : 'fail');
     // 次の面は、通常の面と3D走りの面をまとめた順で決める(2-5の次は、3D走りの3-1)
     const order = ALL_PLAYABLE_SLOTS, nextSlot = clear ? order[order.findIndex(x => x.id === level.id) + 1] : undefined;
     const next = nextSlot ? { id: nextSlot.id, runner: nextSlot.runner } : undefined;
     const attempts = progress.get(level.id).attempts;
     const stat: [string, number, string] = level.delivery ? ['つかったせんべい', w.baits.length, '個'] : level.sweep ? ['掃いたうんこ', w.swept, '個'] : level.cross ? ['わたった道', new Set(level.cross.crossers.map(c => c.y)).size, '本'] : level.rescue ? ['つれていった鹿', 1, '頭'] : ['ジャンプ', w.jumps, '回'];
-    const title = clear ? (level.delivery ? '無事に、お届け。' : level.sweep ? '公園が、ぴかぴか！' : level.cross ? '無事に、横断。' : level.rescue ? '無事に、救出！' : '無事に、おさんぽ。') : w.outcome === 'dirty' ? '公園が、うんこだらけ…！' : w.outcome === 'hit' ? 'ぶつかった！' : w.outcome === 'lost' ? 'はぐれちゃった…！' : w.outcome === 'stolen' ? 'せんべい、取られた！' : w.outcome === 'fall' ? '地面まで、いたずら。' : w.outcome === 'wall' ? 'ぐえっ、壁…！' : w.outcome === 'caught' ? 'つかまった！' : 'あっ、足元…！';
-    const copy = clear ? (level.delivery ? 'せんべいは、無事に届いた。\n鹿は、もぐもぐ満足そう。' : level.sweep ? '奈良公園は、きれいになった。\n鹿は、また落とす気まんまん。' : level.cross ? '動物たちの動きを、見事に読んだ。' : level.rescue ? '子鹿は、ほっと一安心。\nSpraの後ろで、ご機嫌。' : '数々のしかけを、見事に突破。\n鹿は、何も知らない顔。') : (w.outcome === 'dirty' || w.outcome === 'hit' || w.outcome === 'lost') ? (level.hints.caught ?? CAUGHT_HINT) : w.outcome === 'stolen' ? (level.hints.caught ?? STOLEN_DEFAULT) : w.outcome === 'fall' ? level.hints.fall : w.outcome === 'wall' ? level.hints.wall : w.outcome === 'caught' ? (level.hints.caught ?? CAUGHT_HINT) : level.hints.poop;
+    const title = clear ? (level.delivery ? '無事に、お届け。' : level.sweep ? '公園が、ぴかぴか！' : level.cross ? '無事に、横断。' : level.rescue ? '無事に、救出！' : '無事に、おさんぽ。') : w.outcome === 'dirty' ? '公園が、うんこだらけ…！' : w.outcome === 'hit' ? 'ぶつかった！' : w.outcome === 'lost' ? 'はぐれちゃった…！' : w.outcome === 'stolen' ? 'せんべい、取られた！' : w.outcome === 'water' ? 'ばしゃーん！' : w.outcome === 'fall' ? '地面まで、いたずら。' : w.outcome === 'wall' ? 'ぐえっ、壁…！' : w.outcome === 'caught' ? 'つかまった！' : 'あっ、足元…！';
+    const copy = clear ? (level.delivery ? 'せんべいは、無事に届いた。\n鹿は、もぐもぐ満足そう。' : level.sweep ? '奈良公園は、きれいになった。\n鹿は、また落とす気まんまん。' : level.cross ? '動物たちの動きを、見事に読んだ。' : level.rescue ? '子鹿は、ほっと一安心。\nSpraの後ろで、ご機嫌。' : '数々のしかけを、見事に突破。\n鹿は、何も知らない顔。') : (w.outcome === 'dirty' || w.outcome === 'hit' || w.outcome === 'lost') ? (level.hints.caught ?? CAUGHT_HINT) : w.outcome === 'stolen' ? (level.hints.caught ?? STOLEN_DEFAULT) : w.outcome === 'water' ? (level.hints.water ?? WATER_HINT) : w.outcome === 'fall' ? level.hints.fall : w.outcome === 'wall' ? level.hints.wall : w.outcome === 'caught' ? (level.hints.caught ?? CAUGHT_HINT) : level.hints.poop;
     const primary = next ? `<button class="primary" data-action="${next.runner ? 'run' : 'next'}" data-level="${next.id}">次の面へ（${next.id}） <span>▶</span></button>` : `<button class="primary" data-action="retry">${clear ? 'もう一度あそぶ' : 'すぐに、もう一回'} <span>▶</span></button>`;
     const secondary = `<div class="secondary-row">${next ? '<button class="secondary" data-action="retry">もう一度あそぶ</button>' : ''}<button class="secondary" data-action="select">面選択へ</button></div>`;
     el('overlay').innerHTML = `<div class="screen modal-screen result-screen"><div class="modal-card"><span class="eyebrow">${clear ? newBest ? '自己ベスト更新！' : `${level.id} クリア` : `${attempts}回目の挑戦`}</span><img class="result-spru" src="/assets/${clear ? 'spru-clear' : 'spru-oops'}.png" alt="${clear ? '喜ぶSpra' : '困ったSpra'}"><h2>${title}</h2><p class="result-copy">${copy.replaceAll('\n', '<br>')}</p><div class="result-stats"><div><span>${clear ? 'クリアタイム' : 'ここまでの時間'}</span><strong>${w.time.toFixed(1)}<small>秒</small></strong></div><div><span>${clear ? stat[0] : 'ゴールへの進み具合'}</span><strong>${clear ? stat[1] : this.progress()}<small>${clear ? stat[2] : '%'}</small></strong></div></div>${primary}${secondary}${reward}</div></div>`;
@@ -265,6 +270,9 @@ class Park extends Phaser.Scene {
   private progress() {
     const { start } = this.level; return Math.min(100, Math.max(0, Math.round((start.y - this.world.furthest) / (start.y - GOAL.y - GOAL.radius) * 100))); }
   private hud() {
+    const coins = this.world.coins.length > 0;
+    el('coin-stat').hidden = !coins;
+    if (coins) el('coin-count').textContent = `${this.world.silver}${this.world.gold ? ` 金${this.world.gold}` : ''}${this.world.premium ? ' ◆' : ''}`;
     const best = progress.get(this.level.id).best;
     el('timer').innerHTML = `${this.world.time.toFixed(1)}<small>秒</small>`;
     const sw = this.level.sweep;

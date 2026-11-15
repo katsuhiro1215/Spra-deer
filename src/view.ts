@@ -40,6 +40,9 @@ export class ParkView {
   private wallShapes = new Map<string, Phaser.GameObjects.Graphics>();
   private rainGraphic?: Phaser.GameObjects.Graphics;
   private trapGraphics: Phaser.GameObjects.Graphics;
+  /** 飛び石・はすの葉・コイン(毎フレーム描き直す) */
+  private terrainFx!: Phaser.GameObjects.Graphics;
+  private coinFx!: Phaser.GameObjects.Graphics;
   private particles: Particle[] = [];
   private labels: { text: Phaser.GameObjects.Text; born: number; y: number }[] = [];
   private deer: { image: Phaser.GameObjects.Image; y: number; phase: number }[] = [];
@@ -56,6 +59,8 @@ export class ParkView {
     this.cameraY = level.start.y - 800;
     this.drawLevel();
     this.trapGraphics = scene.add.graphics().setDepth(2);
+    this.terrainFx = scene.add.graphics().setDepth(3);
+    this.coinFx = scene.add.graphics().setDepth(8500);
     this.goalGate = scene.add.image(GOAL.x, GOAL.y + 62, 'gate-goal').setOrigin(.5, 1);
     this.goalGate.setDisplaySize(310, 310 * this.goalGate.frame.height / this.goalGate.frame.width);
     const { x, y } = level.start;
@@ -167,6 +172,81 @@ export class ParkView {
     sign.fillStyle(0x9a8964).fillRoundedRect(572, start0.y - 80, 9, 70, 3);
     sign.fillStyle(0xf6edcf).fillRoundedRect(529, start0.y - 130, 96, 56, 9);
     this.label(576, start0.y - 102, '公園入口', 17, '#758258').setDepth(start0.y - 49);
+    this.drawTerrain();
+  }
+
+  /** 池(道の上に描く)と、通れない植え込み・灯籠の列・岩。 */
+  private drawTerrain() {
+    const s = this.scene;
+    for (const o of this.level.ponds ?? []) {
+      const g = s.add.graphics().setDepth(1);
+      g.fillStyle(0x7d9a6a, .5).fillRoundedRect(o.x - 10, o.y - 8, o.w + 20, o.h + 18, 34);
+      g.fillStyle(0x4f93b8).fillRoundedRect(o.x, o.y, o.w, o.h, 28);
+      g.fillStyle(0x6fb3d6, .55).fillRoundedRect(o.x + 10, o.y + 8, o.w - 20, o.h * .45, 22);
+      g.lineStyle(3, 0xd8f0f7, .55);
+      for (let i = 0; i < Math.max(3, Math.floor((o.w * o.h) / 9000)); i++) {
+        const x = o.x + 30 + ((i * 97) % Math.max(1, o.w - 60)), y = o.y + 20 + ((i * 61) % Math.max(1, o.h - 40));
+        g.lineBetween(x, y, x + 22, y);
+      }
+    }
+    for (const h of this.level.hedges ?? []) {
+      const g = s.add.graphics().setDepth(h.y + h.h);
+      const look = h.look ?? 'hedge';
+      g.fillStyle(0x3d5530, .22).fillRoundedRect(h.x + 6, h.y + 12, h.w, h.h, 20);
+      if (look === 'rock') {
+        g.fillStyle(0x9a9686).fillRoundedRect(h.x, h.y, h.w, h.h, 26);
+        g.fillStyle(0xb9b5a3).fillRoundedRect(h.x + 6, h.y + 4, h.w - 12, h.h * .45, 20);
+      } else if (look === 'lantern') {
+        g.fillStyle(0xc9c2ad).fillRoundedRect(h.x, h.y + h.h * .35, h.w, h.h * .65, 6);
+        for (let x = h.x + 22; x < h.x + h.w - 10; x += 56) {
+          g.fillStyle(0xb3ab94).fillRoundedRect(x - 12, h.y - 34, 24, 50, 4);
+          g.fillStyle(0xffe3a0).fillRect(x - 7, h.y - 22, 14, 12);
+          g.fillStyle(0x8f8873).fillTriangle(x - 20, h.y - 30, x + 20, h.y - 30, x, h.y - 50);
+        }
+      } else {
+        g.fillStyle(0x5f8a43).fillRoundedRect(h.x, h.y, h.w, h.h, 22);
+        g.fillStyle(0x76a352);
+        for (let x = h.x + 18; x < h.x + h.w - 8; x += 30) for (let y = h.y + 14; y < h.y + h.h - 6; y += 28) g.fillCircle(x + ((y / 28) % 2) * 10, y, 15);
+        g.fillStyle(0x93bf6b, .8);
+        for (let x = h.x + 24; x < h.x + h.w - 12; x += 44) g.fillCircle(x, h.y + 12, 9);
+      }
+    }
+  }
+
+  /** 飛び石・はすの葉(沈む石はゆれて、沈むと消える)と、コイン。 */
+  private renderTerrain(w: World) {
+    const g = this.terrainFx.clear();
+    for (const st of w.stones) {
+      if (st.sunk) {
+        g.lineStyle(3, 0xd8f0f7, .7 - st.down * .2).strokeEllipse(st.cx, st.y, st.r * 2.2 + st.down * 20, st.r * 1.1 + st.down * 10);
+        continue;
+      }
+      const warn = st.sink !== undefined && st.stand > 0 ? Math.min(1, st.stand / st.sink) : 0;
+      const shake = warn ? Math.sin(w.time * 50) * 3 * warn : 0;
+      if (st.lily) {
+        g.fillStyle(0x3f7a3a).fillEllipse(st.cx + shake, st.y + 3, st.r * 2.1, st.r * 1.3);
+        g.fillStyle(0x6fb04f).fillEllipse(st.cx + shake, st.y, st.r * 2, st.r * 1.2);
+        g.fillStyle(0x4f93b8).fillTriangle(st.cx + shake, st.y, st.cx + shake + st.r, st.y - st.r * .3, st.cx + shake + st.r, st.y + st.r * .2);
+      } else {
+        g.fillStyle(0x6b6a5c, .5).fillEllipse(st.cx + shake, st.y + 6, st.r * 2.1, st.r * 1.2);
+        g.fillStyle(warn ? 0xa79c86 : 0xb8b4a2).fillEllipse(st.cx + shake, st.y, st.r * 2, st.r * 1.15);
+        g.fillStyle(0xd6d2c0, .8).fillEllipse(st.cx + shake - st.r * .2, st.y - st.r * .2, st.r * 1.1, st.r * .5);
+        if (warn) g.lineStyle(2, 0x6d5f45, .5 + warn * .4).lineBetween(st.cx + shake - st.r * .5, st.y, st.cx + shake + st.r * .4, st.y + st.r * .2);
+      }
+    }
+    const c = this.coinFx.clear();
+    for (const coin of w.coins) {
+      if (coin.taken) continue;
+      const spin = Math.abs(Math.cos(w.time * 3 + coin.x * .01)) * .7 + .3;
+      const lift = coin.air ? 70 : 18;
+      const r = coin.kind === 'premium' ? 24 : coin.kind === 'gold' ? 20 : 16;
+      const [face, rim] = coin.kind === 'premium' ? [0xc77dff, 0xf0c8ff] : coin.kind === 'gold' ? [0xffc83a, 0xffe28a] : [0xd5dde6, 0xf4f7fa];
+      c.fillStyle(0x3d4a30, .2).fillEllipse(coin.x, coin.y + 4, r * 1.6, r * .6);
+      if (coin.air) c.lineStyle(2, 0xffffff, .35).lineBetween(coin.x, coin.y, coin.x, coin.y - lift + r);
+      if (coin.kind === 'premium') c.fillStyle(0xe0b0ff, .25 + .15 * Math.sin(w.time * 5)).fillCircle(coin.x, coin.y - lift, r * 2);
+      c.fillStyle(rim).fillEllipse(coin.x, coin.y - lift, r * 2 * spin, r * 2);
+      c.fillStyle(face).fillEllipse(coin.x, coin.y - lift, r * 1.5 * spin, r * 1.5);
+    }
   }
 
   private drawTrap(t: Trap, now: number) {
@@ -220,6 +300,12 @@ export class ParkView {
       this.labels.push({ text, born: now, y: text.y });
     }
     if (e.kind === 'crush') this.scene.cameras.main.shake(220, .01);
+    if (e.kind === 'sink' || e.kind === 'water' || e.kind === 'gold' || e.kind === 'premium') {
+      const word = { sink: 'ぶくぶく…', water: 'ばしゃーん！', gold: 'ゴールド！', premium: 'プレミアム！！' }[e.kind];
+      const text = this.label(e.x, e.y - 60, word, e.kind === 'premium' ? 32 : 26, e.kind === 'premium' ? '#8a3ad8' : '#755338').setDepth(8000);
+      text.setStroke('#fff9dc', 6);
+      this.labels.push({ text, born: now, y: text.y });
+    }
     if (e.kind === 'warning' || e.kind === 'collapse') {
       const text = this.label(e.x, e.y - 32, e.kind === 'warning' ? 'ミシッ…' : 'えっ！？', e.kind === 'warning' ? 29 : 35, '#755338').setDepth(8000);
       text.setStroke('#fff9dc', 6);
@@ -371,10 +457,10 @@ export class ParkView {
     this.scene.cameras.main.setScroll(0, this.cameraY);
     this.trapGraphics.clear();
     for (const trap of w.traps) this.drawTrap(trap, now);
-    const falling = w.outcome === 'fall';
+    const falling = w.outcome === 'fall' || w.outcome === 'water';
     const factor = falling ? Math.max(.02, 1 - lossAge * 1.5) : 1;
     // 歩き・ジャンプ・落下は6方向の歩行コマ、クリアと失敗は専用の1枚絵。
-    const walking = w.outcome === 'playing' || w.outcome === 'fall';
+    const walking = w.outcome === 'playing' || falling;
     this.sprite.setTexture(walking ? walkTexture(p.facing, p.stride, p.moving && p.jumpTime < 0) : w.outcome === 'clear' ? 'spru-clear' : 'spru-oops');
     const frame = this.sprite.frame;
     const [baseWidth, baseHeight] = walking ? [frame.width * WALK_SCALE, frame.height * WALK_SCALE] : [this.playerHeight * frame.width / frame.height, this.playerHeight];
@@ -382,6 +468,7 @@ export class ParkView {
     this.sprite.setPosition(p.x, p.y + 5 - p.height + (falling ? lossAge * 30 : 0));
     this.sprite.setDepth(p.y + 60 + p.height).setFlipX(false).setAlpha(falling ? Math.max(0, 1 - lossAge * 1.35) : 1);
     this.sprite.setAngle(falling ? lossAge * 105 : 0);
+    this.renderTerrain(w);
     this.renderDeers(w);
     this.renderWallsAndSliders(w);
     this.sprite.setVisible(showPlayer);

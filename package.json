@@ -7,7 +7,7 @@
     "dev": "next dev -H 127.0.0.1 -p 5180",
     "dev:mobile": "next dev -H 0.0.0.0 -p 5180",
     "build": "next build",
-    "test": "node --experimental-strip-types --test tests/world.test.ts tests/runner.test.ts tests/economy.test.ts tests/coins.test.ts tests/minions.test.ts",
+    "test": "node --experimental-strip-types --test tests/world.test.ts tests/runner.test.ts tests/economy.test.ts tests/coins.test.ts tests/minions.test.ts tests/terrain.test.ts",
     "test:solve": "node --experimental-strip-types --test tests/solvable.test.ts",
     "test:browser": "node scripts/browser-check.mjs",
     "typecheck": "tsc --noEmit"

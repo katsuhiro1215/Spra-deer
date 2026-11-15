@@ -1,10 +1,10 @@
-import { FIELD, GOAL, RULES, type CrosserDefinition, type RescueDefinition, type ThiefDefinition, type ChaserDefinition, type GoalDefinition, type Point, type TrapDefinition, type WallDefinition, type SliderDefinition } from './stage.ts';
+import { FIELD, GOAL, RULES, type CoinDefinition, type HedgeDefinition, type StoneDefinition, type CrosserDefinition, type RescueDefinition, type ThiefDefinition, type ChaserDefinition, type GoalDefinition, type Point, type TrapDefinition, type WallDefinition, type SliderDefinition } from './stage.ts';
 import type { DeerDefinition, LevelDefinition } from './levels.ts';
 import { facingOf, type Facing } from './facing.ts';
 export type Input = { x: number; y: number; jump?: boolean };
 export type Trap = TrapDefinition & { state: 'intact' | 'shaking' | 'open'; elapsed: number };
 export type Event = {
-  kind: 'jump' | 'land' | 'warning' | 'collapse' | 'poop' | 'fall' | 'clear' | 'dropWarning' | 'drop' | 'wall' | 'slide' | 'crush' | 'goalMove' | 'chase' | 'caught' | 'bait' | 'eat' | 'stolen' | 'sweep' | 'found' | 'lost' | 'miss';
+  kind: 'coin' | 'gold' | 'premium' | 'sink' | 'water' | 'jump' | 'land' | 'warning' | 'collapse' | 'poop' | 'fall' | 'clear' | 'dropWarning' | 'drop' | 'wall' | 'slide' | 'crush' | 'goalMove' | 'chase' | 'caught' | 'bait' | 'eat' | 'stolen' | 'sweep' | 'found' | 'lost' | 'miss';
   x: number; y: number; id?: string;
 };
 /** 歩く鹿。walk=歩く, warn=止まって予告中。 */
@@ -28,15 +28,22 @@ export type Thief = { id: string; kind: ThiefDefinition['kind']; x: number; y: n
 export type Bait = Point & { by: number; gone: boolean };
 /** 道を横切る動物。位置は時間だけで決まる。 */
 export type Crosser = { id: string; kind: CrosserDefinition['kind']; x: number; y: number; dir: 1 | -1; walked: number };
+/** 飛び石・はすの葉。x は今の位置(動く葉)。stand=乗っている秒数、sunk=沈んでいる(down 秒後に浮く)。 */
+export type Stone = StoneDefinition & { cx: number; stand: number; sunk: boolean; down: number };
+/** コイン。taken=取った。 */
+export type Coin = CoinDefinition & { taken: boolean };
 /** 迷子の鹿。lost=まだ見つけていない, follow=ついてくる（Spruが通った道を、少し遅れてたどる）。 */
 export type Follower = { kind: RescueDefinition['kind']; x: number; y: number; dir: 1 | -1; state: 'lost' | 'follow'; walked: number; trail: Point[] };
-export type Outcome = 'playing' | 'poop' | 'fall' | 'wall' | 'caught' | 'stolen' | 'dirty' | 'hit' | 'lost' | 'clear';
+export type Outcome = 'playing' | 'poop' | 'fall' | 'water' | 'wall' | 'caught' | 'stolen' | 'dirty' | 'hit' | 'lost' | 'clear';
 export type World = {
   level: LevelDefinition;
   player: Point & { height: number; jumpTime: number; cooldown: number; facing: Facing; stride: number; moving: boolean };
   traps: Trap[]; deers: Deer[]; walls: Wall[]; sliders: Slider[]; chasers: Chaser[]; rain: Rain[]; goal: Goal;
   thieves: Thief[]; baits: Bait[]; baitsLeft: number;
   crossers: Crosser[]; follower: Follower | null; swept: number; sweepTime: number; missed: number; combo: number; bestCombo: number;
+  stones: Stone[]; coins: Coin[];
+  /** 取ったコイン(シルバー)・ゴールドの数、プレミアムを取ったか */
+  silver: number; gold: number; premium: boolean;
   /** 面に置かれたうんこ＋鹿が落としたうんこ。当たり判定はこれと sliders を使う。 */
   poops: Point[];
   time: number; jumps: number; outcome: Outcome;
@@ -74,6 +81,9 @@ export function createWorld(level: LevelDefinition): World {
     goal: { x: (level.goal ?? GOAL).x, y: (level.goal ?? GOAL).y, state: 'idle' },
     sliders: level.sliders.map(s => ({ ...s, cx: s.x, cy: s.y, state: 'idle' })),
     poops: level.poops.map(p => ({ ...p })),
+    stones: (level.stones ?? []).map(s => ({ ...s, cx: s.x, stand: 0, sunk: false, down: 0 })),
+    coins: (level.coins ?? []).map(c => ({ ...c, taken: false })),
+    silver: 0, gold: 0, premium: false,
     time: 0, jumps: 0, outcome: 'playing', events: [], furthest: level.start.y,
   };
 }
@@ -245,6 +255,66 @@ function stepGoal(w: World, dt: number) {
     if (step >= d) { g.x = move.x; g.y = move.y; g.state = 'done'; } else { g.x += dx / d * step; g.y += dy / d * step; }
   }
 }
+// ---- 道の形・池・コイン(設計書 28章) ----
+/** 植え込みに入っているか(体の半径ぶん、ふくらませて見る)。 */
+export function inHedge(p: Point, h: HedgeDefinition, r = RULES.radius): boolean {
+  return p.x > h.x - r && p.x < h.x + h.w + r && p.y > h.y - r && p.y < h.y + h.h + r;
+}
+/** 池の、落ちる所(ふちは少し大目に見る)。 */
+export function inPond(p: Point, w: World): boolean {
+  return (w.level.ponds ?? []).some(o => p.x > o.x + 6 && p.x < o.x + o.w - 6 && p.y > o.y + 6 && p.y < o.y + o.h - 6);
+}
+/** 乗っている飛び石(沈んでいるものは除く)。 */
+export function standingStone(p: Point, w: World): Stone | undefined {
+  return w.stones.find(s => !s.sunk && Math.hypot(p.x - s.cx, p.y - s.y) < s.r);
+}
+const STONE_UP = 2.4; // 沈んだ石が、また浮くまでの秒
+const COIN_REACH = 34;
+function stepStones(w: World, dt: number) {
+  const p = w.player, onGround = p.jumpTime < 0;
+  for (const s of w.stones) {
+    if (s.sunk) {
+      s.down += dt;
+      if (s.down >= STONE_UP) { s.sunk = false; s.down = 0; s.stand = 0; }
+      continue;
+    }
+    const before = s.cx;
+    if (s.move) s.cx = s.x + s.move.dx * Math.sin((2 * Math.PI * w.time) / s.move.period);
+    const on = onGround && Math.hypot(p.x - before, p.y - s.y) < s.r;
+    // 動く葉に乗っていると、いっしょに運ばれる
+    if (on && s.move) p.x = clamp(p.x + (s.cx - before), FIELD.left, FIELD.right);
+    if (on && s.sink !== undefined) {
+      s.stand += dt;
+      if (s.stand >= s.sink) { s.sunk = true; s.down = 0; w.events.push({ kind: 'sink', x: s.cx, y: s.y, id: s.id }); }
+    } else if (!on) s.stand = 0;
+  }
+}
+function pickCoins(w: World) {
+  const p = w.player;
+  for (const c of w.coins) {
+    if (c.taken) continue;
+    // 高い所のコインは、跳んで高く上がっているときだけ取れる
+    if (c.air ? p.height < 34 : p.height > 60) continue;
+    if (Math.hypot(p.x - c.x, p.y - c.y) > COIN_REACH) continue;
+    c.taken = true;
+    if (c.kind === 'premium') w.premium = true;
+    else if (c.kind === 'gold') w.gold++;
+    else w.silver++;
+    w.events.push({ kind: c.kind === 'premium' ? 'premium' : c.kind === 'gold' ? 'gold' : 'coin', x: c.x, y: c.y });
+  }
+}
+/** 植え込みに入らないよう、動いた分をもどす(横・縦を別々に見て、壁ぞいにすべれるように)。 */
+function blockHedges(w: World, fromX: number, fromY: number) {
+  const hedges = w.level.hedges;
+  if (!hedges?.length) return;
+  const p = w.player;
+  const hit = (x: number, y: number) => hedges.some(h => inHedge({ x, y }, h));
+  if (!hit(p.x, p.y)) return;
+  if (!hit(p.x, fromY)) { p.y = fromY; return; }
+  if (!hit(fromX, p.y)) { p.x = fromX; return; }
+  p.x = fromX; p.y = fromY;
+}
+
 export function inHole(p: Point, t: TrapDefinition): boolean {
   // Test the foot/shadow centre against the inner edge; the sprite is not the collider.
   return p.x > t.x + 7 && p.x < t.x + t.width - 7 && p.y > t.y + 7 && p.y < t.y + t.height - 7;
@@ -277,6 +347,7 @@ export function step(w: World, input: Input, dt = RULES.step): void {
   p.x = clamp(p.x + dx * RULES.speed * dt, FIELD.left, FIELD.right);
   p.y = clamp(p.y + dy * RULES.speed * dt, FIELD.top, FIELD.bottom);
   // 向きは入力で、歩幅（足の出し入れ）は実際に進んだ距離で決める。壁に押しつけても足は動かない。
+  blockHedges(w, fromX, fromY);
   if (p.moving) p.facing = facingOf(dx, dy);
   p.stride += Math.hypot(p.x - fromX, p.y - fromY);
   let landed = false;
@@ -298,6 +369,8 @@ export function step(w: World, input: Input, dt = RULES.step): void {
   stepCrossers(w);
   stepFollower(w);
   stepRain(w, dt);
+  stepStones(w, dt);
+  pickCoins(w);
   for (const trap of w.traps) {
     if (trap.state === 'intact') {
       const kind = trap.trigger ?? 'near';
@@ -348,6 +421,8 @@ export function step(w: World, input: Input, dt = RULES.step): void {
     w.outcome = 'wall'; w.events.push({ kind: 'crush', x: p.x, y: p.y });
   } else if (p.jumpTime < 0 && w.traps.some(t => t.state === 'open' && inHole(p, t))) {
     w.outcome = 'fall'; w.events.push({ kind: 'fall', x: p.x, y: p.y });
+  } else if (p.jumpTime < 0 && inPond(p, w) && !standingStone(p, w)) {
+    w.outcome = 'water'; w.events.push({ kind: 'water', x: p.x, y: p.y });
   } else if (p.jumpTime < 0 && Math.hypot(p.x - w.goal.x, p.y - w.goal.y) < GOAL.radius
     && (!w.level.rescue || (w.follower?.state === 'follow' && Math.hypot(w.follower.x - p.x, w.follower.y - p.y) < 140))) {
     w.outcome = 'clear'; w.events.push({ kind: 'clear', x: p.x, y: p.y });

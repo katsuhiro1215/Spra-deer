@@ -1,6 +1,6 @@
 import { FIELD } from './stage.ts';
 import { RUNNER_LEVELS } from '../runner/levels.ts';
-import type { ChaserDefinition, CrosserDefinition, CrossDefinition, DeliveryDefinition, RescueDefinition, SweepDefinition, GoalDefinition, Point, RainDefinition, SliderDefinition, TrapDefinition, WallDefinition } from './stage.ts';
+import type { ChaserDefinition, CoinDefinition, CrosserDefinition, CrossDefinition, DeliveryDefinition, HedgeDefinition, PondDefinition, RescueDefinition, StoneDefinition, SweepDefinition, GoalDefinition, Point, RainDefinition, SliderDefinition, TrapDefinition, WallDefinition } from './stage.ts';
 
 /** 画面上の位置（Y）がこの値より下にいる間、text を案内として表示する。上から順に判定する。 */
 export type Chapter = { above: number; text: string };
@@ -44,9 +44,16 @@ export type LevelDefinition = {
   cross?: CrossDefinition;
   /** ステージ5（救出）。 */
   rescue?: RescueDefinition;
+  /** 通れない植え込みなど(道の形を作る)。 */
+  hedges?: HedgeDefinition[];
+  /** 池と、飛び石・はすの葉。 */
+  ponds?: PondDefinition[];
+  stones?: StoneDefinition[];
+  /** コイン(シルバー・ゴールド・プレミアム)。 */
+  coins?: CoinDefinition[];
   chapters: Chapter[];
-  /** 失敗の原因と、次の攻略方法（失敗の種類ごと）。 */
-  hints: { poop: string; fall: string; wall: string; caught?: string };
+  /** 失敗の原因と、次の攻略方法（失敗の種類ごと）。water=池に落ちた */
+  hints: { poop: string; fall: string; wall: string; caught?: string; water?: string };
 };
 
 /** 一覧に出す枠。level も runnerId も無い枠は「準備中」として表示する。 */
@@ -546,7 +553,7 @@ export const LEVEL_2_2: LevelDefinition = {
 
 /** 2-3: 横取りしに来る鹿。置いたせんべいを食べている間に、距離をかせぐ。 */
 export const LEVEL_2_3: LevelDefinition = {
-  id: '1-6', stage: 1, title: '横取りしにくる鹿', // 旧2-3
+  id: '旧2-3', stage: 1, title: '横取りしにくる鹿', // 2026-11-15 外した(1-6 は池の面に。せんべいは「投げる」に作り直す)
   // 配達の入門(旧2-1・2-2)を外したので、届けることも、ここで伝える
   intro: 'せんべいを、奥の鹿へ届けよう。\nボタンで置くと、ほかの鹿はそっちへ行く。',
   start: { x: 360, y: 3400 },
@@ -576,6 +583,81 @@ export const LEVEL_2_3: LevelDefinition = {
     { above: -Infinity, text: '…動かないよね？' },
   ],
   hints: { poop: POOP_HINT, fall: FALL_HINT, wall: WALL_HINT, caught: STOLEN_HINT },
+};
+
+/**
+ * 新1-6: 池のほとりの、曲がり道(2026-11-15。設計書 28章の A1・A2・C1)。
+ * ① 植え込みのS字(すき間を左右に抜ける。行き止まりの袋にゴールド)
+ * ② 池の飛び石(左=沈む石、右=動くはすの葉。プレミアムは右の空中)
+ * ③ 分かれ道(右は広くて安全そうだが、見えない穴。左は、うんこの間をぬう)
+ */
+export const LEVEL_1_6_POND: LevelDefinition = {
+  id: '1-6', stage: 1, title: '池のほとりの、曲がり道',
+  intro: '道が、くねくね曲がっている。\nその先には、池。',
+  start: { x: 360, y: 3400 },
+  poops: [
+    { x: 500, y: 3010 }, { x: 560, y: 2980 }, // S字の右のすき間の先
+    { x: 180, y: 2740 }, { x: 240, y: 2700 }, // S字の左のすき間の先
+    // ③ 左の道: うんこの間をぬう
+    { x: 150, y: 1460 }, { x: 260, y: 1360 }, { x: 160, y: 1240 }, { x: 260, y: 1120 }, { x: 150, y: 1000 }, { x: 250, y: 880 },
+    ...row(620, 360),
+  ],
+  deers: [],
+  traps: [
+    // ③ 右の道: 広くて安全そう。でも、真ん中が抜ける
+    { id: 'right-hole', x: 440, y: 1060, width: 150, height: 130, warning: .25, silent: true },
+  ],
+  walls: [], sliders: [], chasers: [], rain: [],
+  hedges: [
+    // ① S字: 右があく → 左があく
+    { x: 100, y: 3060, w: 340, h: 60 },
+    { x: 280, y: 2790, w: 340, h: 60 },
+    // 行き止まりの袋(右下)。ゴールドがあるが、戻る手間がかかる
+    { x: 470, y: 2600, w: 150, h: 40 },
+    // ② 池の両側は、灯籠の列(池を回り道できない)
+    { x: 100, y: 1860, w: 30, h: 560, look: 'lantern' },
+    { x: 590, y: 1860, w: 30, h: 560, look: 'lantern' },
+    // ③ 分かれ道のまんなか
+    { x: 300, y: 820, w: 120, h: 700, look: 'hedge' },
+  ],
+  ponds: [{ x: 130, y: 1900, w: 460, h: 470 }],
+  stones: [
+    // 左の道: 3つめが沈む(長く立ち止まらない)
+    { id: 'l1', x: 250, y: 2280, r: 36 },
+    { id: 'l2', x: 200, y: 2140, r: 34 },
+    { id: 'l3', x: 260, y: 2010, r: 32, sink: .9 },
+    // 右の道: はすの葉が左右に動く
+    { id: 'r1', x: 470, y: 2280, r: 36 },
+    { id: 'r2', x: 470, y: 2120, r: 40, lily: true, move: { dx: 70, period: 3.2 } },
+    { id: 'r3', x: 470, y: 1990, r: 34 },
+  ],
+  coins: [
+    { x: 360, y: 3250 }, { x: 360, y: 3180 },
+    { x: 530, y: 3140 }, { x: 530, y: 2930 }, { x: 470, y: 2880 },
+    { x: 180, y: 2880 }, { x: 170, y: 2650 }, { x: 250, y: 2520 },
+    { x: 545, y: 2700, kind: 'gold' }, // 行き止まりの袋
+    { x: 250, y: 2400 }, { x: 470, y: 2400 },
+    { x: 470, y: 2200, kind: 'premium', air: true }, // 動く葉へ跳ぶとちゅう
+    { x: 230, y: 2075, air: true }, { x: 225, y: 2210, air: true },
+    { x: 360, y: 1800 },
+    { x: 205, y: 1410 }, { x: 205, y: 1180 }, { x: 205, y: 940 }, { x: 205, y: 1300, kind: 'gold' },
+    { x: 515, y: 1400 }, { x: 515, y: 1300 }, // 右の道の、さそいのコイン
+    { x: 360, y: 760 }, { x: 360, y: 480 },
+  ],
+  chapters: [
+    { above: 3150, text: '植え込みの、すき間へ。' },
+    { above: 2550, text: '右の奥に、何か光ってる。' },
+    { above: 2400, text: '池だ。石の上を、跳んで渡ろう。' },
+    { above: 1850, text: '道が、ふたつに分かれてる。' },
+    { above: 750, text: 'あと少し。' },
+    { above: -Infinity, text: 'ゴールは、目の前。' },
+  ],
+  hints: {
+    poop: 'うんこに、当たった…！\n曲がり道では、すき間の先に注意。',
+    fall: '広くて安全そうな道ほど、あやしい。\n分かれ道は、もう一方へ。',
+    wall: WALL_HINT,
+    water: '池に、落ちた…！\n左の3つめの石は、乗ると沈む。\nはすの葉は、動きに合わせて跳ぼう。',
+  },
 };
 
 /** 2-4: おとりで道をつくる。狭いすきまに、鹿が立っている。せんべいで、どかす。 */
@@ -728,7 +810,7 @@ export const STAGE_1: LevelSlot[] = [
   { id: '1-3', title: LEVEL_1_3.title, summary: '横から、壁が出てくる', level: LEVEL_1_3 },
   { id: '1-4', title: LEVEL_1_4.title, summary: '鹿が、追いかけてくる', level: LEVEL_1_4 },
   { id: '1-5', title: LEVEL_1_5.title, summary: 'ここまでの、全部入り', level: LEVEL_1_5 },
-  { id: '1-6', title: LEVEL_2_3.title, summary: 'せんべいで、鹿を引きつける', level: LEVEL_2_3 },
+  { id: '1-6', title: LEVEL_1_6_POND.title, summary: '曲がり道と、池の飛び石', level: LEVEL_1_6_POND },
   { id: '1-7', title: LEVEL_1_8.title, summary: '壁が、せまってくる', level: LEVEL_1_8 },
   { id: '1-8', title: LEVEL_2_4.title, summary: 'おとりで、道をあける', level: LEVEL_2_4 },
   { id: '1-9', title: LEVEL_2_5.title, summary: '群れを、抜ける', level: LEVEL_2_5 },
