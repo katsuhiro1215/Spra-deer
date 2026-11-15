@@ -731,6 +731,14 @@ export const STAGE_1: LevelSlot[] = [
   { id: '1-10', title: LEVEL_1_10.title, summary: 'ステージ1の最終関門', level: LEVEL_1_10 },
 ];
 
+/** まだ作っていない3D走りの面(行き先のメモ) */
+const PLANNED: Record<string, { title: string; summary: string }> = {
+  '3-4': { title: '若草山から平城宮跡へ', summary: '下りと市街地。近鉄の踏切' },
+  '3-7': { title: '吉野 金峯山寺へ', summary: '案を検討中' },
+  '3-8': { title: '谷瀬のつり橋から郡山城へ', summary: 'ゆれる橋でバランス' },
+  '3-9': { title: '佐保川の桜並木', summary: '桜のトンネルを、奈良公園へ' },
+};
+
 export const STAGES: { stage: number; title: string; slots: LevelSlot[] }[] = [
   { stage: 1, title: '足元にご用心', slots: STAGE_1 },
   {
@@ -743,12 +751,11 @@ export const STAGES: { stage: number; title: string; slots: LevelSlot[] }[] = [
     ],
   },
   {
-    // ステージ3は、Three.js の3D走りゲーム(/run/)。面の並びは runner/levels.ts の順。3-6〜3-9は、これから作る枠。
-    stage: 3, title: '鹿の大脱走', slots: [
-      ...RUNNER_LEVELS.filter(r => r.id !== '3-10').map(r => ({ id: r.id, title: r.title, summary: r.summary, runnerId: r.id })),
-      ...['3-6', '3-7', '3-8', '3-9'].map(id => ({ id, title: 'これから、作ります', summary: '' })),
-      ...RUNNER_LEVELS.filter(r => r.id === '3-10').map(r => ({ id: r.id, title: r.title, summary: r.summary, runnerId: r.id })),
-    ],
+    // ステージ3は、Three.js の3D走りゲーム(/run/)。作った面は runner/levels.ts、まだの面は行き先だけ書いた「準備中」
+    stage: 3, title: '鹿の大脱走', slots: Array.from({ length: 10 }, (_, i) => `3-${i + 1}`).map(id => {
+      const r = RUNNER_LEVELS.find(x => x.id === id);
+      return r ? { id, title: r.title, summary: r.summary, runnerId: id } : { id, ...PLANNED[id] };
+    }),
   },
   // ステージ4は掃除(仮の面。遊び方は、これから決める)
   { stage: 4, title: '奈良公園大掃除', slots: [{ id: '4-1', title: LEVEL_4_1.title, summary: 'うんこを掃く(作り直し予定)', level: LEVEL_4_1 }] },

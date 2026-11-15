@@ -5,8 +5,8 @@ import { buildCourse, type Course, type Curve, type PatternName, type Rules } fr
 export type Weather = 'none' | 'rain' | 'snow';
 /** 道の景色: sando=灯籠と杉の参道 / town=街道(夕焼けの街) / mountain=灯籠のない山道 */
 export type Setting = 'sando' | 'town' | 'mountain';
-/** ゴールの景色: shrine=春日大社 / bay=大阪湾 / summit=山頂 */
-export type GoalScene = 'shrine' | 'bay' | 'summit';
+/** ゴールの景色: shrine=春日大社 / todaiji=東大寺の大仏殿 / horyuji=法隆寺 / omiwa=大神神社 / bay=大阪湾 / summit=山頂 */
+export type GoalScene = 'shrine' | 'todaiji' | 'horyuji' | 'omiwa' | 'bay' | 'summit';
 
 export interface Theme {
   setting: Setting;
@@ -36,6 +36,14 @@ export interface Theme {
   snowCaps: boolean;
 }
 
+/** 道ばたの名所(目印と、回復薬の場所)。at=コース全体に対する割合。 */
+export interface Landmark {
+  at: number;
+  kind: 'pagoda' | 'hall';
+  side: 1 | -1;
+  name: string;
+}
+
 export interface RunnerLevel {
   id: string;
   title: string;
@@ -52,6 +60,11 @@ export interface RunnerLevel {
   /** 曲がる道(無ければ、まっすぐ) */
   curve?: Curve;
   theme: Theme;
+  /** 回復薬を置く場所(割合) */
+  potions?: number[];
+  /** この割合を過ぎると、大仏の目が光り、罠がぐっとふえる */
+  wake?: number;
+  landmarks?: Landmark[];
   goalName: string;
   /** 半分・8割・9割を過ぎたときの一言。 */
   lines: [string, string, string];
@@ -115,6 +128,13 @@ const MOUNTAIN: Theme = {
   lampGlow: 1.6, halo: 0, snowCaps: false,
 };
 
+/** 夜の東大寺(大仏殿がゴール) */
+const NIGHT_TODAIJI: Theme = { ...NIGHT, goal: 'todaiji' };
+/** 山道は、坂の向こうが見えにくいよう、霧を近くにする */
+const MOUNTAIN_MIST: Theme = { ...MOUNTAIN, fogNear: 26, fogFar: 150 };
+const RAIN_HORYUJI: Theme = { ...RAIN, goal: 'horyuji' };
+const SNOW_OMIWA: Theme = { ...SNOW, goal: 'omiwa' };
+
 const BAY: Theme = {
   setting: 'town', goal: 'bay', weather: 'none', night: false,
   sky: ['#4a4896', '#bc6c9a', '#f2a068', '#ffd9a0'],
@@ -136,48 +156,54 @@ export const RUNNER_LEVELS: RunnerLevel[] = [
     lines: ['ちょうど 半分！ コインも いっぱい', 'もうすぐ 春日大社だよ', '赤い社殿が 見えてきた！'],
   },
   {
-    id: '3-2', title: '夜の参道', summary: '暗い道。灯籠の灯りだけが頼り',
-    intro: '夜の参道。灯籠の灯りを たよりに 走ろう！',
+    id: '3-2', title: '夜の南大門', summary: '東大寺へ。大仏の目が光ると…',
+    intro: '夜の参道。南大門の先に、東大寺が 見えてくる…',
     length: 900, seed: 20261201, difficulty: 0.35,
     extra: ['critterSleep', 'critterCross', 'critterHop', 'critterCharge'], critters: ['kage', 'owl', 'fox', 'pachi'],
     opening: ['hole', 'critterSleep', 'poop', 'critterCross'],
     rules: { speed0: 13, speed1: 21, steerAccel: 42, steerSpeed: 6.8 },
     curve: { amp: 14, wave: 300 },
-    theme: NIGHT, goalName: '春日大社',
-    lines: ['灯籠が ゆれて きれい…', '遠くに ともしびが 見えてきた', '灯りに 照らされた 春日大社！'],
+    wake: 0.6,
+    theme: NIGHT_TODAIJI, goalName: '東大寺',
+    lines: ['南大門が 見えてきた', '大仏殿の 灯りが 見える…', '大仏さまの 前に 来た！'],
   },
   {
-    id: '3-3', title: '雨の参道', summary: '地面がすべる。みずたまりに注意',
-    intro: '雨で 地面が すべるよ。みずたまりは おそくなる！',
-    length: 900, seed: 20261207, difficulty: 0.4,
-    extra: ['puddle', 'critterSleep', 'critterCross', 'critterHop', 'critterCharge'], critters: ['puni', 'doro', 'noko', 'turtle', 'bubu'],
-    opening: ['hole', 'puddle', 'critterSleep', 'fenceGap'],
-    rules: { speed0: 14, speed1: 21, steerAccel: 22, steerSpeed: 6.8 },
-    curve: { amp: 22, wave: 240 },
-    theme: RAIN, goalName: '春日大社',
-    lines: ['雨は まだ やまない…', 'あと もうすこし！', '雨の向こうに 赤い社殿が…！'],
-  },
-  {
-    id: '3-4', title: '雪の参道', summary: 'こおりの上は、つるつる。曲がれない',
-    intro: '雪の参道。こおりを ふむと つるつる すべるよ！',
-    length: 900, seed: 20261213, difficulty: 0.45,
-    extra: ['ice', 'critterSleep', 'critterCross', 'critterHop', 'critterCharge'], critters: ['snowy', 'frosty', 'gingi', 'rabbit', 'candi'],
-    opening: ['hole', 'ice', 'critterSleep', 'poop'],
-    rules: { speed0: 12, speed1: 19, steerAccel: 14, steerSpeed: 6.4 },
-    curve: { amp: 26, wave: 220 },
-    theme: SNOW, goalName: '春日大社',
-    lines: ['しんしんと 雪が ふっている', '雪の中に 赤が 見えてきた', '雪化粧の 春日大社だ！'],
-  },
-  {
-    id: '3-5', title: '若草山のつづら折り', summary: '連続カーブ。外へ押されるよ',
+    id: '3-3', title: '若草山のつづら折り', summary: '登りのカーブ。前が見えにくい',
     intro: '若草山のつづら折り！ カーブで 外へ 押されるよ！',
     length: 1000, seed: 20261230, difficulty: 0.55,
     extra: ['critterSleep', 'critterCross', 'critterHop', 'critterCharge'], critters: ['bear', 'tanuki', 'squirrel', 'koron', 'goro', 'toge'],
     opening: ['hole', 'critterSleep', 'poop', 'critterCross'],
     rules: { speed0: 13.5, speed1: 20, steerAccel: 40, steerSpeed: 7.0 },
     curve: { amp: 34, wave: 170 },
-    theme: MOUNTAIN, goalName: '若草山',
+    theme: MOUNTAIN_MIST, goalName: '若草山',
     lines: ['つづら折りが つづく…', 'もうすぐ 山頂だよ', '山頂が 見えてきた！'],
+  },
+  {
+    id: '3-5', title: '雨の西の京', summary: '長い田園。薬師寺と唐招提寺で回復',
+    intro: '雨で 地面が すべるよ。みずたまりは おそくなる！',
+    length: 1400, seed: 20261207, difficulty: 0.4,
+    extra: ['puddle', 'critterSleep', 'critterCross', 'critterHop', 'critterCharge'], critters: ['puni', 'doro', 'noko', 'turtle', 'bubu'],
+    opening: ['hole', 'puddle', 'critterSleep', 'fenceGap'],
+    rules: { speed0: 14, speed1: 21, steerAccel: 22, steerSpeed: 6.8 },
+    curve: { amp: 22, wave: 240 },
+    potions: [0.38, 0.68],
+    landmarks: [
+      { at: 0.38, kind: 'pagoda', side: -1, name: '薬師寺' },
+      { at: 0.68, kind: 'hall', side: 1, name: '唐招提寺' },
+    ],
+    theme: RAIN_HORYUJI, goalName: '法隆寺',
+    lines: ['薬師寺の 塔が 見えたよ', '唐招提寺で ひと休み', '雨の向こうに 五重塔が…！'],
+  },
+  {
+    id: '3-6', title: '雪の大神神社', summary: '雪の三輪山へ。こおりの道',
+    intro: '雪の参道。こおりを ふむと つるつる すべるよ！',
+    length: 900, seed: 20261213, difficulty: 0.45,
+    extra: ['ice', 'critterSleep', 'critterCross', 'critterHop', 'critterCharge'], critters: ['snowy', 'frosty', 'gingi', 'rabbit', 'candi'],
+    opening: ['hole', 'ice', 'critterSleep', 'poop'],
+    rules: { speed0: 12, speed1: 19, steerAccel: 14, steerSpeed: 6.4 },
+    curve: { amp: 26, wave: 220 },
+    theme: SNOW_OMIWA, goalName: '大神神社',
+    lines: ['しんしんと 雪が ふっている', '三輪山が 見えてきた', '雪の大鳥居が 見えた！'],
   },
   {
     id: '3-10', title: '大阪湾をめざせ！', summary: '最長の最終面。街をぬけて、海まで',
@@ -195,5 +221,6 @@ export function courseOf(level: RunnerLevel): Course {
   return buildCourse({
     seed: level.seed, length: level.length, difficulty: level.difficulty,
     extra: level.extra, critters: level.critters, opening: level.opening, rules: level.rules, curve: level.curve,
+    potions: level.potions, wake: level.wake,
   });
 }

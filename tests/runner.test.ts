@@ -90,12 +90,12 @@ test('どの面も: 障害物は前から順で、穴は跳べる長さ、コイ
     assert.ok(c.obstacles.filter((o) => o.kind === 'hole').length >= 1, l.id);
     assert.ok(c.obstacles.every((o) => o.s < l.length - 40), `${l.id}: ゴール直前に障害物がある`);
   }
-  assert.ok(courseOf(runnerById('3-3')!).obstacles.some((o) => o.kind === 'puddle'), '雨の面にはみずたまり');
-  assert.ok(courseOf(runnerById('3-4')!).obstacles.some((o) => o.kind === 'ice'), '雪の面にはこおり');
+  assert.ok(courseOf(runnerById('3-5')!).obstacles.some((o) => o.kind === 'puddle'), '雨の面にはみずたまり');
+  assert.ok(courseOf(runnerById('3-6')!).obstacles.some((o) => o.kind === 'ice'), '雪の面にはこおり');
 });
 
 test('動物・モンスターの罠が、面ごとに4つの動きで出る', () => {
-  for (const id of ['3-2', '3-3', '3-4', '3-5']) {
+  for (const id of ['3-2', '3-3', '3-5', '3-6']) {
     const l = runnerById(id)!;
     const crit = courseOf(l).obstacles.filter((o) => o.kind === 'critter');
     const behaviors = new Set(crit.map((o) => o.behavior));
@@ -160,11 +160,11 @@ test('曲がる道: 出だしとゴール前はまっすぐ。3-1と3-10は、�
     }
   }
   assert.ok(!runnerById('3-1')!.curve && !runnerById('3-10')!.curve);
-  assert.ok(runnerById('3-5')!.curve!.amp > runnerById('3-2')!.curve!.amp, '山道のほうが、きついカーブ');
+  assert.ok(runnerById('3-3')!.curve!.amp > runnerById('3-2')!.curve!.amp, '山道のほうが、きついカーブ');
 });
 
 test('カーブでは、外側へ押される(右カーブなら左へ)', () => {
-  const c = courseOf(runnerById('3-5')!);
+  const c = courseOf(runnerById('3-3')!);
   // 曲がりが一番きつい所を探す
   let best = 0;
   for (let s = 200; s < 800; s += 1) if (Math.abs(roadCurv(c, s)) > Math.abs(roadCurv(c, best))) best = s;
@@ -181,6 +181,37 @@ test('カーブでは、外側へ押される(右カーブなら左へ)', () => 
   flat.start();
   for (let i = 0; i < 60; i++) flat.step(DT, { left: false, right: false, jump: false });
   assert.equal(flat.x, 0, 'まっすぐな道では、押されない');
+});
+
+test('回復薬: ハートが1つふえる(3つまで)。置いてある面だけ', () => {
+  const rain = courseOf(runnerById('3-5')!);
+  const potions = rain.coins.filter((c) => c.kind === 'potion');
+  assert.equal(potions.length, 2, '薬師寺と唐招提寺に1つずつ');
+  for (const p of potions) assert.ok(!rain.obstacles.some((o) => Math.abs(o.s - p.s) < 16 + o.len), '罠のすぐそばには置かない');
+  assert.ok(!courseOf(runnerById('3-1')!).coins.some((c) => c.kind === 'potion'), '3-1には無い');
+  const r = new Run({ obstacles: [], coins: [{ id: 0, s: 3, x: 0, y: 1.1, kind: 'potion' }], length: COURSE_LENGTH });
+  r.start();
+  r.lives = 1;
+  for (let i = 0; i < 300; i++) r.step(DT, { left: false, right: false, jump: false });
+  assert.equal(r.lives, 2);
+  assert.equal(r.coins, 0, '回復薬は、コインに数えない');
+  const full = new Run({ obstacles: [], coins: [{ id: 0, s: 3, x: 0, y: 1.1, kind: 'potion' }], length: COURSE_LENGTH });
+  full.start();
+  for (let i = 0; i < 300; i++) full.step(DT, { left: false, right: false, jump: false });
+  assert.equal(full.lives, 3, '3つより、ふえない');
+});
+
+test('大仏の目が光ったあと(wake)は、罠の間隔がつまる', () => {
+  const l = runnerById('3-2')!;
+  assert.ok(l.wake && l.wake > 0.4 && l.wake < 0.8);
+  const c = courseOf(l);
+  const gaps = (from: number, to: number) => {
+    const xs = c.obstacles.filter((o) => o.s >= from && o.s < to).map((o) => o.s);
+    return xs.length / (to - from);
+  };
+  const before = gaps(100, l.length * l.wake!);
+  const after = gaps(l.length * l.wake!, l.length - 100);
+  assert.ok(after > before * 1.3, `目覚めたあとが、1.3倍以上こむ: ${before.toFixed(3)} → ${after.toFixed(3)}`);
 });
 
 test('何もしないと穴に落ちて失敗する', () => {
@@ -245,8 +276,8 @@ test('みずたまりはおそくなるだけ、こおりは左右がきかな�
 
 test('雨・雪の面は、左右の動きだしが鈍い', () => {
   const day = runnerById('3-1')!.rules.steerAccel;
-  assert.ok(runnerById('3-3')!.rules.steerAccel < day);
-  assert.ok(runnerById('3-4')!.rules.steerAccel < runnerById('3-3')!.rules.steerAccel);
+  assert.ok(runnerById('3-5')!.rules.steerAccel < day);
+  assert.ok(runnerById('3-6')!.rules.steerAccel < runnerById('3-5')!.rules.steerAccel);
 });
 
 test('コインは同じものを2回取れない', () => {

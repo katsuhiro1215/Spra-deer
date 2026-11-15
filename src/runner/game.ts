@@ -63,6 +63,7 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
   const sound = (e: SimEvent) => {
     switch (e.kind) {
       case 'coin': tone(1180, 1760, 0.13, 'triangle', 0.08); break;
+      case 'heal': [660, 880, 1100, 1320].forEach((f, i) => tone(f, f * 1.02, 0.22, 'sine', 0.09, i * 0.08)); break;
       case 'jump': tone(360, 700, 0.16, 'sine', 0.08); break;
       case 'land': tone(160, 90, 0.08, 'sine', 0.05); break;
       case 'hit': tone(200, 60, 0.3, 'sawtooth', 0.1); break;
@@ -102,6 +103,7 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
   const elFill = q('fill');
   const elMark = q('mark');
   const elToast = q('toast');
+  const elStatus = q('status');
   const elStart = q('start');
   const elResult = q('result');
   let toastTimer = 0;
@@ -112,6 +114,10 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
     toastTimer = window.setTimeout(() => elToast.classList.remove('on'), ms);
   };
   const paintHud = () => {
+    // 操作できない・逆になっている間は、画面に出す(「反応しない」と見えないように)
+    const msg = run.ice > 0 ? 'つるつる中… 曲がれない' : run.slip > 0 ? '操作が逆！' : '';
+    if (elStatus.textContent !== msg) elStatus.textContent = msg;
+    elStatus.classList.toggle('on', msg !== '');
     elCoins.textContent = String(run.coins);
     elHearts.textContent = '♥'.repeat(Math.max(0, run.lives)) + '♡'.repeat(Math.max(0, 3 - run.lives));
     const p = `${(run.progress * 100).toFixed(1)}%`;
@@ -120,6 +126,7 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
   };
 
   let hinted = new Set<string>();
+  let woke = false; // 大仏の目が光った合図を出したか
   let miles = new Set<number>();
   let resultTimer = 0;
 
@@ -165,9 +172,10 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
     window.clearTimeout(resultTimer);
     run = new Run(course);
     hinted = new Set();
+    woke = false;
     miles = new Set();
     recorded = false;
-    input.left = input.right = input.jump = false;
+    releaseAll();
     run.start();
     progress.attempt(level.id);
     elStart.classList.remove('on');
@@ -181,39 +189,61 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
   q('retry').addEventListener('click', begin);
 
   // ---- 入力 ----
+  // 左右は「キーボード」と「パッド」の2か所から入る。どちらも、最後に押した向きを優先する。
+  // (左右を同時に押しても打ち消し合わない。キーの「離した」を取りこぼしても、次に押した向きが効く)
   const padEl = q('pad');
+  const jumpEl = q('jump');
+  const keyCodes: string[] = []; // 押している左右のキー(押した順)
   const padPointers = new Map<number, 'left' | 'right'>();
+  const dirOfKey: Record<string, 'left' | 'right'> = { ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right' };
+  const jumpKeys = new Set(['Space', 'ArrowUp', 'KeyW']);
+  const applyDir = () => {
+    const kb = keyCodes.length ? dirOfKey[keyCodes[keyCodes.length - 1]] : undefined;
+    const pads = [...padPointers.values()];
+    const dir = kb ?? pads[pads.length - 1];
+    input.left = dir === 'left';
+    input.right = dir === 'right';
+    padEl.dataset.dir = dir ?? '';
+  };
+  /** すべての入力を離した状態にする(はじめ・画面が見えなくなったとき) */
+  const releaseAll = () => {
+    keyCodes.length = 0;
+    padPointers.clear();
+    input.jump = false;
+    jumpEl.classList.remove('down');
+    applyDir();
+  };
+
   const sideOf = (ev: PointerEvent): 'left' | 'right' => {
     const r = padEl.getBoundingClientRect();
     return ev.clientX < r.left + r.width / 2 ? 'left' : 'right';
   };
-  const syncPad = () => {
-    const sides = new Set(padPointers.values());
-    input.left = sides.has('left') && !sides.has('right');
-    input.right = sides.has('right') && !sides.has('left');
-    padEl.dataset.dir = input.left ? 'left' : input.right ? 'right' : '';
-  };
   const onPadDown = (ev: PointerEvent) => {
     ev.preventDefault();
     padEl.setPointerCapture(ev.pointerId);
+    padPointers.delete(ev.pointerId);
     padPointers.set(ev.pointerId, sideOf(ev));
-    syncPad();
+    applyDir();
   };
   const onPadMove = (ev: PointerEvent) => {
     if (!padPointers.has(ev.pointerId)) return;
-    padPointers.set(ev.pointerId, sideOf(ev));
-    syncPad();
+    const side = sideOf(ev);
+    if (padPointers.get(ev.pointerId) !== side) {
+      padPointers.delete(ev.pointerId);
+      padPointers.set(ev.pointerId, side); // 向きを変えた指を、最後に押した扱いにする
+      applyDir();
+    }
   };
   const onPadUp = (ev: PointerEvent) => {
     padPointers.delete(ev.pointerId);
-    syncPad();
+    applyDir();
   };
   padEl.addEventListener('pointerdown', onPadDown);
   padEl.addEventListener('pointermove', onPadMove);
   padEl.addEventListener('pointerup', onPadUp);
   padEl.addEventListener('pointercancel', onPadUp);
+  padEl.addEventListener('lostpointercapture', onPadUp);
 
-  const jumpEl = q('jump');
   const onJumpDown = (ev: PointerEvent) => {
     ev.preventDefault();
     jumpEl.setPointerCapture(ev.pointerId);
@@ -228,19 +258,34 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
   jumpEl.addEventListener('pointerup', onJumpUp);
   jumpEl.addEventListener('pointercancel', onJumpUp);
 
-  const keyMap: Record<string, keyof Input> = {
-    ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right', Space: 'jump', ArrowUp: 'jump', KeyW: 'jump',
+  const kd = (ev: KeyboardEvent) => {
+    if (dirOfKey[ev.code]) {
+      ev.preventDefault();
+      if (ev.repeat) return;
+      const i = keyCodes.indexOf(ev.code);
+      if (i >= 0) keyCodes.splice(i, 1);
+      keyCodes.push(ev.code);
+      applyDir();
+    } else if (jumpKeys.has(ev.code)) {
+      ev.preventDefault();
+      input.jump = true;
+    }
   };
-  const onKey = (down: boolean) => (ev: KeyboardEvent) => {
-    const k = keyMap[ev.code];
-    if (!k) return;
-    ev.preventDefault();
-    input[k] = down;
+  const ku = (ev: KeyboardEvent) => {
+    if (dirOfKey[ev.code]) {
+      const i = keyCodes.indexOf(ev.code);
+      if (i >= 0) keyCodes.splice(i, 1);
+      applyDir();
+    } else if (jumpKeys.has(ev.code)) {
+      input.jump = false;
+    }
   };
-  const kd = onKey(true);
-  const ku = onKey(false);
   window.addEventListener('keydown', kd);
   window.addEventListener('keyup', ku);
+  // 画面を離れたとき(別のウィンドウ・タブ)は、キーの「離した」が届かないので、全部離した扱いにする
+  const onHidden = () => releaseAll();
+  window.addEventListener('blur', onHidden);
+  document.addEventListener('visibilitychange', onHidden);
   const noMenu = (e: Event) => e.preventDefault();
   root.addEventListener('contextmenu', noMenu);
 
@@ -270,6 +315,8 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
       } else if (e.kind === 'slip') {
         view.bump(0.2);
         toast('ふんで スリップ！ 操作が逆に！', 1800);
+      } else if (e.kind === 'heal') {
+        toast('回復薬！ ハートが ふえた', 2000);
       } else if (e.kind === 'slow') {
         toast('ばしゃっ！ おそくなった', 1400);
       } else if (e.kind === 'slide') {
@@ -292,6 +339,12 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
           toast(HINTS[hintKey(o)], 2800);
           break;
         }
+      }
+      if (course.wake !== undefined && !woke && run.progress >= course.wake) {
+        woke = true;
+        view.bump(0.3);
+        tone(110, 70, 1.2, 'sawtooth', 0.08);
+        toast('大仏さまの 目が 光った…！ 罠が ふえるよ！', 3400);
       }
       for (const [s, msg] of MILESTONES) {
         if (run.s >= s && !miles.has(s)) {
@@ -326,6 +379,8 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
     window.clearTimeout(resultTimer);
     window.removeEventListener('keydown', kd);
     window.removeEventListener('keyup', ku);
+    window.removeEventListener('blur', onHidden);
+    document.removeEventListener('visibilitychange', onHidden);
     root.removeEventListener('contextmenu', noMenu);
     delete (window as unknown as { __kasuga?: unknown }).__kasuga;
     try { rainNode?.stop(); } catch { /* 止まっていたら何もしない */ }

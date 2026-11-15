@@ -46,6 +46,7 @@ export function RunShell() {
             </div>
             <span className="ks-progress-goal" data-ks="lv-goal" />
           </div>
+          <div className="ks-status" data-ks="status" />
           <div className="ks-toast" data-ks="toast" />
         </div>
 

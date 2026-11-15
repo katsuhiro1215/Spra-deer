@@ -9,12 +9,12 @@ export interface Input {
 }
 
 export type Phase = 'ready' | 'running' | 'cleared' | 'failed';
-export type SimEvent = { kind: 'coin' | 'jump' | 'land' | 'hit' | 'fall' | 'slip' | 'slow' | 'slide' | 'clear' | 'fail'; id?: number };
+export type SimEvent = { kind: 'coin' | 'heal' | 'jump' | 'land' | 'hit' | 'fall' | 'slip' | 'slow' | 'slide' | 'clear' | 'fail'; id?: number };
 
 export const PLAYER_RADIUS = 0.45;
 const JUMP_V = 10.5;
 const GRAVITY = 32;
-const MAX_LIVES = 3;
+export const MAX_LIVES = 3;
 /** カーブで、外側へ押される強さ(大きいほど、曲がり角で操作が要る) */
 const DRIFT_GAIN = 7;
 
@@ -228,10 +228,16 @@ export class Run {
       const dx = c.x - this.x;
       const ds = c.s - this.s;
       const dy = c.y - cy;
-      if (dx * dx + ds * ds + dy * dy < 1.05 * 1.05) {
+      if (dx * dx + ds * ds + dy * dy < (c.kind === 'potion' ? 1.5 : 1.05) ** 2) {
         this.collected.add(c.id);
-        this.coins += 1;
-        this.events.push({ kind: 'coin', id: c.id });
+        if (c.kind === 'potion') {
+          // 回復薬: ハートが1つふえる(3つまで)
+          this.lives = Math.min(MAX_LIVES, this.lives + 1);
+          this.events.push({ kind: 'heal', id: c.id });
+        } else {
+          this.coins += 1;
+          this.events.push({ kind: 'coin', id: c.id });
+        }
       }
     }
   }

@@ -35,6 +35,8 @@ export interface Coin {
   s: number;
   x: number;
   y: number; // 地面からの高さ(ジャンプで取るコインは高い)
+  /** potion=回復薬(ハートが1つふえる)。無ければ、ふつうのコイン */
+  kind?: 'potion';
 }
 
 /** 走りの手ごたえ。面ごとに変える(雨や雪では、左右がすべる)。 */
@@ -58,6 +60,8 @@ export interface Course {
   length: number;
   rules?: Rules;
   curve?: Curve;
+  /** この割合(0〜1)を過ぎると、罠がぐっとふえる(大仏の目が光ったあと) */
+  wake?: number;
 }
 
 const smooth = (a: number, b: number, x: number): number => {
@@ -169,6 +173,10 @@ export interface CourseOptions {
   rules?: Rules;
   /** 曲がる道(無ければ、まっすぐ) */
   curve?: Curve;
+  /** 回復薬を置く場所(コース全体に対する割合 0〜1) */
+  potions?: number[];
+  /** この割合を過ぎると、罠がぐっとふえる(大仏の目が光ったあと) */
+  wake?: number;
 }
 
 export function buildCourse(opts: CourseOptions = {}): Course {
@@ -357,9 +365,11 @@ export function buildCourse(opts: CourseOptions = {}): Course {
   const endObstacles = length - (critters.length ? 100 : 75); // 突進する動物は手前から走ってくるので、ゴールから離す(3-1は従来どおり)
   while (s < endObstacles) {
     const p = s / length;
+    const awake = opts.wake !== undefined && p >= opts.wake; // 大仏の目が光ったあと
     const pool: PatternName[] = ['hole', 'poop', 'fenceGap', 'coinSnake', ...extra];
     if (p > 0.25) pool.push('stones', 'deerCross', ...extra);
     if (p > 0.5) pool.push('holePoop', 'fenceHole', 'stones', 'deerCross');
+    if (awake) pool.push(...extra, ...extra, 'holePoop', 'fenceHole');
     let name = pool[Math.floor(rand() * pool.length)];
     if (name === prev) name = pool[Math.floor(rand() * pool.length)];
     // この面だけの罠は、運に任せず、中盤までに必ず1回は出す(練習にもなる)
@@ -367,7 +377,8 @@ export function buildCourse(opts: CourseOptions = {}): Course {
     if (missing.length && p > 0.22) name = missing[0];
     prev = name;
     used.add(name);
-    s = run(name, s, p) + Math.max(22, 38 - 14 * p - 6 * difficulty);
+    // 近づくほど、罠の間隔がつまる(目が光ったあとは、さらに)
+    s = run(name, s, p) + Math.max(awake ? 14 : 22, 38 - 14 * p - 6 * difficulty - (awake ? 10 : 0));
   }
 
   // ゴール前のコインシャワー(障害物なし)
@@ -379,5 +390,11 @@ export function buildCourse(opts: CourseOptions = {}): Course {
     coin(ss, 2.2);
   }
   obstacles.sort((a, b) => a.s - b.s);
-  return { obstacles, coins, length, rules: opts.rules, curve: opts.curve };
+  // 回復薬: 道の中央に1つ。罠のすぐそばは避ける
+  for (const f of opts.potions ?? []) {
+    let ps = Math.round(length * f);
+    while (obstacles.some((o) => Math.abs(o.s - ps) < 16 + o.len)) ps += 6;
+    coins.push({ id: id++, s: ps, x: 0, y: 1.1, kind: 'potion' });
+  }
+  return { obstacles, coins, length, rules: opts.rules, curve: opts.curve, wake: opts.wake };
 }
