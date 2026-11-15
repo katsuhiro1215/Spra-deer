@@ -169,9 +169,7 @@ function stepChasers(w: World, dt: number) {
     const c = w.chasers[i];
     if (c.state === 'idle' && p.y <= def.triggerY) { c.state = 'chase'; w.events.push({ kind: 'chase', x: c.x, y: c.y, id: c.id }); }
     if (c.state !== 'chase') return;
-    const dx = p.x - c.x, dy = p.y - c.y, d = Math.hypot(dx, dy) || 1, move = Math.min(def.speed * dt, d);
-    c.x += dx / d * move; c.y += dy / d * move; c.walked += move;
-    if (Math.abs(dx) > 8) c.dir = dx > 0 ? 1 : -1;
+    walkTo(w, c, p.x, p.y, def.speed * dt); // 植え込みがあれば、ふちにそって動く(無い面では、まっすぐ追う)
   });
 }
 const BAIT_EAT = 2.6, BAIT_ARRIVE = 18;
@@ -344,7 +342,8 @@ function walkTo(w: World, a: { x: number; y: number; dir: 1 | -1; walked: number
   const fromX = a.x, fromY = a.y;
   // 植え込みに当たったら、ふちにそって(進みたい向きのほうへ)全速ですべる
   const sx = a.x + Math.sign(dx) * Math.min(move, Math.abs(dx)), sy = a.y + Math.sign(dy) * Math.min(move, Math.abs(dy));
-  if (!hedgeAt(w, nx, ny, SENBEI.deer)) { a.x = nx; a.y = ny; }
+  // 植え込みの中にいるとき(置いた場所が重なっている等)は、そのまま動いて外へ出る
+  if (!hedgeAt(w, nx, ny, SENBEI.deer) || hedgeAt(w, a.x, a.y, SENBEI.deer)) { a.x = nx; a.y = ny; }
   else if (Math.abs(dx) >= Math.abs(dy) && !hedgeAt(w, a.x, sy, SENBEI.deer)) a.y = sy;
   else if (!hedgeAt(w, sx, a.y, SENBEI.deer)) a.x = sx;
   else if (!hedgeAt(w, a.x, sy, SENBEI.deer)) a.y = sy;

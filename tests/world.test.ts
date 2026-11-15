@@ -224,14 +224,14 @@ test('a running poop starts when you come near, and only catches someone who kee
 });
 
 // ---- 面ごとの攻略経路（予兆がなくても、2回目には抜けられる） ----
-const R11: Move[] = [[384,3240],[384,3060],[384,2700],[448,2600],[448,2460],[300,2460],[300,2200],[300,1900],[256,1800],[256,1710],[400,1710],[400,1480],[384,1140],[384,960]];
+const R11: Move[] = [[384,3240],[384,3060],[440,2720],[448,2600],[448,2460],[300,2460],[300,2200],[300,1900],[256,1800],[256,1710],[400,1710],[400,1480],[300,1300],[300,1110],[384,1040],[384,960]];
 test('1-1 is completable by reading the bait gaps and the last big hole, and each trap catches a straight walk', () => {
   const w = createWorld(LEVEL_1_1);
   follow(w, [...R11, [150,780], [150,380], [GOAL.x, GOAL.y]]);
   assert.equal(w.outcome, 'clear');
   assert.ok(w.traps.every(t => t.state === 'open'));
   assert.ok(w.poops.length > LEVEL_1_1.poops.length);
-  failsWith(LEVEL_1_1, [[384,3240],[384,3060],[384,2700],[448,2600],[448,2300]], 'fall');
+  failsWith(LEVEL_1_1, [[384,3240],[384,3060],[440,2720],[448,2600],[448,2300]], 'fall');
   failsWith(LEVEL_1_1, R11.slice(0, 8).concat([[256,1800],[256,1500]]), 'fall');
   failsWith(LEVEL_1_1, [...R11, [GOAL.x, GOAL.y]], 'fall'); // 安心してゴールへ向かうと、真ん中の大穴
 });
@@ -250,7 +250,7 @@ test('1-2: block, landing hole, sliding poop, running poop, and a goal that runs
   try { follow(chase, [...A12, [520,900], [520,600], [360,420], [360,300], [550,300]]); } catch { /* 落ちる */ }
   assert.equal(chase.outcome, 'fall');
 });
-const A13: Move[] = [[384,3230],[384,3080],[360,2895],['w',3],[384,2400],[384,2295],['w',3],[256,1960],[256,1850],[256,1780],['w',1.2],[256,1650],[400,1600],[400,1575],['w',3],[448,1100],[448,1020],[448,900],[448,871],['w',1.2]];
+const A13: Move[] = [[384,3230],[384,3080],[240,2990],[240,2895],['w',3],[384,2400],[384,2295],['w',3],[256,1960],[256,1850],[256,1780],['w',1.2],[256,1650],[400,1600],[400,1575],['w',3],[448,1100],[448,1020],[448,900],[448,871],['w',1.2]];
 test('1-3: walls at fixed places, running poop, and walls closing in from both sides before the goal', () => {
   const w = createWorld(LEVEL_1_3);
   follow(w, [...A13, [448,776], ['w',3], [GOAL.x, GOAL.y]]);
@@ -258,9 +258,9 @@ test('1-3: walls at fixed places, running poop, and walls closing in from both s
   const jumper = createWorld(LEVEL_1_3); // 閉じた壁を、ジャンプで越えてもよい
   follow(jumper, [...A13, [448,776], ['w',1.4], ['j',0,-1], [GOAL.x, GOAL.y]]);
   assert.equal(jumper.outcome, 'clear');
-  failsWith(LEVEL_1_3, [[GOAL.x, GOAL.y]], 'wall');
+  failsWith(LEVEL_1_3, [[384,3230],[384,3080],[240,2990],[240,2880],[GOAL.x, GOAL.y]], 'wall'); // 植え込みのすき間を抜けて、まっすぐ進むと壁
   failsWith(LEVEL_1_3, [...A13, [GOAL.x, GOAL.y]], 'wall'); // ゴール前で待たないと、左右から閉じる壁
-  failsWith(LEVEL_1_3, [[384,3230],[384,3080],[360,2895],['w',3],[384,2400],[384,2295],['w',3],[256,1960],[256,1500]], 'poop'); // 走るうんこ
+  failsWith(LEVEL_1_3, [[384,3230],[384,3080],[240,2990],[240,2895],['w',3],[384,2400],[384,2295],['w',3],[256,1960],[256,1500]], 'poop'); // 走るうんこ
 });
 
 // ---- 追いかける鹿・降ってくるうんこ ----
@@ -285,7 +285,7 @@ test('aimed rain lands where you stood when the shadow appeared, so a moving pla
 });
 
 // ---- 1-4 / 1-5 ----
-const R14: Move[] = [[448,2740],[448,2625],[350,2580],[350,2300],[256,2180],[256,2070],[400,2030],[400,1700],[384,1620],[384,1520],[300,1480],[300,1250],[480,1120],[500,1090],[500,975],[400,930],[400,700],[GOAL.x,GOAL.y]];
+const R14: Move[] = [[448,2740],[448,2625],[350,2580],[350,2300],[300,2170],[256,2070],[400,2030],[400,1700],[384,1620],[384,1520],[260,1480],[260,1060],[500,1060],[500,975],[400,930],[400,700],[GOAL.x,GOAL.y]];
 test('1-4: reading the bait gaps while a deer chases; stopping gets you caught', () => {
   const w = createWorld(LEVEL_1_4);
   follow(w, [[256,3240],[256,3060],[256,2800], ...R14]);

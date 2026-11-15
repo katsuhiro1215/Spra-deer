@@ -66,3 +66,20 @@ test('新1-6: 池・植え込み・コイン・プレミアムが入っている
   assert.equal(LEVEL_1_6_POND.coins!.filter(c => c.kind === 'premium').length, 1);
   assert.ok(LEVEL_1_6_POND.hints.water);
 });
+
+test('WORLD 1 の10面: どの面にもコインがあり、プレミアムは1枚。コインは植え込み・うんこ・池(石の外)に重ならない', async () => {
+  const { STAGE_1 } = await import('../src/game/levels.ts');
+  const { inHedge } = await import('../src/game/world.ts');
+  for (const slot of STAGE_1) {
+    const lv = slot.level!;
+    const coins = lv.coins ?? [];
+    assert.ok(coins.length >= 8, `${lv.id}: コインが ${coins.length} 枚`);
+    assert.equal(coins.filter(c => c.kind === 'premium').length, 1, `${lv.id}: プレミアムは1枚`);
+    for (const c of coins) {
+      assert.ok(!(lv.hedges ?? []).some(h => inHedge(c, h, 10)), `${lv.id}: (${c.x}, ${c.y}) が植え込みの中`);
+      assert.ok(!lv.poops.some(o => Math.hypot(o.x - c.x, o.y - c.y) < 36), `${lv.id}: (${c.x}, ${c.y}) がうんこに重なる`);
+      const pond = (lv.ponds ?? []).some(o => c.x > o.x && c.x < o.x + o.w && c.y > o.y && c.y < o.y + o.h);
+      assert.ok(!pond || c.air || (lv.stones ?? []).some(s => Math.hypot(s.x - c.x, s.y - c.y) < s.r), `${lv.id}: (${c.x}, ${c.y}) が池の上`);
+    }
+  }
+});

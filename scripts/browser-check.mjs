@@ -138,7 +138,12 @@ try {
 
   // --- 1-3: 壁がいきなり出て、つぶされる ---
   page = await open(context, '1-3');
+  // うんこの列のすき間を抜けてから、植え込みの左のすき間へ寄り、まっすぐ上へ
   await page.keyboard.down('ArrowUp');
+  await page.waitForFunction(() => window.__DEER__.player.y <= 3060);
+  await page.keyboard.down('ArrowLeft');
+  await page.waitForFunction(() => window.__DEER__.player.x <= 240);
+  await page.keyboard.up('ArrowLeft');
   await page.waitForFunction(() => window.__DEER__.walls.some(w => w.progress > .5));
   await snap(page, '09-1-3-wall');
   await page.waitForFunction(() => window.__DEER__.outcome !== 'playing', null, { timeout: 90000 });
@@ -159,7 +164,7 @@ try {
   await snap(sp, '11-small-title');
   assert.ok(await sp.locator('[data-action="home"]').isVisible());
   await toWorld(sp, 1); await snap(sp, '12-small-select');
-  await sp.locator('[data-level="1-3"]').click();
+  await sp.locator('[data-level="1-2"]').click(); // まっすぐ上へ歩くと、ふさぐうんこに当たって結果が出る
   await sp.waitForFunction(() => window.__DEER__?.mode === 'playing');
   const layout = await sp.evaluate(() => {
     const buttons = ['move-pad', 'jump', 'pause'].map(id => document.getElementById(id).getBoundingClientRect().toJSON());

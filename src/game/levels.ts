@@ -88,6 +88,14 @@ export const LEVEL_1_1: LevelDefinition = {
     { id: 'fawn', kind: 'fawn', y: 2000, x1: 150, x2: 570, startX: 550, startDir: -1, speed: 105, firstDrop: 5, dropEvery: 3.2, drops: 3, warning: .9 },
     { id: 'stag', kind: 'stag', y: 1300, x1: 150, x2: 570, startX: 300, startDir: 1, speed: 75, firstDrop: 9, dropEvery: 3.4, drops: 3, warning: 1 },
   ],
+  // 道の形(2026-11-16): 植え込みで、ゆるいS字に。コインは、すき間の上と、奥のすみに
+  hedges: [{ x: 100, y: 2640, w: 280, h: 50 }, { x: 340, y: 1140, w: 280, h: 50 }],
+  coins: [
+    { x: 360, y: 3280 }, { x: 384, y: 3150 }, { x: 500, y: 2760 }, { x: 500, y: 2600 }, { x: 448, y: 2500 },
+    { x: 150, y: 2160, kind: 'gold' }, // 鹿の道の手前、左のすみ
+    { x: 256, y: 1750 }, { x: 230, y: 1250 }, { x: 384, y: 1050 },
+    { x: 565, y: 600, kind: 'premium', air: true }, // ゴールの手前、右のすみ(跳ぶと取れる)
+  ],
   // 床の穴は、ひびも揺れもなく、いきなり開く。
   traps: [
     { id: 'gap-trap', x: 360, y: 2280, width: 176, height: 130, warning: .65, silent: true },
@@ -98,6 +106,7 @@ export const LEVEL_1_1: LevelDefinition = {
   walls: [], sliders: [], chasers: [], rain: [],
   chapters: [
     { above: 3000, text: 'うんこをよけて、上のゴールへ。' },
+    { above: 2750, text: '植え込みは、通れない。すき間へ。' },
     { above: 2400, text: '鹿が止まったら、うんこの合図。' },
     { above: 1850, text: '空いている道。…あれ？' },
     { above: 1100, text: 'うんこの場所は、さっきと違うかも。' },
@@ -122,6 +131,15 @@ export const LEVEL_1_2: LevelDefinition = {
     { id: 'near-hole', x: 330, y: 700, width: 100, height: 90, warning: .35, silent: true },
   ],
   walls: [], chasers: [], rain: [],
+  // 道の形(2026-11-16): 最後のうんこ列の前に、右だけあいた植え込み
+  hedges: [{ x: 100, y: 1270, w: 270, h: 50 }],
+  coins: [
+    { x: 512, y: 3260 }, { x: 560, y: 2900 }, // 跳んだ先の、安全な着地点
+    { x: 512, y: 2600 }, { x: 150, y: 2470, kind: 'gold' }, // ふさぐ列のあいだの、左のすみ
+    { x: 256, y: 1950 }, { x: 448, y: 1500 }, { x: 470, y: 1200 }, { x: 384, y: 1050 },
+    { x: 200, y: 1420, kind: 'premium', air: true }, // 左の奥(跳ぶと取れる)
+    { x: 560, y: 820 },
+  ],
   sliders: [
     // 2つ目のうんこを跳ぶと、右のすみのうんこが、着地点へ動いてくる。
     { id: 'slider', x: 570, y: 2110, toX: 500, toY: 2290, within: 420, speed: 560 },
@@ -152,6 +170,14 @@ export const LEVEL_1_3: LevelDefinition = {
   start: { x: 360, y: 3400 },
   poops: [...row(3150, 384), ...row(1800, 256), ...row(1000, 448)],
   deers: [], traps: [], chasers: [], rain: [],
+  // 道の形(2026-11-16): 最初は左のすき間、壁のあとは右のすき間
+  hedges: [{ x: 300, y: 2900, w: 320, h: 50 }, { x: 100, y: 1180, w: 300, h: 50 }],
+  coins: [
+    { x: 384, y: 3150 }, { x: 200, y: 3010 }, { x: 200, y: 2820 }, { x: 360, y: 2420 },
+    { x: 575, y: 2300, kind: 'gold' }, // 2つ目の壁の手前、右のすみ
+    { x: 256, y: 1800 }, { x: 150, y: 1500, kind: 'premium', air: true }, // 走るうんこの先(跳ぶと取れる)
+    { x: 500, y: 1260 }, { x: 448, y: 1000 }, { x: 360, y: 660 },
+  ],
   walls: [
     { id: 'wall-1', side: 'l', y: 2650, thickness: 80, triggerY: 2900, speed: 950, hold: .5 },
     { id: 'wall-2', side: 'r', y: 2050, thickness: 80, triggerY: 2300, speed: 1100, hold: .5 },
@@ -187,6 +213,17 @@ export const LEVEL_1_4: LevelDefinition = {
   start: { x: 360, y: 3400 },
   poops: [...row(3150, 256), ...row(2650, 448), ...row(2100, 256), ...row(1550, 384), ...row(1000, 512)],
   deers: [], walls: [], sliders: [], rain: [],
+  // 道の形(2026-11-16): まん中へ狭まる植え込みと、分かれ道の柱(左は遠回り、右は近い)。鹿も植え込みを回ってくる
+  hedges: [
+    { x: 100, y: 2200, w: 150, h: 50 }, { x: 520, y: 2200, w: 100, h: 50 },
+    { x: 290, y: 1100, w: 140, h: 200, look: 'rock' },
+  ],
+  coins: [
+    { x: 256, y: 3150 }, { x: 360, y: 2800, kind: 'premium', air: true }, // 跳ぶと取れる(鹿が追ってくる中で)
+    { x: 448, y: 2650 }, { x: 380, y: 2160 }, { x: 256, y: 2100 }, { x: 384, y: 1550 },
+    { x: 160, y: 1200, kind: 'gold' }, // 分かれ道の、遠回りの左
+    { x: 512, y: 1000 }, { x: 360, y: 600 },
+  ],
   // うんこのすきまを抜けた先に、穴がある。抜けたら、すぐ横へ。
   traps: [
     { id: 'hole-1', x: 400, y: 2440, width: 140, height: 110, warning: .35, silent: true },
@@ -221,6 +258,15 @@ export const LEVEL_1_5: LevelDefinition = {
   start: { x: 360, y: 3400 },
   poops: [...row(3150, 512), ...block(3050), ...row(1850, 256), ...row(1350, 448)],
   deers: [], sliders: [],
+  // 道の形(2026-11-16): 最後のすきまのあと、右だけあいた植え込み
+  hedges: [{ x: 100, y: 960, w: 320, h: 50 }],
+  coins: [
+    { x: 512, y: 3260 }, { x: 560, y: 2900 }, { x: 360, y: 2620 }, { x: 360, y: 2200 },
+    { x: 150, y: 2560, kind: 'gold' }, // 降ってくる所の、左のすみ
+    { x: 256, y: 1850 }, { x: 448, y: 1350 }, { x: 520, y: 900 },
+    { x: 150, y: 1150, kind: 'premium', air: true }, // 植え込みの手前、左の奥(跳ぶと取れる)
+    { x: 360, y: 600 },
+  ],
   traps: [
     // 越えて着地した場所が穴になる（1-2と同じ）。
     { id: 'landing-hole', x: 180, y: 2880, width: 260, height: 130, warning: .05, trigger: 'land', landReach: 110, silent: true },
@@ -448,6 +494,15 @@ export const LEVEL_1_10: LevelDefinition = {
   start: { x: 360, y: 3400 },
   poops: [...row(3200, 512), ...block(3080), ...row(2500, 256), ...block(1950), ...row(1400, 448), ...row(900, 256)],
   deers: [],
+  // 道の形(2026-11-16): 最後のうんこ列の前で、右から左へ回りこむ
+  hedges: [{ x: 100, y: 1060, w: 300, h: 50 }],
+  coins: [
+    { x: 512, y: 3300 }, { x: 560, y: 2930 }, { x: 256, y: 2500 }, { x: 470, y: 2380 },
+    { x: 575, y: 2620, kind: 'gold' }, // 壁の手前、右のすみ
+    { x: 520, y: 1800 }, { x: 448, y: 1400 }, { x: 520, y: 1000 }, { x: 256, y: 900 },
+    { x: 150, y: 1200, kind: 'premium', air: true }, // 降ってくる所の、左の奥(跳ぶと取れる)
+    { x: 560, y: 600, kind: 'gold' },
+  ],
   traps: [
     { id: 'landing-hole', x: 180, y: 2900, width: 280, height: 130, warning: .05, trigger: 'land', landReach: 110, silent: true },
     { id: 'hole-1', x: 190, y: 2350, width: 130, height: 100, warning: .3, silent: true },
