@@ -153,8 +153,13 @@ export class KasugaView {
   private deer: THREE.Mesh;
   private deerShadow: THREE.Mesh;
   private runTex: THREE.Texture[] = [];
-  private coinDisc!: THREE.InstancedMesh;
-  private coinRim!: THREE.InstancedMesh;
+  /** コインの形(種類ごと: 0=シルバー 1=ゴールド 2=プレミアム) */
+  private coinSets: { disc: THREE.InstancedMesh; rim: THREE.InstancedMesh }[] = [];
+  /** コースのコインの番号 → 種類・種類の中での番号 */
+  private coinTier: number[] = [];
+  private coinLocal: number[] = [];
+  /** プレミアムコインの光(取ったら消す) */
+  private premiumHalo?: { id: number; s: number; x: number; y: number; obj: THREE.Sprite };
   private obstacleObjs: { o: Obstacle; obj: THREE.Object3D; spin?: THREE.Object3D; sprite?: THREE.Mesh; crit?: { def: CritterDef; tex: Record<'normal' | 'angry' | 'sleep' | 'dizzy', THREE.Texture>; pose: string } }[] = [];
   private critterTex = new Map<string, THREE.Texture>();
   private daibutsu?: { mesh: THREE.Mesh; open: THREE.Texture; wake: THREE.Texture; light: THREE.PointLight; eyes: THREE.Points; hall: THREE.Mesh };
@@ -1514,6 +1519,23 @@ export class KasugaView {
     return new THREE.CanvasTexture(c);
   }
 
+  /** まるい光(まんなかが明るく、外へ消える) */
+  private glowTex?: THREE.CanvasTexture;
+  private glowTexture(): THREE.CanvasTexture {
+    if (this.glowTex) return this.glowTex;
+    const c = document.createElement('canvas');
+    c.width = c.height = 64;
+    const ctx = c.getContext('2d')!;
+    const g = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+    g.addColorStop(0, 'rgba(255,255,255,1)');
+    g.addColorStop(0.35, 'rgba(255,255,255,0.45)');
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 64, 64);
+    this.glowTex = new THREE.CanvasTexture(c);
+    return this.glowTex;
+  }
+
   private glintTexture(): THREE.CanvasTexture {
     return canvasTexture(128, (g, n) => {
       const grd = g.createLinearGradient(0, 0, n, 0);
@@ -1926,17 +1948,42 @@ export class KasugaView {
 
   // ---- コイン ----
   private buildCoins(): void {
-    const n = this.course.coins.length;
     const glow = this.theme.night ? 1.1 : 0.55;
-    const gold = new THREE.MeshStandardMaterial({ color: 0xffc83a, metalness: 0.85, roughness: 0.28, emissive: 0x7a4a00, emissiveIntensity: glow });
-    const rimM = new THREE.MeshStandardMaterial({ color: 0xffe28a, metalness: 0.9, roughness: 0.2, emissive: 0x7a5200, emissiveIntensity: glow });
-    this.coinDisc = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.4, 0.4, 0.1, 28).rotateX(Math.PI / 2), gold, n);
-    this.coinRim = new THREE.InstancedMesh(new THREE.TorusGeometry(0.4, 0.06, 10, 28), rimM, n);
-    for (const m of [this.coinDisc, this.coinRim]) {
-      m.frustumCulled = false;
-      m.castShadow = true;
-      this.scene.add(m);
-    }
+    // 種類ごとに、別の材質(シルバー・ゴールド・プレミアム)。光り方(emissive)まで色を変えるため、まとめずに分ける
+    const mat = (color: number, emissive: number, metal: number, k = 1) =>
+      new THREE.MeshStandardMaterial({ color, metalness: metal, roughness: 0.28, emissive, emissiveIntensity: glow * k });
+    const kinds: { disc: THREE.Material; rim: THREE.Material }[] = [
+      { disc: mat(0xc9d2dc, 0x3c4652, 0.75), rim: mat(0xeef2f6, 0x4a5462, 0.8) }, // シルバー(ふつう)
+      { disc: mat(0xffc83a, 0x7a4a00, 0.85), rim: mat(0xffe28a, 0x7a5200, 0.9) }, // ゴールド(いままでのコインの色)
+      { disc: mat(0xb05cff, 0x6a1fb0, 0.5, 1.6), rim: mat(0xf0c8ff, 0x8a3ad8, 0.6, 1.6) }, // プレミアム
+    ];
+    const tierOf = (c: { kind?: string }) => (c.kind === 'gold' ? 1 : c.kind === 'premium' ? 2 : 0);
+    const counts = [0, 0, 0];
+    this.coinTier = this.course.coins.map((c) => tierOf(c));
+    this.coinLocal = this.course.coins.map((c) => counts[tierOf(c)]++);
+    const discGeo = new THREE.CylinderGeometry(0.4, 0.4, 0.1, 28).rotateX(Math.PI / 2);
+    const rimGeo = new THREE.TorusGeometry(0.4, 0.06, 10, 28);
+    this.coinSets = kinds.map((k, i) => {
+      const disc = new THREE.InstancedMesh(discGeo, k.disc, Math.max(1, counts[i]));
+      const rim = new THREE.InstancedMesh(rimGeo, k.rim, Math.max(1, counts[i]));
+      for (const m of [disc, rim]) {
+        m.frustumCulled = false;
+        m.castShadow = true;
+        // まだ置いていない(数が0の種類の、空の1つ)は見せない
+        for (let j = 0; j < m.count; j++) m.setMatrixAt(j, new THREE.Matrix4().makeScale(0, 0, 0));
+        this.scene.add(m);
+      }
+      return { disc, rim };
+    });
+    this.course.coins.forEach((c) => {
+      // プレミアムは、遠くからでも見える光の輪
+      if (c.kind === 'premium') {
+        const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.glowTexture(), color: 0xd59bff, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false, fog: false }));
+        halo.scale.setScalar(3.6);
+        this.scene.add(halo);
+        this.premiumHalo = { id: c.id, s: c.s, x: c.x, y: c.y, obj: halo };
+      }
+    });
     // 回復薬(ハートが1つふえる)
     for (const c of this.course.coins) {
       if (c.kind !== 'potion') continue;
@@ -2159,15 +2206,28 @@ export class KasugaView {
       const alive = !run.collected.has(cn.id) && near;
       if (!alive && this.lastCoinState[i] === 0) continue;
       this.lastCoinState[i] = alive ? 1 : 0;
-      const k = alive && cn.kind !== 'potion' ? 1 : 0;
+      const k = alive && cn.kind !== 'potion' ? (cn.kind === 'premium' ? 1.7 : cn.kind === 'gold' ? 1.3 : 1) : 0;
       this.tmpQ.setFromEuler(this.tmpE.set(0, spin + i * 0.7, 0));
       const cw = this.roadW(cn.s, cn.x);
       this.tmpM.compose(this.tmpP.set(cw.x, cw.y + cn.y + Math.sin(t * 3 + i) * 0.06, cw.z), this.tmpQ, this.tmpS.set(k, k, k));
-      this.coinDisc.setMatrixAt(i, this.tmpM);
-      this.coinRim.setMatrixAt(i, this.tmpM);
+      const set = this.coinSets[this.coinTier[i]];
+      set.disc.setMatrixAt(this.coinLocal[i], this.tmpM);
+      set.rim.setMatrixAt(this.coinLocal[i], this.tmpM);
     }
-    this.coinDisc.instanceMatrix.needsUpdate = true;
-    this.coinRim.instanceMatrix.needsUpdate = true;
+    for (const set of this.coinSets) {
+      set.disc.instanceMatrix.needsUpdate = true;
+      set.rim.instanceMatrix.needsUpdate = true;
+    }
+    if (this.premiumHalo) {
+      const h = this.premiumHalo;
+      const on = !run.collected.has(h.id) && h.s - run.s < 170 && h.s - run.s > -1.5;
+      h.obj.visible = on;
+      if (on) {
+        const hw = this.roadW(h.s, h.x);
+        h.obj.position.set(hw.x, hw.y + h.y, hw.z);
+        h.obj.scale.setScalar(3.2 + 0.5 * Math.sin(t * 5));
+      }
+    }
     for (const po of this.potionObjs) {
       const near = po.s - run.s < 170 && po.s - run.s > -1.5 && !run.collected.has(po.id);
       po.obj.visible = near;

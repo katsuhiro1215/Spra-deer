@@ -10,7 +10,7 @@ export interface Input {
 
 export type Phase = 'ready' | 'running' | 'cleared' | 'failed';
 export type SimEvent = {
-  kind: 'coin' | 'heal' | 'jump' | 'launch' | 'land' | 'hit' | 'fall' | 'slip' | 'slow' | 'slide' | 'clear' | 'fail' | 'bell' | 'warn' | 'thunder' | 'spill' | 'charge';
+  kind: 'coin' | 'gold' | 'premium' | 'heal' | 'jump' | 'launch' | 'land' | 'hit' | 'fall' | 'slip' | 'slow' | 'slide' | 'clear' | 'fail' | 'bell' | 'warn' | 'thunder' | 'spill' | 'charge';
   id?: number;
 };
 
@@ -40,7 +40,12 @@ export class Run {
   vy = 0;
   speedMul = 1;
   lives = MAX_LIVES;
+  /** ふつうのコイン(シルバー)の数 */
   coins = 0;
+  /** ゴールドコインの数 */
+  gold = 0;
+  /** この面のプレミアムコインを取ったか(ゴールまで持ち帰ると、自分のものになる) */
+  premium = false;
   invuln = 0;
   slip = 0;
   /** こおりをふんだあと、左右がきかない残り時間。 */
@@ -334,9 +339,15 @@ export class Run {
       const dx = c.x - this.x;
       const ds = c.s - this.s;
       const dy = c.y - cy;
-      if (dx * dx + ds * ds + dy * dy < (c.kind === 'potion' ? 1.5 : 1.05) ** 2) {
+      if (dx * dx + ds * ds + dy * dy < (c.kind === 'potion' ? 1.5 : c.kind === 'premium' ? 1.2 : 1.05) ** 2) {
         this.collected.add(c.id);
-        if (c.kind === 'potion') {
+        if (c.kind === 'gold') {
+          this.gold += 1;
+          this.events.push({ kind: 'gold', id: c.id });
+        } else if (c.kind === 'premium') {
+          this.premium = true;
+          this.events.push({ kind: 'premium', id: c.id });
+        } else if (c.kind === 'potion') {
           // 回復薬: ハートが1つふえる(3つまで)
           this.lives = Math.min(MAX_LIVES, this.lives + 1);
           this.events.push({ kind: 'heal', id: c.id });

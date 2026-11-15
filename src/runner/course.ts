@@ -60,9 +60,15 @@ export interface Coin {
   s: number;
   x: number;
   y: number; // 地面からの高さ(ジャンプで取るコインは高い)
-  /** potion=回復薬(ハートが1つふえる)。無ければ、ふつうのコイン */
-  kind?: 'potion';
+  /**
+   * potion=回復薬(ハートが1つふえる)/gold=ゴールドコイン(少しだけ。取りにくい所)/
+   * premium=プレミアムコイン(1つの面に1枚だけ。とても取りにくい所)。無ければ、ふつうのコイン(シルバー)
+   */
+  kind?: 'potion' | 'gold' | 'premium';
 }
+
+/** ゴールドコインの数(コースの長さで決める。1000mで5枚、2400mで7枚) */
+export const goldCount = (length: number): number => 3 + Math.floor(length / 500);
 
 /** 走りの手ごたえ。面ごとに変える(雨や雪では、左右がすべる)。 */
 export interface Rules {
@@ -644,6 +650,7 @@ export function buildCourse(opts: CourseOptions = {}): Course {
     while (obstacles.some((o) => Math.abs(o.s - ps) < 16 + o.len)) ps += 6;
     coins.push({ id: id++, s: ps, x: 0, y: 1.1, kind: 'potion' });
   }
+  placeSpecialCoins(coins, obstacles, bumps, length, () => id++);
   const course: Course = { obstacles, coins, length, rules: opts.rules, curve: opts.curve, wake: opts.wake };
   if (opts.hills) course.hills = opts.hills;
   if (bumps.length) course.bumps = bumps;
@@ -652,4 +659,56 @@ export function buildCourse(opts: CourseOptions = {}): Course {
     course.straights = [[br.from - 10, br.to + 10]];
   }
   return course;
+}
+
+/**
+ * ゴールド・プレミアムのコインを置く(設計書 25-3・26-3)。
+ * - ゴールド: コースを goldCount 等分し、それぞれで「いちばん取りにくい」ふつうのコイン(高い・端)を金にする
+ * - プレミアム: 1枚だけ。中盤〜終盤のジャンプ台があれば、大ジャンプでしか届かない高い所のコイン(先っぽ+9m・高さ6.6m)。
+ *   無ければ、終盤の穴の上の、高くて端に寄った所(穴を跳ぶ、いちばん高い所でだけ届く)
+ */
+function placeSpecialCoins(coins: Coin[], obstacles: Obstacle[], bumps: Bump[], length: number, nextId: () => number): void {
+  const isPlain = (c: Coin) => c.kind === undefined;
+  // プレミアム
+  const lo = length * 0.35;
+  const hi = length * 0.92;
+  const ramps = bumps.filter((b) => b.s > lo && b.s < hi);
+  let premium: Coin | undefined;
+  if (ramps.length) {
+    const b = ramps[Math.floor(ramps.length / 2)];
+    premium = coins.find((c) => isPlain(c) && Math.abs(c.s - (b.s + 9)) < 0.01 && c.y > 6);
+  }
+  if (!premium) {
+    const holes = obstacles.filter((o) => o.kind === 'hole' && o.s > length * 0.5 && o.s < hi && o.halfW > 2);
+    const h = holes[Math.floor(holes.length / 2)];
+    if (h) {
+      const s = h.s + h.len / 2;
+      // 穴の上のふつうのコインは、まぎらわしいので消す
+      for (let i = coins.length - 1; i >= 0; i--) if (isPlain(coins[i]) && Math.abs(coins[i].s - s) < 2.5) coins.splice(i, 1);
+      // 高さ3.2m・端に寄せる: 穴を跳ぶとき、跳ぶ場所(いちばん高い所が穴の真ん中)と左右の位置の両方が合ったときだけ届く
+      premium = { id: nextId(), s, x: holes.length % 2 ? 2.2 : -2.2, y: 3.2 };
+      coins.push(premium);
+    }
+  }
+  if (premium) premium.kind = 'premium';
+  // ゴールド(ゴール前のコインシャワーと、出だしは除く)
+  const from = 60;
+  const to = length - 60;
+  const n = goldCount(length);
+  for (let k = 0; k < n; k++) {
+    const a = from + ((to - from) * k) / n;
+    const b = from + ((to - from) * (k + 1)) / n;
+    let best: Coin | undefined;
+    let score = -1;
+    for (const c of coins) {
+      if (!isPlain(c) || c.s < a || c.s >= b) continue;
+      if (premium && Math.abs(c.s - premium.s) < 6) continue;
+      const sc = c.y * 2 + Math.abs(c.x) * 0.8;
+      if (sc > score) {
+        score = sc;
+        best = c;
+      }
+    }
+    if (best) best.kind = 'gold';
+  }
 }

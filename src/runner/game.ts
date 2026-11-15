@@ -34,6 +34,11 @@ const hintKey = (o: Obstacle) => (o.kind === 'critter' ? `critter:${o.behavior}`
 export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
   const q = <T extends HTMLElement>(k: string) => root.querySelector<T>(`[data-ks="${k}"]`)!;
   const course = courseOf(level);
+  const wallet = new Wallet();
+  // プレミアムコインは1つの面に1枚だけ。もう取った面には出さない(設計書 25-3)
+  const premiumTaken = wallet.hasPremium(level.id);
+  if (premiumTaken) course.coins = course.coins.filter((c) => c.kind !== 'premium');
+  const silverTotal = course.coins.filter((c) => c.kind === undefined).length;
   const view = new KasugaView(q('stage'), course, level);
   const progress = new Progress();
   const MILESTONES: [number, string][] = [
@@ -43,7 +48,7 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
   ];
   const nextLevel = RUNNER_LEVELS[RUNNER_LEVELS.findIndex((l) => l.id === level.id) + 1];
   // チェックポイント: 通過したときの状態を覚えておき、失敗したら、そこから続けられる
-  type Snapshot = { s: number; name: string; coins: number; collected: Set<number>; t: number };
+  type Snapshot = { s: number; name: string; coins: number; gold: number; premium: boolean; collected: Set<number>; t: number };
   const CPS = (level.checkpoints ?? []).map((c) => ({ s: c.at * course.length, name: c.name }));
   const cpEls = CPS.map((c) => {
     const el = document.createElement('span');
@@ -53,7 +58,6 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
     return el;
   });
   let saved: Snapshot | null = null;
-  const wallet = new Wallet();
   let charged = false; // この回の失敗で、体力をもう減らしたか
   let continued = false;
   q('lv-id').textContent = `面 ${level.id}`;
@@ -61,6 +65,7 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
   q('lv-goal').textContent = level.goalName;
   q('s-title').textContent = level.title;
   q('s-lead').textContent = level.summary;
+  q('s-prem').textContent = premiumTaken ? '◆ この面の プレミアムコインは 取ったよ' : '◆ この面には プレミアムコインが 1まい かくれている';
   let run = new Run(course);
   const byId = new Map(course.obstacles.map((o) => [o.id, o]));
   const input: Input = { left: false, right: false, jump: false };
@@ -85,6 +90,8 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
   const sound = (e: SimEvent) => {
     switch (e.kind) {
       case 'coin': tone(1180, 1760, 0.13, 'triangle', 0.08); break;
+      case 'gold': audio.sfx('gold'); break;
+      case 'premium': audio.sfx('premium'); break;
       case 'heal': audio.sfx('heal'); break;
       case 'jump': audio.sfx('jump'); break;
       // ジャンプ台のダッシュは、きらきら。坂の頂上で浮いただけなら、短い合成音
@@ -147,6 +154,8 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
 
   // ---- HUD ----
   const elCoins = q('coins');
+  const elGold = q('gold');
+  const elPrem = q('prem');
   const elHearts = q('hearts');
   const elFill = q('fill');
   const elMark = q('mark');
@@ -167,6 +176,8 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
     if (elStatus.textContent !== msg) elStatus.textContent = msg;
     elStatus.classList.toggle('on', msg !== '');
     elCoins.textContent = String(run.coins);
+    elGold.textContent = String(run.gold);
+    elPrem.hidden = !run.premium;
     elHearts.textContent = '♥'.repeat(Math.max(0, run.lives)) + '♡'.repeat(Math.max(0, 3 - run.lives));
     const p = `${(run.progress * 100).toFixed(1)}%`;
     elFill.style.width = p;
@@ -192,15 +203,16 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
   const showResult = () => {
     const cleared = run.phase === 'cleared';
     const time = run.t.toFixed(1);
-    const total = course.coins.length;
     const stars = cleared ? (run.lives === 3 ? 3 : run.lives === 2 ? 2 : 1) : 0;
     let newBest = false;
     if (cleared && !recorded) {
       recorded = true;
       newBest = progress.clear(level.id, run.t, !continued); // 途中から続けたときは、タイムを記録しない
       // ごほうび(設計書 25-3): 取ったコインはシルバーとして持ち帰り。はじめてのクリア・★3でゴールド
-      const got = clearRewards(wallet, level.id, { silver: run.coins, star3: stars === 3 });
-      q('r-reward').textContent = `+${got.silver} シルバー` + (got.gold ? `　+${got.gold} ゴールド` : '');
+      const got = clearRewards(wallet, level.id, { silver: run.coins, gold: run.gold, star3: stars === 3 });
+      // プレミアムは、ゴールまで持ち帰ったときだけ自分のものになる
+      const prem = run.premium && wallet.takePremium(level.id);
+      q('r-reward').textContent = `+${got.silver} シルバー` + (got.gold ? `　+${got.gold} ゴールド` : '') + (prem ? '　+1 プレミアム！' : '');
       q('r-reward').classList.remove('lose');
     }
     if (!cleared && !charged) {
@@ -214,7 +226,7 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
     const best = progress.get(level.id).best;
     q('r-title').textContent = cleared ? `${level.goalName}に とうちゃく！` : 'ざんねん… もうすこしだった';
     q('r-stars').textContent = cleared ? '★'.repeat(stars) + '☆'.repeat(3 - stars) : '';
-    q('r-coins').textContent = `${run.coins} / ${total}`;
+    q('r-coins').textContent = `${run.coins} / ${silverTotal}` + (run.gold ? `　金 ${run.gold}` : '') + (run.premium ? '　◆' : '');
     q('r-hearts').textContent = '♥'.repeat(Math.max(0, run.lives)) || '—';
     q('r-time').textContent = cleared
       ? `${time} 秒${continued ? '（途中から）' : newBest ? '（ベスト更新！）' : ''}`
@@ -260,6 +272,8 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
       run.s = from.s;
       run.t = from.t;
       run.coins = from.coins;
+      run.gold = from.gold;
+      run.premium = from.premium;
       for (const id of from.collected) run.collected.add(id);
       for (const o of course.obstacles) {
         if (o.trig !== undefined && o.s < from.s + 2) {
@@ -468,6 +482,11 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
       } else if (e.kind === 'clear') {
         toast(`${level.goalName}に とうちゃく！`, 4000);
       }
+      if (e.kind === 'gold') toast('ゴールドコイン！', 1300);
+      if (e.kind === 'premium') {
+        view.bump(0.15);
+        toast('◆ プレミアムコイン！！ ゴールまで もちかえろう', 2800);
+      }
       if (e.kind === 'coin') {
         elCoins.classList.remove('ks-pop');
         void elCoins.offsetWidth;
@@ -499,7 +518,7 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
       }
       CPS.forEach((c, i) => {
         if (run.s >= c.s && (!saved || saved.s < c.s)) {
-          saved = { s: c.s, name: c.name, coins: run.coins, collected: new Set(run.collected), t: run.t };
+          saved = { s: c.s, name: c.name, coins: run.coins, gold: run.gold, premium: run.premium, collected: new Set(run.collected), t: run.t };
           cpEls[i].classList.add('passed');
           audio.sfx('checkpoint');
           toast(`チェックポイント！ ${c.name}`, 2200);

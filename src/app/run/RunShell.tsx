@@ -32,6 +32,11 @@ export function RunShell() {
             <div className="ks-chip">
               <span className="ks-coin-icon" />
               <b data-ks="coins">0</b>
+              <span className="ks-coin-icon gold" />
+              <b data-ks="gold">0</b>
+              <span className="ks-prem" data-ks="prem" hidden>
+                ◆
+              </span>
             </div>
             <div className="ks-chip ks-level">
               <small data-ks="lv-id" />
@@ -65,6 +70,7 @@ export function RunShell() {
             <p className="ks-badge">WORLD 3 鹿、走る。</p>
             <h1 data-ks="s-title" />
             <p className="ks-lead" data-ks="s-lead" />
+            <p className="ks-prem-note" data-ks="s-prem" />
             <ul className="ks-how">
               <li>
                 <b>◀ ▶</b> 左右にうごく(キーボードは ← →)
