@@ -40,11 +40,31 @@ export class Progress {
     this.edit(id, r => { r.clears++; if (isBest) r.best = time; });
     return isBest;
   }
-  /** 遊べる面のうち、直前の面をクリアした面（最初の面は常に）が選べる。 */
+  /** 開発中に全部の面を開くか(テストでは false にして、本来の開き方を確かめる) */
+  unlockAll = UNLOCK_ALL;
+  /** 次のワールドが開くのに要る、前のワールドのクリア数(設計書 25-1) */
+  static readonly STAGE_KEY_CLEARS = 3;
+  /**
+   * 面が選べるか(設計書 25-1)。ワールドの中は順番どおり(1-2 は 1-1 のクリアで開く)。
+   * ワールドの最初の面は、前のワールドの面を3つ(面が3つ未満なら全部)クリアすると開く。最初のワールドの最初の面は、いつでも選べる。
+   */
   isUnlocked(id: string): boolean {
-    const index = ALL_PLAYABLE_SLOTS.findIndex(l => l.id === id);
-    if (UNLOCK_ALL) return index >= 0;
-    return index === 0 || (index > 0 && this.get(ALL_PLAYABLE_SLOTS[index - 1].id).clears > 0);
+    const slot = ALL_PLAYABLE_SLOTS.find(l => l.id === id);
+    if (!slot) return false;
+    if (this.unlockAll) return true;
+    const same = ALL_PLAYABLE_SLOTS.filter(l => l.stage === slot.stage);
+    const pos = same.indexOf(slot);
+    if (pos > 0) return this.get(same[pos - 1].id).clears > 0;
+    return this.stageOpenNeeds(slot.stage) === 0;
+  }
+  /** そのワールドが開くまでに、前のワールドで、あといくつクリアが要るか(開いていれば 0) */
+  stageOpenNeeds(stage: number): number {
+    const stages = [...new Set(ALL_PLAYABLE_SLOTS.map(l => l.stage))];
+    const i = stages.indexOf(stage);
+    if (i <= 0 || this.unlockAll) return 0;
+    const prev = stages[i - 1];
+    const need = Math.min(Progress.STAGE_KEY_CLEARS, ALL_PLAYABLE_SLOTS.filter(l => l.stage === prev).length);
+    return Math.max(0, need - this.clearedCount(prev));
   }
   clearedCount(stage: number): number { return ALL_PLAYABLE_SLOTS.filter(l => l.stage === stage && this.get(l.id).clears > 0).length; }
 }
