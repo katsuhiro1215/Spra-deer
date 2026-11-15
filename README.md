@@ -181,3 +181,11 @@ Ownerの試遊で「簡単すぎる」と判断。旧 1-1〜1-4 は不採用（G
 - 面のひらき方(`src/progress.ts`): ワールドの中は順番どおり、次のワールドは前のワールドを3面クリアで開く。開発中は `UNLOCK_ALL` で全部開いたまま
 - 3D走り(/run/): 体力の表示・不足で始められない・失敗で−2・ページを離れると−2・クリアでコインのごほうび。戻り先は WORLD 3 の面えらび(`/#world-3`)
 - 設計: `rooms/Spra/dev/SpraDeer/design.md` 25章
+
+## 2026-11-15 WORLD 3「鹿、走る。」の仕上げ(BGM・コイン・子分の攻撃・軽さ)
+
+- 音(`src/runner/audio.ts`): BGM `public/assets/audio/run.mp3`(ループの位置は `RUN_BGM`)、ジングルは2Dと共通、効果音 `public/assets/audio/sfx/`(効果音ラボ。**音声ファイル単体の再配布は禁止**なので、リポジトリを公開するときは外す)。音の ON/OFF は `spra-deer:sound:v1`(2Dと共通)
+- コイン: `Coin.kind` に `gold`・`premium`。置き方は `src/runner/course.ts` の `placeSpecialCoins`。プレミアムは取った面には出さない(`Wallet.hasPremium`)
+- ラムガの子分: `kind: 'bomb' | 'bat'`(ねらいは `Run.aim`)。パターン名 `minionBomb`・`minionBat`。絵は `scripts/build-minions.py` で切り出し
+- 軽さの計測: `node scripts/perf-runner.mjs`(面ごと)・`node scripts/perf-breakdown.mjs 3-10`(内わけ)。dev サーバーを起動しておく
+- 設計: `rooms/Spra/dev/SpraDeer/design.md` 27章
