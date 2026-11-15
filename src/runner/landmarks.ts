@@ -7,7 +7,7 @@ export const LANDMARK_ASPECT: Record<string, number> = {
   'yakushiji-pagoda': 0.5389,
   'toshodaiji-hall': 2.0504,
   'horyuji': 1.5550,
-  'omiwa-snow': 0.9275,
+  'omiwa-snow': 0.8782,
   'zaodo': 1.5398,
   'koriyama-castle': 1.5492,
   'suzakumon': 1.9655,
@@ -17,4 +17,7 @@ export const LANDMARK_ASPECT: Record<string, number> = {
   'ikoma': 3.3755,
   'osaka-skyline': 3.1434,
   'fake-senbei': 0.9956,
+  'kasuga': 2.0260,
+  'osaka-bay': 2.9985,
+  'train': 3.9882,
 };

@@ -24,7 +24,7 @@ ITEMS = {
     'yakushiji-pagoda': ('鮮やかな三重塔の精巧な3Dイラスト.png', 1024, False, False),
     'toshodaiji-hall': ('唐招提寺金堂の正面建築.png', 1024, False, False),
     'horyuji': ('法隆寺風の五重塔と金堂.png', 1024, False, False),
-    'omiwa-snow': ('鮮やかな赤い鳥居と森の山.png', 1024, False, True),
+    'omiwa-snow': ('雪灯りの冬神社鳥居.png', 1024, False, False),
     'zaodo': ('紅葉に彩られた壮麗な寺院門前.png', 1024, False, False),
     'koriyama-castle': ('春の郡山城と桜 दृश्य.png', 1024, True, False),
     'suzakumon': ('朱雀門の壮麗な正面図-2.png', 1024, False, False),
@@ -34,6 +34,9 @@ ITEMS = {
     'ikoma': ('生駒山の放送塔と雲海.png', 1600, True, False),
     'osaka-skyline': ('夕焼けに映える大阪の街並み.png', 1600, True, False),
     'fake-senbei': ('鹿印のくしゃくしゃ包み紙.png', 256, False, False),
+    'kasuga': ('春日大社風朱塗り楼門と灯籠回廊.png', 1400, False, False),
+    'osaka-bay': ('夕焼け港の観覧車と大橋.png', 2048, False, False),
+    'train': ('温もりの二両編成電車.png', 1400, False, False),
 }
 
 

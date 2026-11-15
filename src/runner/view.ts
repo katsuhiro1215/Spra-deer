@@ -176,7 +176,6 @@ export class KasugaView {
   /** カメラの高さの基準(坂に合わせて、なめらかに追う) */
   private camBase = 0;
   private camLook = 0;
-  private wheel?: THREE.Object3D;
   private weather?: { pts: THREE.Object3D; pos: Float32Array; n: number; rain: boolean; seed: Float32Array; flutter: boolean };
   private disposables: { dispose(): void }[] = [];
 
@@ -1042,80 +1041,19 @@ export class KasugaView {
   private buildTorii(): void {
     const L = this.course.length;
     for (const f of [0.09, 0.23, 0.38, 0.52, 0.65, 0.76, 0.85, 0.92]) this.scene.add(this.torii(Math.round(L * f)));
-    this.scene.add(this.torii(L, 1.35)); // ゴールの大鳥居
+    if (this.theme.goal !== 'omiwa') this.scene.add(this.torii(L, 1.35)); // ゴールの大鳥居(大神神社は絵の鳥居)
   }
 
   // ---- 春日大社 ----
   private buildShrine(): void {
     const th = this.theme;
     const g = new THREE.Group();
-    const red = new THREE.MeshStandardMaterial({ color: RED, roughness: 0.5, emissive: 0x240700 });
-    const white = new THREE.MeshStandardMaterial({ color: th.snowCaps ? 0xffffff : 0xf6f0e2, roughness: 0.85 });
-    const roof = new THREE.MeshStandardMaterial({ color: th.snowCaps ? 0xe8eef4 : 0x6f5a45, roughness: 0.95 });
-    const roofEdge = new THREE.MeshStandardMaterial({ color: th.snowCaps ? 0xcfd8e2 : 0x4a3b2d, roughness: 0.9 });
-    const stoneM = new THREE.MeshStandardMaterial({ color: th.snowCaps ? 0xe6edf3 : 0xcdc5b4, roughness: 0.95 });
-    const gold = new THREE.MeshStandardMaterial({ color: 0xffd36a, metalness: 0.6, roughness: 0.3, emissive: 0x6a4410, emissiveIntensity: 0.6 });
-    const lampM = new THREE.MeshStandardMaterial({ color: 0xffe2a0, emissive: 0xffa830, emissiveIntensity: th.lampGlow + 0.4 });
-    const lampPts: THREE.Vector3[] = [];
-
-    for (let i = 0; i < 5; i++) {
-      const st = new THREE.Mesh(new THREE.BoxGeometry(18 + i * 1.5, 0.5, 2.2), stoneM);
-      st.position.set(0, 0.25 + i * 0.5, 17 - i * 1.6 - 6);
-      st.receiveShadow = true;
-      st.castShadow = true;
-      g.add(st);
-    }
-    const plat = new THREE.Mesh(new THREE.BoxGeometry(46, 2.5, 34), stoneM);
-    plat.position.set(0, 1.25, -8);
-    plat.receiveShadow = true;
-    g.add(plat);
-
-    const building = (x: number, z: number, w: number, d: number, h: number, y0: number, pillarN: number) => {
-      const b = new THREE.Group();
-      const body = new THREE.Mesh(new THREE.BoxGeometry(w - 1, h, d - 1), white);
-      body.position.y = h / 2;
-      body.castShadow = true;
-      b.add(body);
-      for (let i = 0; i < pillarN; i++) {
-        const px = -w / 2 + 0.5 + (i * (w - 1)) / (pillarN - 1);
-        for (const pz of [d / 2 - 0.3, -d / 2 + 0.3]) {
-          const p = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.4, h, 12), red);
-          p.position.set(px, h / 2, pz);
-          p.castShadow = true;
-          b.add(p);
-        }
-      }
-      const beam = new THREE.Mesh(new THREE.BoxGeometry(w + 0.4, 0.7, d + 0.4), red);
-      beam.position.y = h + 0.35;
-      b.add(beam);
-      const r1 = new THREE.Mesh(new THREE.ConeGeometry(Math.hypot(w, d) * 0.82, h * 0.8, 4), roof);
-      r1.rotation.y = Math.PI / 4;
-      r1.scale.set((w / Math.hypot(w, d)) * 1.0, 1, (d / Math.hypot(w, d)) * 1.0);
-      r1.position.y = h + 0.7 + h * 0.4;
-      r1.castShadow = true;
-      const eave = new THREE.Mesh(new THREE.BoxGeometry(w + 3.4, 0.5, d + 3.4), roofEdge);
-      eave.position.y = h + 0.95;
-      eave.castShadow = true;
-      b.add(r1, eave);
-      const n = Math.max(3, Math.floor(w / 2.4));
-      for (let i = 0; i < n; i++) {
-        const lx = -w / 2 + 0.8 + (i * (w - 1.6)) / (n - 1);
-        const lamp = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.7, 10), lampM);
-        lamp.position.set(lx, h - 0.5, d / 2 + 0.9);
-        const cap = new THREE.Mesh(new THREE.ConeGeometry(0.34, 0.2, 10), gold);
-        cap.position.set(lx, h - 0.05, d / 2 + 0.9);
-        b.add(lamp, cap);
-        lampPts.push(new THREE.Vector3(x + lx, y0 + h - 0.5, z + d / 2 + 0.9));
-      }
-      b.position.set(x, y0, z);
-      g.add(b);
-    };
-    building(0, 5, 14, 7, 7.5, 2.5, 4);
-    building(-15.5, 2, 13, 5, 5.2, 2.5, 4);
-    building(15.5, 2, 13, 5, 5.2, 2.5, 4);
-    building(0, -10, 18, 10, 8.5, 2.5, 5);
-    building(-9, -22, 9, 7, 7, 2.5, 3);
-    building(9, -22, 9, 7, 7, 2.5, 3);
+    // 中門と回廊(絵)。参道の正面、ゴールの奥に立てる
+    const H = 26;
+    const pic = this.board('kasuga', H);
+    pic.position.set(0, 0, -8);
+    g.add(pic);
+    // 奥の山と杉(絵のうしろを、深い森に見せる)
     const hill = new THREE.Mesh(
       new THREE.SphereGeometry(60, 28, 16),
       new THREE.MeshStandardMaterial({ color: th.snowCaps ? 0xdfe9f1 : th.night ? 0x2a5538 : 0x4d8a47, roughness: 1 }),
@@ -1132,13 +1070,13 @@ export class KasugaView {
       t.scale.setScalar(0.9 + rnd() * 0.8);
       g.add(t);
     }
-    const SC = 1.2;
     g.position.set(0, 0, -this.end);
-    g.scale.setScalar(SC);
     this.scene.add(g);
     if (th.halo > 0) {
-      // 吊り灯籠の光を、社殿の位置に合わせて置く
-      this.addHalos(lampPts.map((p) => new THREE.Vector3(p.x * SC, p.y * SC, p.z * SC - this.end)), 0xffb450, 5.5 * th.halo + 1.5, Math.min(1, th.halo));
+      // 石灯籠の光(絵の中の4基の位置)
+      const W = H * (LANDMARK_ASPECT['kasuga'] ?? 2);
+      const pts = [0.14, 0.31, 0.69, 0.86].map((u) => new THREE.Vector3((u - 0.5) * W, H * 0.23, -8 - this.end + 0.2));
+      this.addHalos(pts, 0xffb450, 5.5 * th.halo + 1.5, Math.min(1, th.halo));
     }
   }
 
@@ -1146,67 +1084,40 @@ export class KasugaView {
   private buildBay(): void {
     const L = this.course.length;
     const pier = L + 60;
-    // 海
+    // 遠景(絵): 観覧車・夕日・船・大橋。絵の中の海の線(下から約30%)を、手前の海につなぐ
+    const far = pier + 200; // カメラの見える距離(420m)の内側
+    const BW = 380; // 観覧車(絵の左16%)と夕日(56%)が、たて画面に両方入る大きさ
+    const BH = BW / (LANDMARK_ASPECT['osaka-bay'] ?? 3);
+    const bay = new THREE.Mesh(
+      new THREE.PlaneGeometry(BW, BH).translate(0, BH / 2, 0),
+      new THREE.MeshBasicMaterial({ map: loadTex(`${ASSET}/runner/landmarks/osaka-bay.webp`), alphaMap: this.topFade(), transparent: true, toneMapped: false, fog: false, depthWrite: false }),
+    );
+    const cx = (0.5 - 0.36) * BW; // 絵の36%の所を正面に
+    bay.position.set(cx, -1.1 - BH * 0.3, -far);
+    bay.renderOrder = -1;
+    bay.frustumCulled = false;
+    this.scene.add(bay);
+    // 手前の海(絵の海の色に合わせる)
     const sea = new THREE.Mesh(
-      new THREE.PlaneGeometry(1400, 900),
-      new THREE.MeshStandardMaterial({ color: 0x2c6c9c, roughness: 0.16, metalness: 0.15 }),
+      new THREE.PlaneGeometry(1400, far - pier),
+      new THREE.MeshStandardMaterial({ color: 0x4a5a8e, roughness: 0.16, metalness: 0.15 }),
     );
     sea.rotation.x = -Math.PI / 2;
-    sea.position.set(0, -1.1, -(pier + 420));
+    sea.position.set(0, -1.1, -(pier + (far - pier) / 2));
     this.scene.add(sea);
     // 岸のへり
     const quay = new THREE.Mesh(new THREE.BoxGeometry(200, 1.2, 1.2), new THREE.MeshStandardMaterial({ color: 0x8a8a90, roughness: 0.9 }));
     quay.position.set(0, -0.5, -(pier + 0.5));
     quay.receiveShadow = true;
     this.scene.add(quay);
-    // 夕日のきらめく道
+    // 夕日のきらめく道(絵の夕日の下へ)
     const glint = new THREE.Mesh(
-      new THREE.PlaneGeometry(46, 380),
+      new THREE.PlaneGeometry(40, far - pier),
       new THREE.MeshBasicMaterial({ map: this.glintTexture(), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }),
     );
     glint.rotation.x = -Math.PI / 2;
-    glint.position.set(-34, -1.0, -(pier + 215));
+    glint.position.set(cx + BW * (0.56 - 0.5), -1.0, -(pier + (far - pier) / 2));
     this.scene.add(glint);
-    // 夕日
-    const sunDisc = new THREE.Mesh(new THREE.CircleGeometry(30, 40), new THREE.MeshBasicMaterial({ color: 0xffd48a, fog: false }));
-    sunDisc.position.set(-44, 26, -(pier + 400));
-    this.scene.add(sunDisc);
-    // 遠くの山
-    const mtn = new THREE.MeshStandardMaterial({ color: 0x5a4a78, roughness: 1, flatShading: true });
-    for (let i = 0; i < 9; i++) {
-      const h = 28 + ((i * 37) % 30);
-      const m = new THREE.Mesh(new THREE.ConeGeometry(55 + (i % 3) * 14, h, 6), mtn);
-      m.position.set(-300 + i * 76, h / 2 - 2, -(pier + 560 + (i % 2) * 30));
-      this.scene.add(m);
-    }
-    // 観覧車
-    const wheel = new THREE.Group();
-    const R = 24;
-    const rimM = new THREE.MeshStandardMaterial({ color: 0xf6f2ea, roughness: 0.4, emissive: 0xffa060, emissiveIntensity: 0.5 });
-    wheel.add(new THREE.Mesh(new THREE.TorusGeometry(R, 0.5, 8, 72), rimM));
-    wheel.add(new THREE.Mesh(new THREE.TorusGeometry(R * 0.55, 0.3, 8, 48), rimM));
-    for (let i = 0; i < 24; i++) {
-      const a = (i / 24) * Math.PI * 2;
-      const spoke = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, R, 5), rimM);
-      spoke.position.set(Math.cos(a) * R * 0.5, Math.sin(a) * R * 0.5, 0);
-      spoke.rotation.z = a + Math.PI / 2;
-      wheel.add(spoke);
-      const gon = new THREE.Mesh(
-        new THREE.BoxGeometry(2.4, 2.4, 2.4),
-        new THREE.MeshStandardMaterial({ color: [0xff6a6a, 0xffd24a, 0x5ac8fa, 0x7ee08a][i % 4], roughness: 0.5, emissive: 0x401800, emissiveIntensity: 0.4 }),
-      );
-      gon.position.set(Math.cos(a) * R, Math.sin(a) * R - 1.6, 0);
-      wheel.add(gon);
-    }
-    wheel.position.set(-62, R + 8, -(pier + 150));
-    this.wheel = wheel;
-    this.scene.add(wheel);
-    for (const sx of [-1, 1]) {
-      const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.9, R + 10, 8), new THREE.MeshStandardMaterial({ color: 0xe8e4dc, roughness: 0.6 }));
-      leg.position.set(-62 + sx * 7, (R + 8) / 2, -(pier + 150));
-      leg.rotation.z = -sx * 0.22;
-      this.scene.add(leg);
-    }
     // ゴールゲート(アーチ)
     const gate = new THREE.Group();
     const post = new THREE.MeshStandardMaterial({ color: 0xf5f2ea, roughness: 0.5 });
@@ -1426,11 +1337,10 @@ export class KasugaView {
 
   // ---- 大神神社: ゴールの大鳥居と、雪の三輪山(絵) ----
   private buildOmiwa(): void {
-    const L = this.course.length;
-    const end = L + GOAL_GAP;
-    this.scene.add(this.torii(L, 2.6)); // ゴールの大鳥居
-    const pic = this.board('omiwa-snow', 74);
-    pic.position.set(0, -1, -(end + 30));
+    const end = this.course.length + GOAL_GAP;
+    // ゴールの大鳥居と雪の三輪山は、1枚の絵(鳥居の下をくぐって、参道の奥へ)
+    const pic = this.board('omiwa-snow', 46);
+    pic.position.set(0, -0.6, -(end + 14));
     this.scene.add(pic);
   }
 
@@ -1587,6 +1497,21 @@ export class KasugaView {
     stone.position.set(-8, 2, -(L + 14));
     stone.castShadow = true;
     this.scene.add(stone);
+  }
+
+  /** 上の端を、空へふわっと消す透明度の地図(下から60%までは不透明、上の端で0)。 */
+  private topFade(): THREE.CanvasTexture {
+    const c = document.createElement('canvas');
+    c.width = 4;
+    c.height = 128;
+    const ctx = c.getContext('2d')!;
+    const gr = ctx.createLinearGradient(0, 0, 0, 128);
+    gr.addColorStop(0, '#000');
+    gr.addColorStop(0.4, '#fff');
+    gr.addColorStop(1, '#fff');
+    ctx.fillStyle = gr;
+    ctx.fillRect(0, 0, 4, 128);
+    return new THREE.CanvasTexture(c);
   }
 
   private glintTexture(): THREE.CanvasTexture {
@@ -1861,49 +1786,17 @@ export class KasugaView {
   }
 
   /** 電車(2両。長い向きが、道を横切る向き)。近鉄ふうの、赤とクリーム色。 */
+  /** 電車(絵の板。赤とクリーム色の2両)。長さ len で、進む向き(x)に沿って立てる。 */
   private trainModel(len: number): THREE.Group {
     const g = new THREE.Group();
-    const red = new THREE.MeshStandardMaterial({ color: 0xa31f2a, roughness: 0.45, metalness: 0.2 });
-    const cream = new THREE.MeshStandardMaterial({ color: 0xf2e6c8, roughness: 0.5 });
-    const roof = new THREE.MeshStandardMaterial({ color: 0x9aa0a8, roughness: 0.6, metalness: 0.3 });
-    const dark = new THREE.MeshStandardMaterial({ color: 0x1e2228, roughness: 0.8 });
-    const win = new THREE.MeshStandardMaterial({ color: 0x2c3e55, roughness: 0.15, metalness: 0.4, emissive: 0xffd28a, emissiveIntensity: 0.25 });
-    const lamp = new THREE.MeshBasicMaterial({ color: 0xfff4c0 });
-    const carL = len / 2 - 0.4;
-    for (const k of [-1, 1]) {
-      const cx = (k * len) / 4;
-      const lower = new THREE.Mesh(new THREE.BoxGeometry(carL, 1.5, 2.9), red);
-      lower.position.set(cx, 1.35, 0);
-      const upper = new THREE.Mesh(new THREE.BoxGeometry(carL, 1.4, 2.9), cream);
-      upper.position.set(cx, 2.8, 0);
-      const top = new THREE.Mesh(new THREE.BoxGeometry(carL - 0.2, 0.35, 2.6), roof);
-      top.position.set(cx, 3.67, 0);
-      const under = new THREE.Mesh(new THREE.BoxGeometry(carL - 1, 0.6, 2.2), dark);
-      under.position.set(cx, 0.3, 0);
-      for (const m of [lower, upper, top]) m.castShadow = true;
-      g.add(lower, upper, top, under);
-      // 窓(両側)
-      for (let i = 0; i < 6; i++) {
-        const wx = cx - carL / 2 + 1.6 + (i * (carL - 3.2)) / 5;
-        for (const sz of [-1, 1]) {
-          const w = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.9, 0.05), win);
-          w.position.set(wx, 2.85, sz * 1.47);
-          g.add(w);
-        }
-      }
-    }
-    // 前と後ろの顔(大きな窓とライト)
-    for (const k of [-1, 1]) {
-      const fx = k * (len / 2 - 0.15);
-      const face = new THREE.Mesh(new THREE.BoxGeometry(0.1, 1.0, 2.2), win);
-      face.position.set(fx + k * 0.05, 2.8, 0);
-      g.add(face);
-      for (const sz of [-0.85, 0.85]) {
-        const l = new THREE.Mesh(new THREE.CircleGeometry(0.2, 16).rotateY((k * Math.PI) / 2), lamp);
-        l.position.set(fx + k * 0.12, 1.5, sz);
-        g.add(l);
-      }
-    }
+    const pic = this.board('train', len / (LANDMARK_ASPECT['train'] ?? 4));
+    pic.position.y = 0.15;
+    g.add(pic);
+    // 影だけ落とす、見えない箱(絵の板は影が四角くなるため)
+    const shade = new THREE.Mesh(new THREE.BoxGeometry(len * 0.95, 4, 2.8), new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false }));
+    shade.position.y = 2.2;
+    shade.castShadow = true;
+    g.add(shade);
     return g;
   }
 
@@ -2402,7 +2295,6 @@ export class KasugaView {
       m.position.set(this.camera.position.x + Math.sin(this.camPsi) * D, -24, this.camera.position.z - Math.cos(this.camPsi) * D);
       m.rotation.y = -this.camPsi;
     }
-    if (this.wheel) this.wheel.rotation.z -= dt * 0.05;
     this.updateWeather(this.clock);
     // ジャンプ台: 矢印を流し、ダッシュ中は画面を広角にして、速さを感じさせる
     if (this.rampArrows) this.rampArrows.offset.y -= dt * 1.6;
