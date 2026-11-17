@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import type { Track } from './track.ts';
+import { COLLAPSE_AT, type Gap, type Track } from './track.ts';
 import { BAL, type CartRun } from './sim.ts';
 
 const ASSET = '/assets';
@@ -124,6 +124,8 @@ export class CartView {
   private puffs: { sp: THREE.Sprite; life: number; v: THREE.Vector3 }[] = [];
   private f = newFrame(); private f2 = newFrame(); private f3 = newFrame();
   private camPos = new THREE.Vector3(); private camLook = new THREE.Vector3(); private camReady = false; private lookD = 20;
+  /** 崩れる橋の、切れ目をふさいでいる板(近づくと落ちる) */
+  private collapse: { gap: Gap; g: THREE.Group; fall: number; vy: number; spin: THREE.Vector3 }[] = [];
   private shake = 0; private time = 0; private failT = 0; private wasAir = false; private spin = 0; private deerClock = 0;
   private frames = 0; private slowFrames = 0; private tuned = false;
   private ro: ResizeObserver;
@@ -163,6 +165,7 @@ export class CartView {
     this.buildTerrain();
     this.buildTrack();
     this.buildBridges();
+    this.buildCollapse();
     this.buildScenery();
     this.buildObstacles();
     this.buildSigns();
@@ -389,12 +392,68 @@ export class CartView {
       const f = this.frame(s, this.f);
       this.m1.makeBasis(f.r, f.u, this.v1.copy(f.t).negate()).setPosition(this.v2.copy(f.o).addScaledVector(f.u, -0.03));
       mesh.setMatrixAt(i, this.m1);
-      const mark = this.track.gaps.some(g => s < g.from && g.from - s < 9);
+      const mark = this.track.gaps.some(g => !g.collapse && s < g.from && g.from - s < 9);
       mesh.setColorAt(i, mark ? c.setHex(Math.floor(s / 0.85) % 2 ? 0xffd23a : 0xff7b2e) : c.setScalar(0.82 + rnd() * 0.36));
     });
     mesh.castShadow = true; mesh.receiveShadow = true; mesh.frustumCulled = false;
     this.scene.add(mesh);
     this.disposables.push(geo, mat, wood);
+  }
+
+  // ---- 崩れる橋: 切れ目をふさぐ古い板とレール。近づくと落ちる ----
+  private buildCollapse(): void {
+    const deckMat = new THREE.MeshStandardMaterial({ color: 0x8a6a4a, roughness: 0.95 });
+    const railMat = new THREE.MeshStandardMaterial({ color: 0x8d8a86, roughness: 0.5, metalness: 0.6 });
+    const tieGeo = new THREE.BoxGeometry(2.05, 0.13, 0.26);
+    this.disposables.push(deckMat, railMat, tieGeo);
+    for (const gap of this.track.gaps.filter(g => g.collapse)) {
+      const span: [number, number][] = [[gap.from - 0.3, gap.to + 0.3]];
+      const c = this.frame((gap.from + gap.to) / 2, this.f, false).o.clone();
+      const g = new THREE.Group();
+      g.position.copy(c);
+      const add = (geo: THREE.BufferGeometry, mat: THREE.Material) => {
+        geo.translate(-c.x, -c.y, -c.z);
+        const m = new THREE.Mesh(geo, mat); m.castShadow = true; m.receiveShadow = true; m.frustumCulled = false;
+        g.add(m); this.disposables.push(geo);
+      };
+      add(this.ribbon(span, 1.35, 0, -0.08, 0.16, 0.6), deckMat);
+      for (const side of [-1, 1]) add(this.ribbon(span, 0.045, side * RAIL, RAIL_TOP, 0.13, 0.5), railMat);
+      for (let s = gap.from + 0.4; s < gap.to; s += 0.85) {
+        const f = this.frame(s, this.f);
+        const m = new THREE.Mesh(tieGeo, deckMat);
+        m.position.copy(f.o).addScaledVector(f.u, -0.03).sub(c);
+        m.setRotationFromMatrix(this.m1.makeBasis(f.r, f.u, this.v1.copy(f.t).negate()));
+        g.add(m);
+      }
+      this.scene.add(g);
+      this.collapse.push({ gap, g, fall: -1, vy: 0, spin: new THREE.Vector3((Math.random() - 0.5) * 0.9, (Math.random() - 0.5) * 0.4, (Math.random() - 0.5) * 0.9) });
+    }
+  }
+  private updateCollapse(run: CartRun, dt: number): void {
+    for (const c of this.collapse) {
+      const d = c.gap.from - run.s;
+      if (c.fall < 0 && d < COLLAPSE_AT && run.phase !== 'ready') {
+        c.fall = 0; this.bump(0.25);
+        this.puff(this.v1.copy(c.g.position), 10, 3);
+      }
+      if (c.fall >= 0) {
+        c.fall += dt; c.vy -= 16 * dt;
+        c.g.position.y += c.vy * dt;
+        c.g.rotation.x += c.spin.x * dt; c.g.rotation.y += c.spin.y * dt; c.g.rotation.z += c.spin.z * dt;
+        if (c.fall > 4) c.g.visible = false;
+      } else if (d < COLLAPSE_AT + 30) {
+        // 崩れる前: ぐらぐら ゆれる
+        c.g.rotation.z = Math.sin(this.time * 31) * 0.012; c.g.rotation.x = Math.sin(this.time * 23) * 0.008;
+      }
+    }
+  }
+  /** チェックポイントから続けるとき: まだ通っていない崩れる橋は、元にもどす */
+  resetCollapse(s: number): void {
+    for (const c of this.collapse) {
+      if (c.gap.from - s < COLLAPSE_AT) { c.fall = 99; c.g.visible = false; continue; }
+      c.fall = -1; c.vy = 0; c.g.visible = true; c.g.rotation.set(0, 0, 0);
+      c.g.position.copy(this.frame((c.gap.from + c.gap.to) / 2, this.f, false).o);
+    }
   }
 
   // ---- 木の橋(渓谷) ----
@@ -631,11 +690,21 @@ export class CartView {
     for (const gap of this.track.gaps) {
       const need = Math.ceil(((gap.to - gap.from + 3) * 3.6) / 5) * 5;
       for (const side of [-1, 1]) {
+        if (gap.collapse) {
+          // 崩れる橋: 切れ目は見えないので「古い橋」の注意だけ
+          sign(gap.from - 60, side * 3.3, 2.5, 2.5, g => {
+            plate(g, 256, 256, '#ffd23a', '#2b2b2b');
+            g.fillStyle = '#2b2b2b'; g.font = '900 58px sans-serif'; g.textAlign = 'center'; g.fillText('古い橋', 128, 100);
+            g.font = '900 50px sans-serif'; g.fillText('あぶない', 128, 178);
+          });
+          continue;
+        }
         sign(gap.from - 30, side * 3.3, 2.5, 2.5, g => {
           plate(g, 256, 256, '#fff7e0', '#d8342c');
           g.fillStyle = '#d8342c'; g.font = '900 54px sans-serif'; g.textAlign = 'center'; g.fillText('ジャンプ', 128, 92);
           g.fillStyle = '#2b2b2b'; g.font = '900 78px sans-serif'; g.fillText(`${need}`, 128, 176);
-          g.font = '800 30px sans-serif'; g.fillText('km/h 以上', 128, 222);
+          g.font = '800 30px sans-serif';
+          g.fillText(gap.shift ? (gap.shift > 0 ? 'ずれ ▶ 右へ' : '左へ ◀ ずれ') : gap.drop ? '下へ しずむ' : 'km/h 以上', 128, 222);
         });
       }
     }
@@ -922,6 +991,7 @@ export class CartView {
     }
     for (const m of Object.values(this.coinMesh)) m.instanceMatrix.needsUpdate = true;
     for (const [id, obj] of this.obstacleObj) if (run.hitIds.has(id) && obj.visible) { obj.visible = false; this.puff(obj.position, 6, 2); }
+    this.updateCollapse(run, dt);
 
     // ---- 効果 ----
     if (!run.air && this.wasAir) { this.bump(0.35); this.puff(pos, 5, 1.6); }

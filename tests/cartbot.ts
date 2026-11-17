@@ -37,6 +37,11 @@ export function drive(level: CartLevel, policy: Policy = {}): CartRun {
       if (p.brake && v > limit) input.brake = true;
     }
     if (branch && p.lean) { input.left = branch.side === 1; input.right = branch.side === -1; }
+    // ずれた線路: 空中で、ずれた側へ傾ける
+    if (run.air && p.lean) {
+      const sg = track.gaps.find(g => g.shift && g.to > s - 30 && g.from < s + 30);
+      if (sg) { input.right = sg.shift! > 0; input.left = sg.shift! < 0; }
+    }
     // こぶ: 先が急カーブなら、浮かないように減速する
     const crest = track.crestAhead(s, v * 2 + 10);
     if (crest && Math.abs(crest.curveAfter) > 0.006 && p.brake && !run.air && v > crest.vLift * 0.93) input.brake = true;

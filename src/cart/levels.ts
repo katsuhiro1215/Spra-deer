@@ -25,6 +25,10 @@ const arc = (from: number, to: number, n: number, peak = 2.6, kind?: 'gold'): C[
     return { s: from + (to - from) * k, side: 0 as const, h: 0.9 + peak * 4 * k * (1 - k) * 0.75 + 0.6, kind: kind && i === Math.floor(n / 2) ? kind : undefined };
   });
 
+/** 空中のコインを、[s, 高さ, 種類] で並べる(飛ぶ道すじに合わせるとき)。 */
+const air = (pts: [number, number, ('gold' | 'premium')?][], side: -1 | 0 | 1 = 0): C[] =>
+  pts.map(([s, h, kind]) => ({ s, side, h, kind }));
+
 /**
  * 8-1 はじめての暴走(約1500m・70秒前後)。
  * 出発 → 下り坂 → ゆるいカーブ → 小さな渓谷(ジャンプ) → 落石と枝 → 急な下り → 急カーブ(ブレーキ)
@@ -295,12 +299,88 @@ const LEVEL_8_4: CartLevel = {
   },
 };
 
-export const CART_LEVELS: CartLevel[] = [LEVEL_8_1, LEVEL_8_2, LEVEL_8_3, LEVEL_8_4];
+/**
+ * 8-5 崩れた線路(約1750m)。テーマは「こわれかけた廃線を、とびうつる」。
+ * がたがた橋(小さな切れ目が3つ) → ずれた線路(右へ 2.4m。空中で傾けて寄せる) → 沈んだ線路(6m 下へ)
+ * → 古い長い橋(近づくと崩れる) → ずれて沈んだ線路 → 尾根の廃線 → 最後の橋(2回 崩れる)
+ * プレミアム: ずれた線路の上の、反対がわ(左)。いったん左へ傾けて取ってから、右へ寄せる。
+ */
+const LEVEL_8_5: CartLevel = {
+  id: '8-5', title: '崩れた線路', summary: 'こわれかけた 廃線を、とびうつれ',
+  intro: '使われなくなった 古い線路だ。こわれている所に 気をつけて！',
+  goalName: '廃線の終点駅',
+  notes: [
+    { s: 195, text: 'がたがた橋！ 小さな 切れ目が 3つ。ポン・ポン・ポンと 跳ぼう' },
+    { s: 455, text: '線路が 右に ずれてる！ 跳んだら 空中で 右へ かたむけて' },
+    { s: 755, text: '線路が 崩れて 沈んでいる！ 下の線路へ とびうつれ' },
+    { s: 965, text: '古い橋だ… 崩れたら すぐ ジャンプ！' },
+    { s: 1165, text: '左に ずれて、しかも 沈んでいる！' },
+    { s: 1455, text: '最後の橋も 古い… 2回 崩れるよ！' },
+  ],
+  track: {
+    segments: [
+      { len: 80, slope: -2, terrain: 'forest', name: '廃線の駅' },
+      { len: 120, slope: -6, terrain: 'hillL', name: '草むらの下り' },
+      { len: 130, slope: -1, terrain: 'canyon', name: 'がたがた橋' },
+      { len: 70, slope: -3, turn: 55, terrain: 'hillR', name: '古いカーブ' },
+      { len: 60, slope: -4, terrain: 'forest' },
+      { len: 90, slope: -1, terrain: 'canyon', name: 'ずれた線路' },
+      { len: 80, slope: -5, terrain: 'forest', name: '倒木の森' },
+      { len: 70, slope: -2, turn: -70, terrain: 'cut', name: '岩かべのカーブ' },
+      { len: 60, slope: -3, terrain: 'forest' },
+      { len: 110, slope: -2, terrain: 'canyon', name: '沈んだ線路' },
+      { len: 100, slope: -6, terrain: 'hillR', name: '崖ぞいの下り' },
+      { len: 140, slope: -1, terrain: 'canyon', name: '古い長い橋' },
+      { len: 60, slope: -3, turn: 45, terrain: 'hillL' },
+      { len: 100, slope: -1, terrain: 'canyon', name: 'ずれて沈んだ線路' },
+      { len: 120, slope: -10, terrain: 'ridge', name: '尾根の廃線' },
+      { len: 70, slope: -2, turn: -95, terrain: 'hillR', name: '廃線の急カーブ' },
+      { len: 170, slope: -1, terrain: 'canyon', name: '最後の崩れる橋' },
+      { len: 120, slope: -3, terrain: 'forest', name: '終点の駅へ' },
+    ],
+    gaps: [
+      { from: 220, to: 224 }, { from: 254, to: 258 }, { from: 288, to: 292 },
+      { from: 490, to: 498, shift: 2.4 },
+      { from: 790, to: 800, drop: 6 },
+      { from: 1010, to: 1019, collapse: true },
+      { from: 1215, to: 1225, shift: -2.6, drop: 4 },
+      { from: 1500, to: 1508, collapse: true }, { from: 1545, to: 1555, collapse: true },
+    ],
+    obstacles: [
+      { s: 440, kind: 'rock' },
+      { s: 600, kind: 'log' }, { s: 625, kind: 'branch', side: 1 },
+      { s: 910, kind: 'branch', side: -1 },
+      { s: 1340, kind: 'rock' }, { s: 1380, kind: 'log' },
+      { s: 1700, kind: 'log' },
+    ],
+    coins: [
+      ...line(25, 75), ...line(95, 195, 10),
+      ...line(205, 214, 9), ...arc(217, 227, 2, 2), ...line(234, 248, 7), ...arc(251, 261, 2, 2), ...line(268, 282, 7), ...arc(285, 295, 2, 2, 'gold'), ...line(302, 322, 10),
+      ...line(345, 395, 10, 1), ...line(410, 430, 10), ...arc(434, 446, 3, 2), ...line(455, 480, 9),
+      // ずれた線路: 空中のコインは、寄せる側(右)。体を傾けたまま取れる
+      ...air([[494, 2.4], [498, 2.9], [502, 2.7]], 1),
+      // プレミアム: ずれた線路の上の、反対がわ(左)
+      { s: 492, side: -1, h: 1.9, kind: 'premium' },
+      ...line(510, 590, 10), ...arc(594, 606, 3, 2), ...line(612, 618, 6), ...line(622, 628, 6, -1),
+      ...line(645, 695, 10, -1), ...line(710, 780, 10),
+      // 沈んだ線路: 下の線路へ とびうつる道すじにそって(線路が下がるぶん、高い)
+      ...air([[794, 4.8], [800, 8.9, 'gold'], [806, 8.0], [812, 5.9]]), ...line(825, 900, 10), ...line(905, 915, 5, 1), ...line(925, 1000, 10),
+      ...arc(1006, 1023, 3, 2), ...line(1030, 1105, 10),
+      ...line(1125, 1165, 10, 1), ...line(1180, 1205, 9), ...air([[1219, 4.0], [1225, 6.9], [1231, 6.0], [1237, 3.9]], -1), ...line(1245, 1330, 10),
+      ...arc(1334, 1346, 3, 2), ...line(1355, 1370, 8), ...arc(1374, 1386, 3, 2, 'gold'),
+      ...line(1400, 1450, 10, -1), ...line(1465, 1490, 9), ...arc(1496, 1512, 3, 2), ...line(1520, 1535, 7), ...arc(1541, 1559, 3, 2), ...line(1570, 1690, 10),
+      ...arc(1694, 1706, 3, 2), ...line(1715, 1745, 10),
+    ],
+    checkpoints: [{ s: 720, name: '信号小屋' }, { s: 1290, name: '鉄橋の見はり台' }],
+  },
+};
+
+export const CART_LEVELS: CartLevel[] = [LEVEL_8_1, LEVEL_8_2, LEVEL_8_3, LEVEL_8_4, LEVEL_8_5];
 export const cartById = (id: string): CartLevel | undefined => CART_LEVELS.find(l => l.id === id);
 export const trackOf = (level: CartLevel): Track => new Track(level.track);
 
 /** これから作る面(名前だけ。面えらびに「準備中」で出す)。 */
 export const CART_PLANNED: { id: string; title: string }[] = [
-  { id: '8-5', title: '崩れた線路' }, { id: '8-6', title: '山岳トロッコ' }, { id: '8-7', title: '連続ジャンプ' },
+{ id: '8-6', title: '山岳トロッコ' }, { id: '8-7', title: '連続ジャンプ' },
   { id: '8-8', title: '霧の山道' }, { id: '8-9', title: '鹿の全力疾走' }, { id: '8-10', title: '奈良山脈 大滑降' },
 ];

@@ -4,8 +4,12 @@
 export type Terrain = 'forest' | 'hillL' | 'hillR' | 'cut' | 'ridge' | 'canyon';
 /** 線路の1区間。slope=坂(度。マイナスが下り)、turn=この区間で曲がる角度(度。プラスが右)。 */
 export type Segment = { len: number; slope?: number; turn?: number; terrain?: Terrain; name?: string };
-/** 線路の切れ目(from〜to に線路が無い)。 */
-export type Gap = { from: number; to: number };
+/**
+ * 線路の切れ目(from〜to に線路が無い)。
+ * shift=向こう側の線路が横へずれている(m。プラスが右。空中で体を傾けて寄せる)、drop=向こう側が低い(m)、
+ * collapse=ふだんは橋がかかっていて、近づくと崩れ落ちる(見た目と警告だけ。走りのルールでは、はじめから切れ目)
+ */
+export type Gap = { from: number; to: number; shift?: number; drop?: number; collapse?: boolean };
 /** rock=落石・log=倒木(跳んで越える)、branch=横から張り出した枝(side の反対へ体を傾けてよける)。 */
 export type ObstacleKind = 'rock' | 'log' | 'branch';
 export type Obstacle = { id: number; s: number; kind: ObstacleKind; side?: -1 | 1 };
@@ -23,6 +27,8 @@ export type TrackDef = {
 };
 
 const DEG = Math.PI / 180;
+/** 崩れる橋(gap.collapse)が崩れ落ちる、切れ目の手前の距離(m)。 */
+export const COLLAPSE_AT = 38;
 /** ゴールのあとに続く線路(止まるまで走る分)。 */
 export const RUNOUT = 140;
 
@@ -82,13 +88,19 @@ export class Track {
     }
     this.pt = smooth(pitch, 9); this.cv = smooth(curv, 7);
     this.tl = smooth(tl, 16); this.tr = smooth(tr, 16); this.tc = smooth(tc, 16); this.td = smooth(td, 9);
+    // ずれた・沈んだ切れ目: 切れ目の中(線路の無い所)で、横と下へ少しずつ動かす
+    const lat = new Float64Array(n), sink = new Float64Array(n);
+    for (const g of def.gaps) {
+      const a = Math.ceil(g.from), b = Math.floor(g.to);
+      for (let i = a; i < b && i < n; i++) { lat[i] = (g.shift ?? 0) / (b - a); sink[i] = (g.drop ?? 0) / (b - a); }
+    }
     this.px = new Float64Array(n); this.py = new Float64Array(n); this.pz = new Float64Array(n); this.hd = new Float64Array(n);
     for (let i = 1; i < n; i++) {
       const h = this.hd[i - 1] + this.cv[i - 1], p = this.pt[i - 1], flat = Math.cos(p);
       this.hd[i] = h;
-      this.px[i] = this.px[i - 1] + Math.sin(h) * flat;
-      this.py[i] = this.py[i - 1] + Math.sin(p);
-      this.pz[i] = this.pz[i - 1] - Math.cos(h) * flat;
+      this.px[i] = this.px[i - 1] + Math.sin(h) * flat + Math.cos(h) * lat[i - 1];
+      this.py[i] = this.py[i - 1] + Math.sin(p) - sink[i - 1];
+      this.pz[i] = this.pz[i - 1] - Math.cos(h) * flat + Math.sin(h) * lat[i - 1];
     }
     this.gaps = def.gaps.map(g => ({ ...g }));
     this.obstacles = def.obstacles.map((o, id) => ({ ...o, id })).sort((a, b) => a.s - b.s);

@@ -26,6 +26,7 @@ export const BAL = {
   hitSlow: 0.55, hitSafe: 1.1, // ぶつかったときの減速と、そのあと無敵の時間
   clear: { rock: 0.9, log: 0.6 }, // 跳びこえるのに要る高さ
   leanDodge: 0.45, // 枝をよける・横のコインを取るのに要る傾き
+  airSteer: 3.5, airSteerFree: 0.5, // 空中で体を傾けると、横へ動ける速さ(m/s)。ずれた線路へ向かう側だけ大きく動け、ほかは 0.5m まで
 } as const;
 
 export class CartRun {
@@ -61,6 +62,8 @@ export class CartRun {
   private events: CartEvent[] = [];
   private jumpHeld = false; private dashHeld = false; private jumpBuf = 0;
   private edgeT = 0; private doomed = false; private warned = false;
+  /** 空中で横へ動いた量と、動ける範囲(飛びだした向きに対して) */
+  private steer = 0; private steerLo = 0; private steerHi = 0; private steerRx = 0; private steerRz = 0;
   private nextCoin = 0; private nextObstacle = 0;
 
   constructor(track: Track) {
@@ -98,6 +101,11 @@ export class CartRun {
     this.vz = -Math.cos(p.heading) * flat * this.v;
     this.vy = Math.sin(p.pitch) * this.v + vy;
     this.px = p.x; this.py = p.y; this.pz = p.z;
+    // 空中で横へ動ける範囲: この先の切れ目が「ずれた線路」なら、その向きへ大きく
+    const g = this.track.gaps.find(x => x.to > this.s - 1 && x.from < this.s + 40);
+    const shift = g?.shift ?? 0, free = BAL.airSteerFree;
+    this.steer = 0; this.steerLo = Math.min(0, shift) - free; this.steerHi = Math.max(0, shift) + free;
+    this.steerRx = Math.cos(p.heading); this.steerRz = Math.sin(p.heading);
   }
 
   step(dt: number, input: Input): void {
@@ -128,6 +136,9 @@ export class CartRun {
       this.airT += dt;
       this.vy -= BAL.airG * dt;
       this.px += this.vx * dt; this.py += this.vy * dt; this.pz += this.vz * dt;
+      // 体を傾けると、横へ少し動ける
+      const ns = Math.max(this.steerLo, Math.min(this.steerHi, this.steer + this.lean * BAL.airSteer * dt)), ds = ns - this.steer;
+      this.steer = ns; this.px += this.steerRx * ds; this.pz += this.steerRz * ds;
       // 線路のどこの上にいるか(空中では、線路にすいつけない)
       const h = tr.at(this.s).heading;
       this.s += (this.vx * Math.sin(h) - this.vz * Math.cos(h)) * dt;

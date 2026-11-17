@@ -105,7 +105,7 @@ test('コイン: まん中は通るだけ。横は体を傾けて、高い所は
 });
 
 // ---- 8-1 を、自動で走る(ボットは tests/cartbot.ts) ----
-const L1 = cartById('8-1')!, L2 = cartById('8-2')!, L3 = cartById('8-3')!, L4 = cartById('8-4')!;
+const L1 = cartById('8-1')!, L2 = cartById('8-2')!, L3 = cartById('8-3')!, L4 = cartById('8-4')!, L5 = cartById('8-5')!;
 const drive = (policy: Policy = {}) => driveLevel(L1, policy);
 
 test('8-1: 先を見て操作すれば、ハートを減らさずにクリアできる(60〜95秒)', () => {
@@ -198,7 +198,7 @@ for (const lv of CART_LEVELS) {
     assert.equal(driveLevel(lv, { brake: false }).reason, 'derail', 'ブレーキなし');
     assert.equal(driveLevel(lv, { jump: false }).reason, 'fall', 'ジャンプなし');
     const noLean = driveLevel(lv, { lean: false });
-    assert.ok(noLean.lives < 3, '傾けないと、枝に当たる');
+    assert.ok(noLean.lives < 3 || noLean.phase === 'failed', '傾けないと、枝に当たる(または、ずれた線路で外れる)');
   });
 }
 
@@ -270,6 +270,37 @@ test('最高速は面ごとに変えられる(8-4 は 144km/h、ほかは 108km/
   assert.equal(L4.track.vMax, 40);
 });
 
+// ---- ずれた・沈んだ・崩れる切れ目(8-5 から) ----
+test('ずれた線路: 空中で、ずれた側へ傾けると着地できる。傾けないと外れる。ふつうの切れ目では、傾けても 0.5m しか動かない', () => {
+  const t = new Track(def({ segments: [{ len: 300, slope: 0 }], gaps: [{ from: 100, to: 108, shift: 2.4 }, { from: 200, to: 208 }] }));
+  const fly = (lean: Partial<Input>, until = 150) => {
+    const r = new CartRun(t); r.start();
+    for (let i = 0; i < 20 / DT && r.phase === 'running' && r.s < until; i++) {
+      if (!r.air) r.v = 20;
+      r.step(DT, { ...none(), jump: (r.s > 99 && r.s < 100) || (r.s > 199 && r.s < 200), ...(r.air ? lean : {}) });
+    }
+    return r;
+  };
+  assert.equal(fly({}).reason, 'miss', '傾けないと、ずれた線路に乗れない');
+  assert.equal(fly({ left: true }).reason, 'miss', '反対へ傾けても、だめ');
+  assert.equal(fly({ right: true }).phase, 'running');
+  assert.ok(Math.abs(t.at(120).x - t.at(90).x - 2.4) < 0.3 || Math.abs(t.at(120).z - t.at(90).z) > 29, '向こうの線路は横にずれている');
+  const plain = new Track(def({ segments: [{ len: 300, slope: 0 }], gaps: [{ from: 200, to: 208 }] }));
+  for (const lean of [{ left: true }, { right: true }]) {
+    const r = new CartRun(plain); r.start();
+    for (let i = 0; i < 20 / DT && r.phase === 'running' && r.s < 250; i++) { if (!r.air) r.v = 20; r.step(DT, { ...none(), jump: r.s > 199 && r.s < 200, ...lean }); }
+    assert.equal(r.phase, 'running', 'ふつうの切れ目では、傾けていても着地できる');
+  }
+});
+
+test('沈んだ線路: 向こう側が低い。崩れる橋: 走りのルールでは、はじめから切れ目', () => {
+  const t = new Track(def({ segments: [{ len: 300, slope: 0 }], gaps: [{ from: 100, to: 110, drop: 6 }, { from: 200, to: 209, collapse: true }] }));
+  assert.ok(Math.abs(t.height(90) - t.height(120) - 6) < 0.01);
+  assert.ok(t.inGap(205));
+  const r = go(new CartRun(t), 30);
+  assert.equal(r.reason, 'fall');
+});
+
 // ---- 8-4 超高速ダウンヒル ----
 test('8-4: 144km/h 近くまで出る。こぶの先の急カーブは、こぶの手前で減速しないと、飛んだまま突っこんで脱線する', () => {
   const r = driveLevel(L4);
@@ -291,4 +322,25 @@ test('8-4: 枝のスラロームは、左右へ続けて傾ける。プレミア
   assert.equal(tryDash(1480).premium, true); assert.equal(tryDash(1500).premium, true);
   assert.equal(tryDash(0).premium, false, 'ダッシュなしでは、高さが足りない');
   assert.equal(driveLevel(L4).premium, false, 'ふつうに走るだけでは取れない');
+});
+
+// ---- 8-5 崩れた線路 ----
+test('8-5: 空中で傾けないと、ずれた線路で外れる。がたがた橋は3回続けて跳ぶ。沈んだ線路・崩れる橋も越えられる', () => {
+  const noLean = driveLevel(L5, { lean: false });
+  assert.equal(noLean.reason, 'miss'); assert.ok(noLean.s > 498 && noLean.s < 520, `ずれた線路で s=${noLean.s.toFixed(0)}`);
+  const hop2 = driveLevel(L5, { until: 340, extra: (run, inp) => { if (run.s > 245 && run.s < 260) inp.jump = false; } });
+  assert.equal(hop2.reason, 'fall', 'がたがた橋の2つ目で跳ばないと落ちる');
+  const t = trackOf(L5);
+  assert.ok(t.height(785) - t.height(805) > 6, '沈んだ線路は、向こう側が低い');
+  assert.equal(t.gaps.filter(g => g.collapse).length, 3);
+  const r = driveLevel(L5);
+  assert.ok(r.jumps >= 13, `ジャンプ ${r.jumps} 回`);
+});
+
+test('8-5: プレミアムは、ずれた線路で いったん左へ傾けて取り、すぐ右へ寄せたときだけ', () => {
+  const tryIt = (switchAt: number) => driveLevel(L5, { until: 560, extra: (run, inp) => { if (run.s > 484 && run.s < switchAt) { inp.left = true; inp.right = false; } } });
+  const quick = tryIt(492);
+  assert.equal(quick.premium, true); assert.equal(quick.phase, 'running');
+  assert.equal(tryIt(494.5).reason, 'miss', '右へ寄せるのが遅いと、外れる');
+  assert.equal(driveLevel(L5, { until: 560 }).premium, false, 'ふつうに右へ寄せるだけでは取れない');
 });

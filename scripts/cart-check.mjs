@@ -40,6 +40,10 @@ const installBot = () => {
       }
       const branch = track.obstacles.find(o => o.kind === 'branch' && o.s > s && o.s - s < Math.max(14, v * 0.7));
       if (branch) { input.left = branch.side === 1; input.right = branch.side === -1; }
+      if (run.air) {
+        const sg = track.gaps.find(g => g.shift && g.to > s - 30 && g.from < s + 30);
+        if (sg) { input.right = sg.shift > 0; input.left = sg.shift < 0; }
+      }
       const crest = track.crestAhead(s, v * 2 + 10);
       if (crest && Math.abs(crest.curveAfter) > 0.006 && !run.air && v > crest.vLift * 0.93) input.brake = true;
       const gap = track.gaps.find(g => g.to > s);
@@ -121,7 +125,7 @@ try {
   assert.ok(perf.triangles < 260000, '三角形が多すぎる');
 
   // 5) 8-2・8-3 も、自動操作でゴールまで走れる(8-2 は 8-1 の「次の面へ」から)
-  for (const [id, shots] of [['8-2', [[250, 's-curve'], [590, 'hairpin'], [890, 'branch-curve'], [1250, 'three-curves']]], ['8-3', [[475, 'double-gap'], [725, 'uphill-gap'], [1145, 'rock-gap'], [1565, 'big-gap']]], ['8-4', [[150, 'steep'], [290, 'hump'], [520, 'fast-s'], [800, 'hump-curve'], [1190, 'long-jump'], [1330, 'slalom'], [1565, 'big-hump'], [1700, 'brake-zone']]]]) {
+  for (const [id, shots] of [['8-2', [[250, 's-curve'], [590, 'hairpin'], [890, 'branch-curve'], [1250, 'three-curves']]], ['8-3', [[475, 'double-gap'], [725, 'uphill-gap'], [1145, 'rock-gap'], [1565, 'big-gap']]], ['8-4', [[150, 'steep'], [290, 'hump'], [520, 'fast-s'], [800, 'hump-curve'], [1190, 'long-jump'], [1330, 'slalom'], [1565, 'big-hump'], [1700, 'brake-zone']]], ['8-5', [[250, 'rattle-bridge'], [494, 'shifted'], [796, 'sunken'], [990, 'collapse'], [1220, 'shift-sunk'], [1530, 'collapse-2']]]]) {
     if (id === '8-2') {
       // もう一度 8-1 をクリアして、結果の「次の面へ」から入る
       await page.goto(`${base}/cart/?level=8-1`); await page.waitForFunction(() => !!window.__cart);

@@ -3,6 +3,7 @@ import { Progress } from '../progress.ts';
 import { Wallet, clearRewards, waitText, STAMINA_MAX, STAMINA_FAIL } from '../wallet.ts';
 import { RunnerAudio } from '../runner/audio.ts';
 import { CART_LEVELS, trackOf, type CartLevel } from './levels.ts';
+import { COLLAPSE_AT } from './track.ts';
 import { BAL, CartRun, type CartEvent, type Input } from './sim.ts';
 import { CartView } from './view.ts';
 
@@ -135,11 +136,17 @@ export function startCart(root: HTMLElement, level: CartLevel): () => void {
     if (run.phase !== 'running') return ['', ''];
     const s = run.s, v = run.v;
     if (run.tilt > 0.2) return ['あぶない！ 車輪が 浮いている！', 'red'];
-    if (run.air) return ['', ''];
+    if (run.air) {
+      // ずれた線路の上: 空中で、ずれた側へ傾ける
+      const sg = track.gaps.find(g => g.shift && g.to > s - 30 && g.from < s + 30);
+      return sg ? [sg.shift! > 0 ? '右へ かたむけて ▶ 線路が ずれてる！' : '◀ 左へ かたむけて 線路が ずれてる！', 'jump'] : ['', ''];
+    }
     const gap = track.gaps.find(g => g.to > s);
     if (gap && gap.from - s < v * 2.2 + 12 && gap.from - s > -1) {
       const need = gap.to - gap.from + 3;
-      if (gap.from - s < Math.max(5, v * 0.4)) return ['ジャンプ！', 'jump'];
+      if (gap.from - s < Math.max(5, v * 0.4)) return [gap.shift ? `ジャンプ！ 空中で ${gap.shift > 0 ? '右へ ▶' : '◀ 左へ'}` : 'ジャンプ！', 'jump'];
+      // 崩れる橋: 崩れるまでは、まだ橋がある
+      if (gap.collapse) return gap.from - s < COLLAPSE_AT ? ['橋が 崩れた！ ジャンプ！', 'red'] : ['古い橋… ぐらぐら している', 'yellow'];
       if (v < need) return [run.dashCool <= 0 ? 'スピードが たりない！ ダッシュ！' : 'スピードが たりない！', 'red'];
       return ['もうすぐ 切れ目！ 黄色で ジャンプ', 'yellow'];
     }
@@ -248,6 +255,7 @@ export function startCart(root: HTMLElement, level: CartLevel): () => void {
     run = new CartRun(track);
     if (from) run.restore(from.s, from.t, from.coins, from.gold, from.premium, from.collected);
     else { saved = null; hinted = new Set(); }
+    view.resetCollapse(run.s);
     cpEls.forEach((el, i) => el.classList.toggle('passed', !!saved && track.checkpoints[i].s <= saved.s));
     nextClack = run.s + 6;
     releaseAll();
@@ -354,8 +362,9 @@ export function startCart(root: HTMLElement, level: CartLevel): () => void {
       if ((seg.slope ?? 0) >= 3) hint('up', '上り坂！ ダッシュで 鹿に がんばってもらおう', 3200);
       if ((seg.slope ?? 0) <= -8) hint('down', '急な下り坂！ どんどん 速くなるよ', 2600);
     }
-    const gap = track.gaps.find(g => g.from > s && g.from - s < look + 25);
-    if (gap) hint(gap.to - gap.from > 15 ? 'biggap' : 'gap', gap.to - gap.from > 15 ? '大きな 切れ目！ 看板の 速さまで ダッシュして、黄色い枕木で ジャンプ！' : '線路が 切れている！ 黄色い枕木の所で ジャンプ！', 3600);
+    const gap = track.gaps.find(g => !g.collapse && g.from > s && g.from - s < look + 25);
+    if (gap?.shift) hint('shift', '線路が ずれている！ 跳んだら、空中で ずれた方へ 体を かたむけよう', 3800);
+    else if (gap) hint(gap.to - gap.from > 15 ? 'biggap' : 'gap', gap.to - gap.from > 15 ? '大きな 切れ目！ 看板の 速さまで ダッシュして、黄色い枕木で ジャンプ！' : '線路が 切れている！ 黄色い枕木の所で ジャンプ！', 3600);
     const o = track.obstacles.find(x => x.s > s && x.s - s < look);
     if (o) hint(o.kind, o.kind === 'branch' ? '枝が 張り出している！ 反対へ 体を かたむけて よけよう' : o.kind === 'rock' ? '線路に 岩が！ ジャンプで とびこえよう' : '倒木だ！ ジャンプで とびこえよう', 3000);
     // その面ならではの所(ほかの一言より優先)
