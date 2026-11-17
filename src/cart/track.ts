@@ -18,6 +18,8 @@ export type TrackDef = {
   obstacles: Omit<Obstacle, 'id'>[];
   coins: Omit<Coin, 'id'>[];
   checkpoints?: Checkpoint[];
+  /** この面の、ふつうの最高速(m/s)。無ければ BAL.vMax。ダッシュ中は、これより少し上まで出る */
+  vMax?: number;
 };
 
 const DEG = Math.PI / 180;
@@ -56,6 +58,7 @@ export class Track {
   obstacles: Obstacle[];
   coins: Coin[];
   checkpoints: Checkpoint[];
+  vMax?: number;
   segments: (Segment & { from: number; to: number })[] = [];
   private px: Float64Array; private py: Float64Array; private pz: Float64Array;
   private hd: Float64Array; private pt: Float64Array; private cv: Float64Array;
@@ -91,6 +94,7 @@ export class Track {
     this.obstacles = def.obstacles.map((o, id) => ({ ...o, id })).sort((a, b) => a.s - b.s);
     this.coins = def.coins.map((c, id) => ({ ...c, id })).sort((a, b) => a.s - b.s);
     this.checkpoints = (def.checkpoints ?? []).map(c => ({ ...c }));
+    this.vMax = def.vMax;
   }
 
   private lerp(a: Float64Array, s: number): number {
@@ -102,6 +106,8 @@ export class Track {
     return { x: this.lerp(this.px, s), y: this.lerp(this.py, s), z: this.lerp(this.pz, s), heading: this.lerp(this.hd, s), pitch: this.lerp(this.pt, s), curv: this.lerp(this.cv, s) };
   }
   height(s: number): number { return this.lerp(this.py, s); }
+  /** 坂の角度の変わり方(1mあたり)。マイナスは、峠(こぶ)の上のように下へ折れる所 */
+  pitchRate(s: number): number { return (this.lerp(this.pt, s + 1) - this.lerp(this.pt, s - 1)) / 2; }
   /** 線路の左右の地形(l・r は離れるほど上がる割合、cap は上限、depth は谷の深さ)。 */
   terrain(s: number): { l: number; r: number; cap: number; depth: number } {
     return { l: this.lerp(this.tl, s), r: this.lerp(this.tr, s), cap: this.lerp(this.tc, s), depth: this.lerp(this.td, s) };
@@ -111,6 +117,21 @@ export class Track {
   nameAt(s: number): string {
     for (let i = this.segments.length - 1; i >= 0; i--) if (s >= this.segments[i].from && this.segments[i].name) return this.segments[i].name!;
     return '';
+  }
+  /**
+   * s から dist 先までにある、こぶ(峠)。vLift=これより速いと浮く速さ、curveAfter=こぶの先(着地しそうな所)のいちばんきつい曲がり。
+   * 浮くような、こぶが無ければ undefined。
+   */
+  crestAhead(s: number, dist: number, g = 16): { s: number; vLift: number; curveAfter: number } | undefined {
+    let best: { s: number; vLift: number } | undefined;
+    for (let d = 0; d <= dist; d += 1) {
+      const bend = -this.pitchRate(s + d);
+      if (bend < 0.004) { if (best) break; continue; }
+      const vLift = Math.sqrt((g * Math.cos(this.lerp(this.pt, s + d))) / bend);
+      if (!best || vLift < best.vLift) best = { s: s + d, vLift };
+    }
+    if (!best || best.vLift > 60) return undefined;
+    return { ...best, curveAfter: this.sharpestAhead(best.s, 70) };
   }
   /** s から dist 先までで、いちばんきつい曲がり(符号つき)。 */
   sharpestAhead(s: number, dist: number): number {

@@ -223,13 +223,84 @@ const LEVEL_8_3: CartLevel = {
   },
 };
 
-export const CART_LEVELS: CartLevel[] = [LEVEL_8_1, LEVEL_8_2, LEVEL_8_3];
+/**
+ * 8-4 超高速ダウンヒル(約1970m)。テーマは「ほとんど落ちるような急坂を、144km/h で」。
+ * この面だけ最高速が上がる(ふつう 144km/h・ダッシュ 166km/h)。
+ * いきなりの急降下 → こぶで空へ → 高速S字(ブレーキでなく傾けて回る) → こぶの先の急カーブ(浮かないよう減速)
+ * → 垂直落下の坂 → 32m の大ジャンプ → 枝のスラローム → 大こぶからのスカイダイブ → ブレーキゾーン → 谷底の急カーブ
+ * プレミアム: 大こぶの上の、高い空。ダッシュの全速で、こぶから飛びだしたときだけ届く。
+ */
+const LEVEL_8_4: CartLevel = {
+  id: '8-4', title: '超高速ダウンヒル', summary: 'がけのような 急坂を、まっさかさま',
+  intro: 'ここは がけのような 急坂！ 速さは 144km/h まで 出るよ',
+  goalName: 'ふもとの里の駅',
+  notes: [
+    { s: 250, text: 'こぶだ！ 速いまま こえると、空へ とびだすよ' },
+    { s: 435, text: '速いカーブは、ブレーキより かたむけ！ 内がわへ' },
+    { s: 790, text: 'こぶの先に 急カーブ！ ブレーキで、浮かないように' },
+    { s: 1255, text: '枝が 左右から 次々に！' },
+    { s: 1525, text: '大こぶ！ ダッシュで とびこめば、高く 遠くへ' },
+    { s: 1660, text: 'ブレーキゾーン！ 谷底の急カーブまでに 速さを おとそう' },
+  ],
+  track: {
+    vMax: 40,
+    segments: [
+      { len: 60, slope: -2, terrain: 'ridge', name: '山頂の駅' },
+      { len: 200, slope: -13, terrain: 'hillL', name: 'いきなりの 急降下' },
+      { len: 24, slope: 7, terrain: 'ridge', name: 'こぶ' },
+      { len: 160, slope: -15, terrain: 'ridge', name: '空へ とびだせ' },
+      { len: 160, slope: -9, turn: 50, terrain: 'hillR', name: '高速S字' },
+      { len: 160, slope: -9, turn: -55, terrain: 'hillL' },
+      { len: 30, slope: -4, terrain: 'forest' },
+      { len: 20, slope: 4, terrain: 'forest', name: 'こぶの先は 急カーブ' },
+      { len: 40, slope: -10, terrain: 'forest' },
+      { len: 70, slope: -3, turn: -85, terrain: 'cut', name: '森の急カーブ' },
+      { len: 50, slope: -2, terrain: 'forest' },
+      { len: 180, slope: -14, terrain: 'hillR', name: '垂直落下の坂' },
+      { len: 100, slope: -1, terrain: 'canyon', name: '大ジャンプの谷' },
+      { len: 160, slope: -8, terrain: 'forest', name: '枝のスラローム' },
+      { len: 120, slope: -13, terrain: 'ridge', name: '最後の急降下' },
+      { len: 22, slope: 6, terrain: 'ridge', name: '大こぶ' },
+      { len: 110, slope: -14, terrain: 'ridge', name: 'スカイダイブ' },
+      { len: 60, slope: -3, terrain: 'forest', name: 'ブレーキゾーン' },
+      { len: 70, slope: -2, turn: 100, terrain: 'cut', name: '谷底の急カーブ' },
+      { len: 60, slope: 3, terrain: 'forest', name: 'ふもとへの上り' },
+      { len: 120, slope: -5, terrain: 'forest', name: 'ゴールへ' },
+    ],
+    gaps: [{ from: 1180, to: 1212 }],
+    obstacles: [
+      { s: 380, kind: 'rock' },
+      { s: 1080, kind: 'rock' },
+      { s: 1290, kind: 'branch', side: 1 }, { s: 1318, kind: 'branch', side: -1 },
+      { s: 1346, kind: 'branch', side: 1 }, { s: 1374, kind: 'branch', side: -1 },
+      { s: 1920, kind: 'log' },
+    ],
+    coins: [
+      ...line(20, 55, 9), ...line(70, 250, 12),
+      ...line(286, 316, 6, 0, 1.5), ...line(325, 340, 15), ...line(345, 372, 9), ...arc(374, 386, 3, 2), ...line(395, 435, 10),
+      ...line(450, 590, 14, 1), ...line(612, 750, 14, -1),
+      ...line(770, 790, 10), ...line(825, 845, 10), ...line(860, 910, 10, -1),
+      ...line(930, 965, 9), ...line(985, 1070, 12), ...arc(1074, 1086, 3, 2), ...line(1100, 1170, 12),
+      ...arc(1176, 1216, 6, 3.4, 'gold'),
+      ...line(1225, 1280, 10), ...line(1284, 1296, 6, -1), ...line(1312, 1324, 6, 1), ...line(1340, 1352, 6, -1), ...line(1368, 1380, 6, 1),
+      ...line(1395, 1525, 13),
+      // 大こぶから飛んだ道すじにそって(ふつうに飛ぶと、だいたい取れる)
+      ...[[1560, 1.3], [1566, 1.8], [1572, 2.5], [1578, 2.9], [1590, 2.6], [1596, 1.8]].map(([s, h]) => ({ s, side: 0 as const, h, kind: s === 1578 ? 'gold' as const : undefined })),
+      // プレミアム: 大こぶの上の高い空(ダッシュの全速で飛びだしたときだけ届く)
+      { s: 1584, side: 0, h: 4.6, kind: 'premium' },
+      ...line(1615, 1660, 12), ...line(1670, 1715, 9),
+      ...line(1735, 1785, 10, 1), ...line(1800, 1850, 10), ...line(1865, 1905, 10), ...arc(1914, 1926, 3, 2), ...line(1935, 1965, 10),
+    ],
+    checkpoints: [{ s: 935, name: '中腹の見はり小屋' }, { s: 1240, name: '谷の見はり台' }],
+  },
+};
+
+export const CART_LEVELS: CartLevel[] = [LEVEL_8_1, LEVEL_8_2, LEVEL_8_3, LEVEL_8_4];
 export const cartById = (id: string): CartLevel | undefined => CART_LEVELS.find(l => l.id === id);
 export const trackOf = (level: CartLevel): Track => new Track(level.track);
 
 /** これから作る面(名前だけ。面えらびに「準備中」で出す)。 */
 export const CART_PLANNED: { id: string; title: string }[] = [
-  { id: '8-4', title: '超高速ダウンヒル' },
   { id: '8-5', title: '崩れた線路' }, { id: '8-6', title: '山岳トロッコ' }, { id: '8-7', title: '連続ジャンプ' },
   { id: '8-8', title: '霧の山道' }, { id: '8-9', title: '鹿の全力疾走' }, { id: '8-10', title: '奈良山脈 大滑降' },
 ];

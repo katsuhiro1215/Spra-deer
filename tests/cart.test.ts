@@ -105,7 +105,7 @@ test('コイン: まん中は通るだけ。横は体を傾けて、高い所は
 });
 
 // ---- 8-1 を、自動で走る(ボットは tests/cartbot.ts) ----
-const L1 = cartById('8-1')!, L2 = cartById('8-2')!, L3 = cartById('8-3')!;
+const L1 = cartById('8-1')!, L2 = cartById('8-2')!, L3 = cartById('8-3')!, L4 = cartById('8-4')!;
 const drive = (policy: Policy = {}) => driveLevel(L1, policy);
 
 test('8-1: 先を見て操作すれば、ハートを減らさずにクリアできる(60〜95秒)', () => {
@@ -168,7 +168,7 @@ test('8-1: プレミアムコインは、最後の倒木をダッシュの大ジ
 
 // ---- すべての面 ----
 test('すべての面: プレミアム1枚・切れ目は渓谷の中のまっすぐな所・線路どうしが近づきすぎない', () => {
-  assert.deepEqual(CART_LEVELS.map(l => l.id), ['8-1', '8-2', '8-3']);
+  assert.deepEqual(CART_LEVELS.map(l => l.id).slice(0, 4), ['8-1', '8-2', '8-3', '8-4']);
   for (const lv of CART_LEVELS) {
     const t = trackOf(lv), tag = lv.id;
     assert.equal(t.coins.filter(c => c.kind === 'premium').length, 1, `${tag} プレミアム`);
@@ -246,4 +246,49 @@ test('8-3: プレミアムは、最後の下り坂でダッシュして、大渓
   }
   assert.equal(tryDash(1490).premium, false, 'ダッシュが早すぎると、跳ぶときには遅くなっている');
   assert.equal(tryDash(0).reason, 'fall', 'ダッシュしないと、大渓谷に届かない');
+});
+
+// ---- こぶ(8-4 から) ----
+test('こぶ: 速いと、下へ折れる線路から浮いて飛ぶ。おそいと浮かない。浮いても、線路の上へ着地する', () => {
+  const t = new Track(def({ segments: [{ len: 200, slope: -12 }, { len: 24, slope: 7 }, { len: 300, slope: -14 }] }));
+  const at = (v: number) => {
+    const r = new CartRun(t); r.start();
+    for (let i = 0; i < 20 / DT && r.phase === 'running' && r.s < 360; i++) { if (!r.air && r.s < 215) r.v = v; r.step(DT, none()); }
+    return r;
+  };
+  assert.equal(at(14).lifts, 0, '50km/h では浮かない');
+  const fast = at(36);
+  assert.ok(fast.lifts >= 1, '130km/h では浮く');
+  assert.equal(fast.lifts, 1, '少し浮いては着地、をくり返さない');
+  assert.equal(fast.phase, 'running');
+});
+
+test('最高速は面ごとに変えられる(8-4 は 144km/h、ほかは 108km/h)', () => {
+  const steep = (vMax?: number) => go(new CartRun(new Track(def({ segments: [{ len: 3000, slope: -14 }], vMax }))), 40);
+  assert.ok(Math.abs(steep().v - BAL.vMax) < 0.5);
+  assert.ok(Math.abs(steep(40).v - 40) < 0.5);
+  assert.equal(L4.track.vMax, 40);
+});
+
+// ---- 8-4 超高速ダウンヒル ----
+test('8-4: 144km/h 近くまで出る。こぶの先の急カーブは、こぶの手前で減速しないと、飛んだまま突っこんで脱線する', () => {
+  const r = driveLevel(L4);
+  assert.ok(r.maxV * 3.6 > 140, `最高 ${(r.maxV * 3.6).toFixed(0)} km/h`);
+  assert.ok(r.lifts >= 2, `こぶで浮く ${r.lifts} 回`);
+  let lifted = 0;
+  const reckless = driveLevel(L4, { until: 960, extra: (run, inp) => {
+    if (run.s > 700 && run.s < 812) inp.brake = false;
+    for (const e of run.drainEvents()) if (e.kind === 'lift' && run.s > 780) lifted++;
+  } });
+  assert.equal(lifted, 1, 'こぶで浮く'); assert.equal(reckless.reason, 'derail');
+  assert.ok(reckless.s > 850 && reckless.s < 925, `急カーブで s=${reckless.s.toFixed(0)}`);
+});
+
+test('8-4: 枝のスラロームは、左右へ続けて傾ける。プレミアムは、大こぶにダッシュで飛びこんだときだけ', () => {
+  const noLean = driveLevel(L4, { lean: false });
+  assert.deepEqual([...noLean.hitIds].map(i => trackOf(L4).obstacles[i].s).slice(0, 3), [1290, 1318, 1346]);
+  const tryDash = (at: number) => driveLevel(L4, { from: 1240, until: 1620, dash: false, extra: (run, inp) => { if (at && run.s > at && run.s < at + 5) inp.dash = true; } });
+  assert.equal(tryDash(1480).premium, true); assert.equal(tryDash(1500).premium, true);
+  assert.equal(tryDash(0).premium, false, 'ダッシュなしでは、高さが足りない');
+  assert.equal(driveLevel(L4).premium, false, 'ふつうに走るだけでは取れない');
 });

@@ -27,7 +27,9 @@ export function drive(level: CartLevel, policy: Policy = {}): CartRun {
     // カーブ: 2秒先までで、いちばんきつい曲がりを見て、内側へ傾け、速すぎたらブレーキ
     const curv = track.sharpestAhead(s, Math.max(30, v * 2));
     if (Math.abs(curv) > 0.004) {
-      if (p.lean) { input.right = curv > 0; input.left = curv < 0; }
+      // 傾ける向きは、今いるカーブを優先(S字で、早すぎる切りかえをしない)
+      const here = track.sharpestAhead(s, Math.max(12, v * 0.4)), dir = Math.abs(here) > 0.004 ? here : curv;
+      if (p.lean) { input.right = dir > 0; input.left = dir < 0; }
       const soon = track.obstacles.find(o => o.kind === 'branch' && o.s > s && o.s - s < Math.max(30, v * 2));
       const outward = !!soon && p.lean && (soon.side === 1) === (curv > 0);
       const lat = !p.lean ? BAL.latBase : outward ? BAL.latBase - BAL.latOut : BAL.latBase + BAL.latLean;
@@ -35,6 +37,9 @@ export function drive(level: CartLevel, policy: Policy = {}): CartRun {
       if (p.brake && v > limit) input.brake = true;
     }
     if (branch && p.lean) { input.left = branch.side === 1; input.right = branch.side === -1; }
+    // こぶ: 先が急カーブなら、浮かないように減速する
+    const crest = track.crestAhead(s, v * 2 + 10);
+    if (crest && Math.abs(crest.curveAfter) > 0.006 && p.brake && !run.air && v > crest.vLift * 0.93) input.brake = true;
     // 切れ目: ふちの少し手前で跳ぶ。速さが足りなければ、手前でダッシュ
     const gap = track.gaps.find(g => g.to > s);
     if (gap) {

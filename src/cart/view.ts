@@ -846,7 +846,8 @@ export class CartView {
 
   render(run: CartRun, dt: number): void {
     this.time += dt;
-    const tr = this.track, f = this.f, v = run.v, speed = clamp(v / BAL.vDash, 0, 1);
+    // 8-4 のように最高速の高い面では 1 をこえる(視野がさらに広がり、速さを感じる)
+    const tr = this.track, f = this.f, v = run.v, speed = clamp(v / BAL.vDash, 0, 1.25);
     const failed = run.phase === 'failed';
     this.failT = failed ? this.failT + dt : 0;
 

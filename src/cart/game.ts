@@ -108,6 +108,7 @@ export function startCart(root: HTMLElement, level: CartLevel): () => void {
       case 'gold': audio.sfx('gold'); break;
       case 'premium': audio.sfx('premium'); break;
       case 'jump': audio.sfx('jump'); break;
+      case 'lift': tone(520, 900, 0.35, 'sine', 0.07); hint('lift', 'ふわっ！ こぶで 空へ とびだした！', 2400); break;
       case 'dash': audio.sfx('dash'); break;
       case 'land': thud(0.22, 0.4, 260); tone(120, 60, 0.12, 'sine', 0.08); break;
       case 'hit': audio.sfx('hit'); thud(0.4, 0.35, 500); break;
@@ -153,10 +154,19 @@ export function startCart(root: HTMLElement, level: CartLevel): () => void {
       }
       if (o.s - s < v * 0.75 + 3) return ['ジャンプ！', 'jump'];
     }
+    // こぶ: 先が急カーブなら、浮かないように減速。そうでなければ、飛ぶのを楽しむ
+    const crest = track.crestAhead(s, v * 1.6 + 10);
+    if (crest && v > crest.vLift * 0.95) {
+      if (Math.abs(crest.curveAfter) > 0.006) return ['ブレーキ！ こぶで 浮かないように', 'red'];
+      if (crest.s - s < v * 0.8) return ['こぶで とぶぞ！', 'jump'];
+    }
     const curv = track.sharpestAhead(s + 3, v * 1.7 + 8), k = Math.abs(curv);
-    if (k > 0.006) {
+    // 傾ける向きは、今いるカーブを優先(S字で、まだ右カーブの中なのに「左へ」と出さない)
+    const here = track.sharpestAhead(s, Math.max(12, v * 0.4)), kh = Math.abs(here);
+    if (k > 0.006 || kh > 0.004) {
       if (v > Math.sqrt((BAL.latBase + BAL.latLean) / k) * 0.96) return ['ブレーキ！', 'red'];
-      if (v > Math.sqrt(BAL.latBase / k) * 0.93) return [curv > 0 ? '右へ かたむけて ▶' : '◀ 左へ かたむけて', 'yellow'];
+      const dir = kh > 0.004 ? here : curv;
+      if (v > Math.sqrt(BAL.latBase / Math.max(k, kh)) * 0.93) return [dir > 0 ? '右へ かたむけて ▶' : '◀ 左へ かたむけて', 'yellow'];
     }
     return ['', ''];
   };

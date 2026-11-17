@@ -3,7 +3,7 @@
 import type { Track } from './track.ts';
 
 export type Input = { left: boolean; right: boolean; jump: boolean; brake: boolean; dash: boolean };
-export type CartEventKind = 'coin' | 'gold' | 'premium' | 'jump' | 'land' | 'hit' | 'drop' | 'derail' | 'dash' | 'tilt' | 'clear' | 'fail';
+export type CartEventKind = 'coin' | 'gold' | 'premium' | 'jump' | 'lift' | 'land' | 'hit' | 'drop' | 'derail' | 'dash' | 'tilt' | 'clear' | 'fail';
 export type CartEvent = { kind: CartEventKind; id?: number };
 export type FailReason = '' | 'fall' | 'derail' | 'miss' | 'broken';
 
@@ -54,6 +54,10 @@ export class CartRun {
   dashT = 0; dashCool = 0; safeT = 0;
   braking = false;
   maxV = 0; jumps = 0;
+  /** こぶで浮いた回数 */
+  lifts = 0;
+  /** この面の、ふつうの最高速と、ダッシュ中の最高速 */
+  vMax: number; vDash: number;
   private events: CartEvent[] = [];
   private jumpHeld = false; private dashHeld = false; private jumpBuf = 0;
   private edgeT = 0; private doomed = false; private warned = false;
@@ -61,6 +65,8 @@ export class CartRun {
 
   constructor(track: Track) {
     this.track = track;
+    this.vMax = track.vMax ?? BAL.vMax;
+    this.vDash = this.vMax + (BAL.vDash - BAL.vMax);
     this.place();
   }
   start(): void { if (this.phase === 'ready') this.phase = 'running'; }
@@ -128,7 +134,9 @@ export class CartRun {
       const q = tr.at(this.s);
       this.side = (this.px - q.x) * Math.cos(q.heading) + (this.pz - q.z) * Math.sin(q.heading);
       this.height = this.py - q.y;
-      if (this.py <= q.y && this.airT > 0.05) {
+      // 着地は、線路より速く下へ向かっているときだけ(こぶの上で、少し浮いては着地をくり返さない)
+      const trackVy = Math.tan(q.pitch) * Math.hypot(this.vx, this.vz);
+      if (this.py <= q.y && this.airT > 0.05 && (this.vy <= trackVy + 0.05 || this.py < q.y - 0.08)) {
         if (this.doomed || tr.inGap(this.s)) {
           // 線路が無い所へ落ちた
           if (!this.doomed) { this.doomed = true; this.events.push({ kind: 'drop' }); }
@@ -137,7 +145,10 @@ export class CartRun {
           this.fail('miss', 'derail'); return;
         } else {
           this.air = false; this.py = q.y; this.height = 0; this.side = 0;
-          this.v = Math.max(BAL.vMin, Math.hypot(this.vx, this.vz) * 0.98);
+          // 線路にそった向きの速さを引きつぐ(急な下り坂へ着地すると、速いまま走れる)
+          const flat = Math.cos(q.pitch);
+          const along = this.vx * Math.sin(q.heading) * flat + this.vy * Math.sin(q.pitch) - this.vz * Math.cos(q.heading) * flat;
+          this.v = Math.max(BAL.vMin, along * 0.98);
           this.events.push({ kind: 'land' });
         }
       }
@@ -148,7 +159,7 @@ export class CartRun {
       if (this.braking) a -= BAL.brake;
       if (this.dashT > 0) a += BAL.dashAcc;
       this.v += a * dt;
-      const cap = this.dashT > 0 ? BAL.vDash : BAL.vMax;
+      const cap = this.dashT > 0 ? this.vDash : this.vMax;
       if (this.v > cap) this.v = Math.max(cap, this.v - 6 * dt);
       this.v = Math.max(BAL.vMin, this.v);
       this.s += this.v * dt;
@@ -168,8 +179,12 @@ export class CartRun {
         if (this.tilt === 0) this.warned = false;
       }
 
-      // 線路の切れ目: 少しの間は、まだ跳べる。跳ばなければ、そのまま飛び出して落ちる
-      if (tr.inGap(this.s)) {
+      // こぶ(峠): 速すぎると、下へ折れる線路についていけず、車体が浮いて飛ぶ
+      const bend = -tr.pitchRate(this.s);
+      if (bend > 0 && this.v * this.v * bend > BAL.g * Math.cos(q.pitch) && !tr.inGap(this.s) && this.jumpBuf <= 0) {
+        this.lifts++; this.takeOff(0); this.events.push({ kind: 'lift' });
+      } else if (tr.inGap(this.s)) {
+        // 線路の切れ目: 少しの間は、まだ跳べる。跳ばなければ、そのまま飛び出して落ちる
         this.edgeT += dt;
         if (this.jumpBuf > 0) { this.jumpBuf = 0; this.jumps++; this.takeOff(BAL.jumpV); this.events.push({ kind: 'jump' }); }
         else if (this.edgeT > BAL.coyote) this.takeOff(0);
