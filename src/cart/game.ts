@@ -144,7 +144,13 @@ export function startCart(root: HTMLElement, level: CartLevel): () => void {
     }
     const o = track.obstacles.find(x => x.s > s && !run.hitIds.has(x.id));
     if (o && o.s - s < v * 1.3 + 6) {
-      if (o.kind === 'branch') return [o.side === 1 ? '◀ 左へ よけて！' : '右へ よけて！ ▶', 'yellow'];
+      if (o.kind === 'branch') {
+        const dodge = o.side === 1 ? '◀ 左へ よけて！' : '右へ よけて！ ▶';
+        // カーブの内がわの枝: よけると外へ傾くので、速すぎたら先にブレーキ
+        const c = track.sharpestAhead(s, o.s - s + 6), kk = Math.abs(c);
+        if (kk > 0.006 && (o.side === 1) === (c > 0) && v > Math.sqrt((BAL.latBase - BAL.latOut * 0.5) / kk)) return [`ブレーキ！ ${dodge}`, 'red'];
+        return [dodge, 'yellow'];
+      }
       if (o.s - s < v * 0.75 + 3) return ['ジャンプ！', 'jump'];
     }
     const curv = track.sharpestAhead(s + 3, v * 1.7 + 8), k = Math.abs(curv);
@@ -342,6 +348,8 @@ export function startCart(root: HTMLElement, level: CartLevel): () => void {
     if (gap) hint(gap.to - gap.from > 15 ? 'biggap' : 'gap', gap.to - gap.from > 15 ? '大きな 切れ目！ 看板の 速さまで ダッシュして、黄色い枕木で ジャンプ！' : '線路が 切れている！ 黄色い枕木の所で ジャンプ！', 3600);
     const o = track.obstacles.find(x => x.s > s && x.s - s < look);
     if (o) hint(o.kind, o.kind === 'branch' ? '枝が 張り出している！ 反対へ 体を かたむけて よけよう' : o.kind === 'rock' ? '線路に 岩が！ ジャンプで とびこえよう' : '倒木だ！ ジャンプで とびこえよう', 3000);
+    // その面ならではの所(ほかの一言より優先)
+    level.notes?.forEach((n, i) => { if (s >= n.s - look && s < n.s + 10) hint(`note${i}`, n.text, 3800); });
   };
 
   // ---- ループ ----

@@ -24,7 +24,7 @@ const watch = page => {
 /** ページの中で、先を見て操作するボットを取りつける(tests/cart.test.ts と同じ考え方)。 */
 const installBot = () => {
   const c = window.__cart, run = c.run, track = c.track, step = run.step.bind(run);
-  const B = { latBase: 7, latLean: 5 };
+  const B = { latBase: 7, latLean: 5, latOut: 3 };
   run.step = (dt, input) => {
     if (run.phase === 'running') {
       const s = run.s, v = run.v;
@@ -32,7 +32,10 @@ const installBot = () => {
       const curv = track.sharpestAhead(s, Math.max(30, v * 2));
       if (Math.abs(curv) > 0.004) {
         input.right = curv > 0; input.left = curv < 0;
-        if (v > Math.sqrt(((B.latBase + B.latLean) * 0.8) / Math.abs(curv))) input.brake = true;
+        // カーブの内がわに枝があると、よけるときに外へ傾くので、早めに減速
+        const soon = track.obstacles.find(o => o.kind === 'branch' && o.s > s && o.s - s < Math.max(30, v * 2));
+        const lat = soon && (soon.side === 1) === (curv > 0) ? B.latBase - B.latOut : B.latBase + B.latLean;
+        if (v > Math.sqrt((lat * 0.8) / Math.abs(curv))) input.brake = true;
       }
       const branch = track.obstacles.find(o => o.kind === 'branch' && o.s > s && o.s - s < Math.max(14, v * 0.7));
       if (branch) { input.left = branch.side === 1; input.right = branch.side === -1; }
@@ -85,6 +88,9 @@ try {
   const rec = await page.evaluate(() => JSON.parse(localStorage.getItem('spra-deer:progress:v2') ?? '{}'));
   assert.ok(rec.levels?.['8-1']?.clears >= 1, 'クリアの記録が残る');
   console.log(`自動操作でゴール: ${end.t.toFixed(1)}秒 ハート${end.lives} コイン${end.coins} 金${end.gold} 最高${end.max.toFixed(0)}km/h / ${reward}`);
+  const nextHref = await page.locator('[data-ks="next"]').getAttribute('href');
+  assert.equal(nextHref, '/cart/?level=8-2', 'クリアすると「次の面へ(8-2)」が出る');
+  assert.equal(await page.locator('[data-ks="next"]').isVisible(), true);
 
   // 3) 何もしないと失敗する(最初の切れ目で落ちる)
   await page.locator('[data-ks="retry"]').click();
@@ -110,6 +116,46 @@ try {
   });
   console.log(`重さ(いちばん重い所 s=${perf.at}): 描画命令 ${perf.calls} / 三角形 ${perf.triangles}`);
   assert.ok(perf.triangles < 260000, '三角形が多すぎる');
+
+  // 5) 8-2・8-3 も、自動操作でゴールまで走れる(8-2 は 8-1 の「次の面へ」から)
+  for (const [id, shots] of [['8-2', [[250, 's-curve'], [590, 'hairpin'], [890, 'branch-curve'], [1250, 'three-curves']]], ['8-3', [[475, 'double-gap'], [725, 'uphill-gap'], [1145, 'rock-gap'], [1565, 'big-gap']]]]) {
+    if (id === '8-2') {
+      // もう一度 8-1 をクリアして、結果の「次の面へ」から入る
+      await page.goto(`${base}/cart/?level=8-1`); await page.waitForFunction(() => !!window.__cart);
+      await page.locator('[data-ks="go"]').click(); await page.evaluate(installBot);
+      await page.waitForFunction(() => document.querySelector('[data-ks="result"]').classList.contains('on'), null, { timeout: 600000 });
+      await page.locator('[data-ks="next"]').click();
+      await page.waitForURL(/\/cart\/\?level=8-2/);
+    } else await page.goto(`${base}/cart/?level=${id}`);
+    await page.waitForFunction(() => !!window.__cart);
+    assert.equal(await page.evaluate(() => window.__cart.level.id), id);
+    await page.locator('[data-ks="go"]').click();
+    await page.evaluate(installBot);
+    for (const [at, name] of shots) {
+      await page.waitForFunction(s => window.__cart.run.s >= s || window.__cart.run.phase !== 'running', at, { timeout: 600000 });
+      await page.screenshot({ path: `${output}/cart-${id}-${name}.png` });
+    }
+    await page.waitForFunction(() => window.__cart.run.phase !== 'running', null, { timeout: 600000 });
+    const r = await page.evaluate(() => { const r = window.__cart.run; return { phase: r.phase, reason: r.reason, s: r.s, t: r.t, lives: r.lives, coins: r.coins, max: r.maxV * 3.6 }; });
+    assert.equal(r.phase, 'cleared', `${id} ゴールできなかった: ${r.reason} s=${r.s.toFixed(0)}`);
+    await page.waitForFunction(() => document.querySelector('[data-ks="result"]').classList.contains('on'), null, { timeout: 120000 });
+    await page.screenshot({ path: `${output}/cart-${id}-clear.png` });
+    const p = await page.evaluate(() => JSON.parse(localStorage.getItem('spra-deer:progress:v2') ?? '{}'));
+    assert.ok(p.levels?.[id]?.clears >= 1, `${id} クリアの記録が残る`);
+    const w = await page.evaluate(async () => {
+      const c = window.__cart, ren = c.view.renderer; let worst = { calls: 0, triangles: 0, at: 0 };
+      document.querySelector('[data-ks="retry"]').click();
+      for (let s = 20; s < c.track.length; s += 150) {
+        c.run.restore(s, 0, 0, 0, false, []); c.run.phase = 'ready';
+        await new Promise(r => setTimeout(r, 400));
+        const i = ren.info.render;
+        if (i.triangles > worst.triangles) worst = { calls: i.calls, triangles: i.triangles, at: s };
+      }
+      return worst;
+    });
+    assert.ok(w.triangles < 260000, `${id} 三角形が多すぎる`);
+    console.log(`${id} 自動操作でゴール: ${r.t.toFixed(1)}秒 ハート${r.lives} コイン${r.coins} 最高${r.max.toFixed(0)}km/h / 重さ(s=${w.at}) 描画命令 ${w.calls}・三角形 ${w.triangles}`);
+  }
   await page.close();
 
   // 4) 小さい画面

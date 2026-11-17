@@ -123,7 +123,7 @@ export class CartView {
   private sparkData: { life: number; v: THREE.Vector3 }[] = [];
   private puffs: { sp: THREE.Sprite; life: number; v: THREE.Vector3 }[] = [];
   private f = newFrame(); private f2 = newFrame(); private f3 = newFrame();
-  private camPos = new THREE.Vector3(); private camLook = new THREE.Vector3(); private camReady = false;
+  private camPos = new THREE.Vector3(); private camLook = new THREE.Vector3(); private camReady = false; private lookD = 20;
   private shake = 0; private time = 0; private failT = 0; private wasAir = false; private spin = 0; private deerClock = 0;
   private frames = 0; private slowFrames = 0; private tuned = false;
   private ro: ResizeObserver;
@@ -972,7 +972,10 @@ export class CartView {
 
     // ---- カメラ: トロッコの後ろ上から。速いほど広く、カーブで少し傾く ----
     this.shake = Math.max(0, this.shake - dt * 1.8);
-    const back = this.frame(run.s - 7.6 - speed * 1.6, this.f2), ahead = this.frame(run.s + 20, this.f3);
+    // きついカーブでは、見る先を近くする(遠くを見ると、トロッコが画面の端へ寄ってしまう)
+    const sharp = Math.abs(this.track.sharpestAhead(run.s - 4, 26));
+    this.lookD += (clamp(20 - sharp * 480, 8, 20) - this.lookD) * Math.min(1, dt * 3);
+    const back = this.frame(run.s - 7.6 - speed * 1.6, this.f2), ahead = this.frame(run.s + this.lookD, this.f3);
     const lift = Math.max(0, run.height) * 0.55 + (failed && run.reason === 'fall' ? 1.5 : 0);
     const wantPos = this.v1.copy(back.o).addScaledVector(back.u, 3.9 + lift).addScaledVector(back.r, -run.lean * 0.5);
     const wantLook = this.v3().copy(ahead.o).addScaledVector(ahead.u, 1.3 + Math.max(0, run.height) * 0.4);
