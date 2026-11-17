@@ -1,6 +1,7 @@
 import { FIELD } from './stage.ts';
 import type { ArenaDefinition, HungryDefinition, LineDefinition, NightDefinition, SenbeiDefinition } from './stage.ts';
 import { RUNNER_LEVELS } from '../runner/levels.ts';
+import { CART_LEVELS, CART_PLANNED } from '../cart/levels.ts';
 import type { ChaserDefinition, CoinDefinition, CrosserDefinition, CrossDefinition, DeliveryDefinition, HedgeDefinition, PondDefinition, RescueDefinition, StoneDefinition, SweepDefinition, GoalDefinition, Point, RainDefinition, SliderDefinition, TrapDefinition, WallDefinition } from './stage.ts';
 
 /** 画面上の位置（Y）がこの値より下にいる間、text を案内として表示する。上から順に判定する。 */
@@ -67,7 +68,7 @@ export type LevelDefinition = {
 };
 
 /** 一覧に出す枠。level も runnerId も無い枠は「準備中」として表示する。 */
-export type LevelSlot = { id: string; title: string; summary: string; level?: LevelDefinition; /** 3D走りゲーム(/run/)の面。runner/levels.ts の id */ runnerId?: string };
+export type LevelSlot = { id: string; title: string; summary: string; level?: LevelDefinition; /** 3D走りゲーム(/run/)の面。runner/levels.ts の id */ runnerId?: string; /** 別のページで遊ぶ3Dの面の、ページ(無ければ /run/)。WORLD 8 は /cart/ */ page?: string };
 
 /** 8個のうんこが一列に並び、gap の近くだけが空く。 */
 const row = (y: number, gap: number): Point[] =>
@@ -1072,10 +1073,19 @@ export const STAGES: { stage: number; title: string; slots: LevelSlot[] }[] = [
   { stage: 4, title: '奈良公園大掃除', slots: [{ id: '4-1', title: LEVEL_4_1.title, summary: 'うんこを掃く(作り直し予定)', level: LEVEL_4_1 }] },
   // ステージ5は保留(5-1の定義は残してある)
   { stage: 5, title: '森のなかま救出', slots: [{ id: '5-1', title: LEVEL_5_1.title, summary: '保留中' }] },
+  // WORLD 8 は、Three.js の3Dトロッコ(/cart/)。作った面は cart/levels.ts、まだの面は名前だけの「準備中」
+  {
+    stage: 8, title: '鹿と暴走トロッコ', slots: [
+      ...CART_LEVELS.map(l => ({ id: l.id, title: l.title, summary: l.summary, runnerId: l.id, page: '/cart/' })),
+      ...CART_PLANNED.map(l => ({ id: l.id, title: l.title, summary: '準備中' })),
+    ],
+  },
 ];
 
 /** 遊べる面だけを、遊ぶ順に並べたもの。 */
 export const PLAYABLE: LevelDefinition[] = STAGES.flatMap(s => s.slots.flatMap(slot => (slot.level ? [slot.level] : [])));
 /** 遊べる枠(通常の面と3D走りの面)を、遊ぶ順に並べたもの。記録・解放の順に使う。 */
 export const ALL_PLAYABLE_SLOTS: { id: string; stage: number; runner: boolean }[] = STAGES.flatMap(g => g.slots.filter(s => s.level || s.runnerId).map(s => ({ id: s.id, stage: g.stage, runner: !!s.runnerId })));
+/** 別のページで遊ぶ3Dの面(3D走り・トロッコ)の、行き先。 */
+export const pageOf = (id: string): string => `${STAGES.flatMap(g => g.slots).find(s => s.id === id)?.page ?? '/run/'}?level=${id}`;
 export const levelById = (id: string): LevelDefinition | undefined => PLAYABLE.find(l => l.id === id);

@@ -1,6 +1,6 @@
 import * as Phaser from 'phaser';
 import { VIEW, GOAL, RULES } from './game/stage.ts';
-import { ALL_PLAYABLE_SLOTS, PLAYABLE, levelById, type LevelDefinition } from './game/levels.ts';
+import { ALL_PLAYABLE_SLOTS, PLAYABLE, levelById, pageOf, type LevelDefinition } from './game/levels.ts';
 import { createWorld, step, type World, type Event } from './game/world.ts';
 import { Progress } from './progress.ts';
 import { Wallet, clearRewards } from './wallet.ts';
@@ -149,7 +149,7 @@ class Park extends Phaser.Scene {
       // 3D走りゲームの面(ステージ3)は、別のページ(/run/)で遊ぶ
       const runId = button?.dataset.level ?? '';
       if ((action === 'run' || (action === 'next' && !target)) && runId && progress.isUnlocked(runId)) {
-        if (wallet.canPlay()) location.href = `/run/?level=${runId}`; else this.tired('home');
+        if (wallet.canPlay()) location.href = pageOf(runId); else this.tired('home');
       }
       if (action === 'retry') { this.abandon(); this.tryBegin(this.level); }
       if (action === 'resume') this.resume();

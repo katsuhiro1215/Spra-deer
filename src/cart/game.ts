@@ -1,0 +1,419 @@
+// WORLD 8「鹿と暴走トロッコ」の組み立て: 入力・画面の表示(HUD)・音・ループ・記録。
+import { Progress } from '../progress.ts';
+import { Wallet, clearRewards, waitText, STAMINA_MAX, STAMINA_FAIL } from '../wallet.ts';
+import { RunnerAudio } from '../runner/audio.ts';
+import { CART_LEVELS, trackOf, type CartLevel } from './levels.ts';
+import { BAL, CartRun, type CartEvent, type Input } from './sim.ts';
+import { CartView } from './view.ts';
+
+const STEP = 1 / 120;
+const KMH = 3.6;
+
+const FAIL_TEXT: Record<string, [string, string]> = {
+  fall: ['線路の 切れ目に 落ちた…', '黄色い枕木の所で ジャンプ。速さが たりないときは、手前で ダッシュ！'],
+  derail: ['カーブで 脱線した…', 'カーブの前で ブレーキ。内がわへ 体を かたむけると、ねばれるよ'],
+  miss: ['着地が 線路から はずれた…', 'ジャンプは、まっすぐな所で'],
+  broken: ['トロッコが こわれた…', '岩と 倒木は ジャンプ。枝は、反対へ 体を かたむけて よけよう'],
+};
+
+export function startCart(root: HTMLElement, level: CartLevel): () => void {
+  const q = <T extends HTMLElement>(k: string) => root.querySelector<T>(`[data-ks="${k}"]`)!;
+  const track = trackOf(level);
+  const wallet = new Wallet();
+  const progress = new Progress();
+  // プレミアムコインは1つの面に1枚だけ。もう取った面には出さない(設計書 25-3)
+  const premiumTaken = wallet.hasPremium(level.id);
+  if (premiumTaken) track.coins = track.coins.filter(c => c.kind !== 'premium');
+  const silverTotal = track.coins.filter(c => c.kind === undefined).length;
+  const view = new CartView(q('stage'), track);
+  const nextLevel = CART_LEVELS[CART_LEVELS.findIndex(l => l.id === level.id) + 1];
+  const obstacleById = new Map(track.obstacles.map(o => [o.id, o]));
+
+  // チェックポイント: 通ったときの状態を覚えておき、失敗したら、そこから続けられる
+  type Snapshot = { s: number; name: string; t: number; coins: number; gold: number; premium: boolean; collected: Set<number> };
+  const cpEls = track.checkpoints.map(c => {
+    const el = document.createElement('span');
+    el.className = 'ks-progress-cp';
+    el.style.left = `${(c.s / track.length) * 100}%`;
+    q('mark').before(el);
+    return el;
+  });
+  let saved: Snapshot | null = null;
+  let charged = false, continued = false, recorded = false;
+
+  q('lv-id').textContent = `面 ${level.id}`;
+  q('lv-title').textContent = level.title;
+  q('lv-goal').textContent = level.goalName;
+  q('s-title').textContent = level.title;
+  q('s-lead').textContent = level.summary;
+  q('s-prem').textContent = premiumTaken ? '◆ この面の プレミアムコインは 取ったよ' : '◆ この面には プレミアムコインが 1まい かくれている';
+
+  let run = new CartRun(track);
+  const input: Input = { left: false, right: false, jump: false, brake: false, dash: false };
+
+  // ---- 音 ----
+  const audio = new RunnerAudio();
+  let ac: AudioContext | null = null;
+  const tone = (f0: number, f1: number, dur: number, type: OscillatorType = 'sine', vol = 0.09, delay = 0) => {
+    if (!ac) return;
+    const t0 = ac.currentTime + delay, o = ac.createOscillator(), g = ac.createGain();
+    o.type = type;
+    o.frequency.setValueAtTime(f0, t0);
+    o.frequency.exponentialRampToValueAtTime(Math.max(1, f1), t0 + dur);
+    g.gain.setValueAtTime(vol, t0);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    o.connect(g).connect(audio.out ?? ac.destination);
+    o.start(t0); o.stop(t0 + dur + 0.02);
+  };
+  const noiseBuf = (sec: number) => {
+    const len = Math.floor(ac!.sampleRate * sec), buf = ac!.createBuffer(1, len, ac!.sampleRate), d = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+    return buf;
+  };
+  /** 短い「ドン」「ガシャ」(ノイズ)。 */
+  const thud = (dur: number, vol: number, freq: number, delay = 0) => {
+    if (!ac) return;
+    const src = ac.createBufferSource(), f = ac.createBiquadFilter(), g = ac.createGain(), t0 = ac.currentTime + delay;
+    src.buffer = noiseBuf(dur);
+    f.type = 'lowpass'; f.frequency.value = freq;
+    g.gain.setValueAtTime(vol, t0); g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    src.connect(f).connect(g).connect(audio.out ?? ac.destination);
+    src.start(t0);
+  };
+  // 走っている間ずっと鳴る音: 風・車輪のゴロゴロ・ブレーキのキーッ(大きさを、速さに合わせて変える)
+  type Loop = { gain: GainNode; filter: BiquadFilterNode; src: AudioBufferSourceNode };
+  let loops: { wind: Loop; rumble: Loop; screech: Loop } | null = null;
+  const startLoops = () => {
+    if (!ac || loops) return;
+    const make = (type: BiquadFilterType, freq: number, Q: number): Loop => {
+      const src = ac!.createBufferSource(), filter = ac!.createBiquadFilter(), gain = ac!.createGain();
+      src.buffer = noiseBuf(2); src.loop = true;
+      filter.type = type; filter.frequency.value = freq; filter.Q.value = Q;
+      gain.gain.value = 0;
+      src.connect(filter).connect(gain).connect(audio.out ?? ac!.destination);
+      src.start();
+      return { gain, filter, src };
+    };
+    loops = { wind: make('bandpass', 700, 0.6), rumble: make('lowpass', 150, 0.8), screech: make('bandpass', 2900, 9) };
+  };
+  const setLoop = (l: Loop, vol: number, freq?: number) => {
+    if (!ac) return;
+    l.gain.gain.setTargetAtTime(vol, ac.currentTime, 0.06);
+    if (freq !== undefined) l.filter.frequency.setTargetAtTime(freq, ac.currentTime, 0.1);
+  };
+  let nextClack = 0;
+  const sound = (e: CartEvent) => {
+    switch (e.kind) {
+      case 'coin': tone(1180, 1760, 0.13, 'triangle', 0.07); break;
+      case 'gold': audio.sfx('gold'); break;
+      case 'premium': audio.sfx('premium'); break;
+      case 'jump': audio.sfx('jump'); break;
+      case 'dash': audio.sfx('dash'); break;
+      case 'land': thud(0.22, 0.4, 260); tone(120, 60, 0.12, 'sine', 0.08); break;
+      case 'hit': audio.sfx('hit'); thud(0.4, 0.35, 500); break;
+      case 'tilt': tone(1400, 1700, 0.12, 'square', 0.04); tone(1400, 1700, 0.12, 'square', 0.04, 0.16); break;
+      case 'drop': tone(620, 60, 0.9, 'triangle', 0.09); break;
+      case 'derail': thud(0.9, 0.5, 900); tone(180, 40, 0.6, 'sawtooth', 0.08); break;
+      case 'clear': audio.stopMusic(); audio.jingle('clear'); break;
+      case 'fail': audio.stopMusic(); audio.jingle('fail'); break;
+    }
+  };
+
+  // ---- 画面の表示 ----
+  const elCoins = q('coins'), elGold = q('gold'), elPrem = q('prem'), elHearts = q('hearts'), elFill = q('fill'), elMark = q('mark');
+  const elSpeed = q('speed'), elSeg = q('seg'), elAlert = q('alert'), elToast = q('toast'), elStart = q('start'), elResult = q('result');
+  const elDash = q('dash'), elBrake = q('brake'), elJump = q('jump'), elPad = q('pad');
+  let toastTimer = 0;
+  const toast = (msg: string, ms = 2400) => {
+    elToast.textContent = msg; elToast.classList.add('on');
+    window.clearTimeout(toastTimer);
+    toastTimer = window.setTimeout(() => elToast.classList.remove('on'), ms);
+  };
+  /** 先を見て、今やることを大きく出す(ブレーキ・かたむける・ジャンプ・ダッシュ)。 */
+  const alertText = (): [string, string] => {
+    if (run.phase !== 'running') return ['', ''];
+    const s = run.s, v = run.v;
+    if (run.tilt > 0.2) return ['あぶない！ 車輪が 浮いている！', 'red'];
+    if (run.air) return ['', ''];
+    const gap = track.gaps.find(g => g.to > s);
+    if (gap && gap.from - s < v * 2.2 + 12 && gap.from - s > -1) {
+      const need = gap.to - gap.from + 3;
+      if (gap.from - s < Math.max(5, v * 0.4)) return ['ジャンプ！', 'jump'];
+      if (v < need) return [run.dashCool <= 0 ? 'スピードが たりない！ ダッシュ！' : 'スピードが たりない！', 'red'];
+      return ['もうすぐ 切れ目！ 黄色で ジャンプ', 'yellow'];
+    }
+    const o = track.obstacles.find(x => x.s > s && !run.hitIds.has(x.id));
+    if (o && o.s - s < v * 1.3 + 6) {
+      if (o.kind === 'branch') return [o.side === 1 ? '◀ 左へ よけて！' : '右へ よけて！ ▶', 'yellow'];
+      if (o.s - s < v * 0.75 + 3) return ['ジャンプ！', 'jump'];
+    }
+    const curv = track.sharpestAhead(s + 3, v * 1.7 + 8), k = Math.abs(curv);
+    if (k > 0.006) {
+      if (v > Math.sqrt((BAL.latBase + BAL.latLean) / k) * 0.96) return ['ブレーキ！', 'red'];
+      if (v > Math.sqrt(BAL.latBase / k) * 0.93) return [curv > 0 ? '右へ かたむけて ▶' : '◀ 左へ かたむけて', 'yellow'];
+    }
+    return ['', ''];
+  };
+  const paintHud = () => {
+    elCoins.textContent = String(run.coins);
+    elGold.textContent = String(run.gold);
+    elPrem.hidden = !run.premium;
+    elHearts.textContent = '♥'.repeat(Math.max(0, run.lives)) + '♡'.repeat(Math.max(0, 3 - run.lives));
+    const p = `${(run.progress * 100).toFixed(1)}%`;
+    elFill.style.width = p; elMark.style.left = p;
+    const kmh = Math.round(run.v * KMH);
+    elSpeed.textContent = String(run.phase === 'ready' ? 0 : kmh);
+    elSpeed.parentElement!.classList.toggle('fast', kmh >= 95);
+    const name = track.nameAt(run.s);
+    if (elSeg.textContent !== name) elSeg.textContent = name;
+    const [msg, tone_] = alertText();
+    if (elAlert.textContent !== msg) elAlert.textContent = msg;
+    elAlert.dataset.tone = tone_;
+    elAlert.classList.toggle('on', msg !== '');
+    elDash.style.setProperty('--cd', String(run.dashCool / BAL.dashCool));
+    elDash.classList.toggle('wait', run.dashCool > 0 && run.dashT <= 0);
+    elDash.classList.toggle('go', run.dashT > 0);
+  };
+  const paintStamina = () => {
+    const st = wallet.stamina;
+    const txt = `体力 ${st} / ${STAMINA_MAX}` + (st < STAMINA_FAIL ? `(回復まで ${waitText(wallet.waitToPlay)})` : '');
+    for (const k of ['s-stamina', 'r-stamina']) { const e = q(k); e.textContent = txt; e.classList.toggle('low', st < STAMINA_FAIL); }
+  };
+  let resultTimer = 0;
+  const showResult = () => {
+    const cleared = run.phase === 'cleared';
+    const stars = cleared ? Math.max(1, run.lives) : 0;
+    let newBest = false;
+    if (cleared && !recorded) {
+      recorded = true;
+      newBest = progress.clear(level.id, run.t, !continued); // 途中から続けたときは、タイムを記録しない
+      const got = clearRewards(wallet, level.id, { silver: run.coins, gold: run.gold, star3: stars === 3 });
+      const prem = run.premium && wallet.takePremium(level.id);
+      q('r-reward').textContent = `+${got.silver} シルバー` + (got.gold ? `　+${got.gold} ゴールド` : '') + (prem ? '　+1 プレミアム！' : '');
+      q('r-reward').classList.remove('lose');
+    }
+    if (!cleared && !charged) {
+      charged = true; wallet.fail(); // 失敗: 体力が2減る(設計書 25-2)
+      q('r-reward').textContent = `体力 −${STAMINA_FAIL}`;
+      q('r-reward').classList.add('lose');
+    }
+    paintStamina();
+    const best = progress.get(level.id).best, why = FAIL_TEXT[run.reason];
+    q('r-title').textContent = cleared ? `${level.goalName}に とうちゃく！` : why?.[0] ?? 'ざんねん…';
+    q('r-tip').textContent = cleared ? '' : why?.[1] ?? '';
+    q('r-stars').textContent = cleared ? '★'.repeat(stars) + '☆'.repeat(3 - stars) : '';
+    q('r-coins').textContent = `${run.coins} / ${silverTotal}` + (run.gold ? `　金 ${run.gold}` : '') + (run.premium ? '　◆' : '');
+    q('r-max').textContent = `${Math.round(run.maxV * KMH)} km/h`;
+    q('r-time').textContent = cleared ? `${run.t.toFixed(1)} 秒${continued ? '（途中から）' : newBest ? '（ベスト更新！）' : ''}` : `${Math.floor(run.progress * 100)} % まで`;
+    q('r-best').textContent = best === null ? '—' : `${best.toFixed(1)} 秒`;
+    const cont = q<HTMLButtonElement>('cont');
+    cont.hidden = cleared || !saved;
+    if (saved) cont.textContent = `${saved.name}から つづける`;
+    const next = q<HTMLAnchorElement>('next');
+    next.hidden = !cleared || !nextLevel;
+    if (nextLevel) { next.href = `/cart/?level=${nextLevel.id}`; next.textContent = `次の面へ（${nextLevel.id}）▶`; }
+    elResult.classList.toggle('fail', !cleared);
+    elResult.classList.add('on');
+  };
+
+  let hinted = new Set<string>();
+  const begin = (from: Snapshot | null = null) => {
+    if (!wallet.canPlay()) {
+      paintStamina();
+      toast(`体力が たりません(回復まで ${waitText(wallet.waitToPlay)})`, 3000);
+      return;
+    }
+    charged = false; recorded = false; continued = !!from;
+    q('r-reward').textContent = '';
+    audio.ensure(); ac = audio.ctx;
+    startLoops();
+    audio.stopMusic(0); audio.startMusic();
+    window.clearTimeout(resultTimer);
+    run = new CartRun(track);
+    if (from) run.restore(from.s, from.t, from.coins, from.gold, from.premium, from.collected);
+    else { saved = null; hinted = new Set(); }
+    cpEls.forEach((el, i) => el.classList.toggle('passed', !!saved && track.checkpoints[i].s <= saved.s));
+    nextClack = run.s + 6;
+    releaseAll();
+    run.start();
+    if (!from) progress.attempt(level.id);
+    elStart.classList.remove('on'); elResult.classList.remove('on');
+    paintHud();
+    toast(from ? `${from.name}から 再スタート！` : level.intro, 3200);
+  };
+
+  const paintSound = () => {
+    for (const k of ['snd-s', 'snd-r']) {
+      const b = q<HTMLButtonElement>(k);
+      b.textContent = audio.enabled ? '♪ 音 ON' : '♪ 音 OFF';
+      b.setAttribute('aria-pressed', String(audio.enabled));
+    }
+  };
+  const toggleSound = () => { audio.setEnabled(!audio.enabled); paintSound(); };
+  q('snd-s').addEventListener('click', toggleSound);
+  q('snd-r').addEventListener('click', toggleSound);
+  paintSound();
+  q('go').addEventListener('click', () => begin());
+  q('retry').addEventListener('click', () => begin());
+  q('cont').addEventListener('click', () => begin(saved));
+
+  // ---- 入力 ----
+  // 左右は「キーボード」と「パッド」の2か所から入る。どちらも、最後に押した向きを優先する。
+  const keyCodes: string[] = [];
+  const padPointers = new Map<number, 'left' | 'right'>();
+  const dirOfKey: Record<string, 'left' | 'right'> = { ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right' };
+  const holdKeys: Record<string, 'jump' | 'brake' | 'dash'> = {
+    Space: 'jump', ArrowUp: 'jump', KeyW: 'jump', ArrowDown: 'brake', KeyS: 'brake', ShiftLeft: 'dash', ShiftRight: 'dash', KeyE: 'dash',
+  };
+  const holdEl = { jump: elJump, brake: elBrake, dash: elDash };
+  const applyDir = () => {
+    const kb = keyCodes.length ? dirOfKey[keyCodes[keyCodes.length - 1]] : undefined;
+    const pads = [...padPointers.values()], dir = kb ?? pads[pads.length - 1];
+    input.left = dir === 'left'; input.right = dir === 'right';
+    elPad.dataset.dir = dir ?? '';
+  };
+  const setHold = (k: 'jump' | 'brake' | 'dash', on: boolean) => { input[k] = on; holdEl[k].classList.toggle('down', on); };
+  const releaseAll = () => {
+    keyCodes.length = 0; padPointers.clear();
+    setHold('jump', false); setHold('brake', false); setHold('dash', false);
+    applyDir();
+  };
+  /** 指がボタンの外へ出ても、離すまで押した扱いにする(できない環境では、何もしない)。 */
+  const capture = (el: HTMLElement, ev: PointerEvent) => { try { el.setPointerCapture(ev.pointerId); } catch { /* そのまま */ } };
+  const sideOf = (ev: PointerEvent): 'left' | 'right' => {
+    const r = elPad.getBoundingClientRect();
+    return ev.clientX < r.left + r.width / 2 ? 'left' : 'right';
+  };
+  const onPadDown = (ev: PointerEvent) => {
+    ev.preventDefault(); capture(elPad, ev);
+    padPointers.delete(ev.pointerId); padPointers.set(ev.pointerId, sideOf(ev)); applyDir();
+  };
+  const onPadMove = (ev: PointerEvent) => {
+    if (!padPointers.has(ev.pointerId)) return;
+    const side = sideOf(ev);
+    if (padPointers.get(ev.pointerId) !== side) { padPointers.delete(ev.pointerId); padPointers.set(ev.pointerId, side); applyDir(); }
+  };
+  const onPadUp = (ev: PointerEvent) => { padPointers.delete(ev.pointerId); applyDir(); };
+  elPad.addEventListener('pointerdown', onPadDown);
+  elPad.addEventListener('pointermove', onPadMove);
+  for (const n of ['pointerup', 'pointercancel', 'lostpointercapture'] as const) elPad.addEventListener(n, onPadUp);
+  for (const k of ['jump', 'brake', 'dash'] as const) {
+    const el = holdEl[k];
+    el.addEventListener('pointerdown', ev => { ev.preventDefault(); capture(el, ev); setHold(k, true); });
+    for (const n of ['pointerup', 'pointercancel', 'lostpointercapture'] as const) el.addEventListener(n, () => setHold(k, false));
+  }
+  const kd = (ev: KeyboardEvent) => {
+    if (dirOfKey[ev.code]) {
+      ev.preventDefault();
+      if (ev.repeat) return;
+      const i = keyCodes.indexOf(ev.code);
+      if (i >= 0) keyCodes.splice(i, 1);
+      keyCodes.push(ev.code); applyDir();
+    } else if (holdKeys[ev.code]) { ev.preventDefault(); setHold(holdKeys[ev.code], true); }
+  };
+  const ku = (ev: KeyboardEvent) => {
+    if (dirOfKey[ev.code]) { const i = keyCodes.indexOf(ev.code); if (i >= 0) keyCodes.splice(i, 1); applyDir(); }
+    else if (holdKeys[ev.code]) setHold(holdKeys[ev.code], false);
+  };
+  window.addEventListener('keydown', kd);
+  window.addEventListener('keyup', ku);
+  const onHidden = () => {
+    releaseAll();
+    if (document.hidden) audio.suspend(); else audio.resume();
+  };
+  window.addEventListener('blur', onHidden);
+  document.addEventListener('visibilitychange', onHidden);
+  const noMenu = (e: Event) => e.preventDefault();
+  root.addEventListener('contextmenu', noMenu);
+
+  /** はじめて出あうものに、一言(種類ごとに1回)。 */
+  const hint = (key: string, msg: string, ms = 3000) => { if (!hinted.has(key)) { hinted.add(key); toast(msg, ms); } };
+  const hints = () => {
+    const s = run.s, v = run.v, look = v * 2.4 + 20;
+    const seg = track.segments.find(g => g.from > s && g.from - s < look);
+    if (seg) {
+      const k = Math.abs(((seg.turn ?? 0) * Math.PI) / 180 / seg.len);
+      if (k > 0.015) hint('sharp', '急カーブ！ ブレーキで 速さを おとして、内がわへ 体を かたむけよう', 3600);
+      else if (k > 0.007) hint('curve', 'カーブでは ◀ ▶ で 内がわへ 体を かたむけると、速いまま 回れるよ', 3600);
+      if ((seg.slope ?? 0) >= 3) hint('up', '上り坂！ ダッシュで 鹿に がんばってもらおう', 3200);
+      if ((seg.slope ?? 0) <= -8) hint('down', '急な下り坂！ どんどん 速くなるよ', 2600);
+    }
+    const gap = track.gaps.find(g => g.from > s && g.from - s < look + 25);
+    if (gap) hint(gap.to - gap.from > 15 ? 'biggap' : 'gap', gap.to - gap.from > 15 ? '大きな 切れ目！ 看板の 速さまで ダッシュして、黄色い枕木で ジャンプ！' : '線路が 切れている！ 黄色い枕木の所で ジャンプ！', 3600);
+    const o = track.obstacles.find(x => x.s > s && x.s - s < look);
+    if (o) hint(o.kind, o.kind === 'branch' ? '枝が 張り出している！ 反対へ 体を かたむけて よけよう' : o.kind === 'rock' ? '線路に 岩が！ ジャンプで とびこえよう' : '倒木だ！ ジャンプで とびこえよう', 3000);
+  };
+
+  // ---- ループ ----
+  let raf = 0, last = performance.now(), acc = 0, prevPhase = run.phase;
+  const frame = (now: number) => {
+    raf = requestAnimationFrame(frame);
+    const dt = Math.min(0.1, (now - last) / 1000);
+    last = now; acc += dt;
+    while (acc >= STEP) { run.step(STEP, input); acc -= STEP; }
+    for (const e of run.drainEvents()) {
+      sound(e);
+      if (e.kind === 'hit') {
+        view.bump(0.5);
+        const o = e.id !== undefined ? obstacleById.get(e.id) : undefined;
+        toast(o?.kind === 'branch' ? '枝に ぶつかった！' : o?.kind === 'log' ? '倒木に ぶつかった！' : '岩に ぶつかった！', 1800);
+      } else if (e.kind === 'dash') toast('鹿の ダッシュ！', 1200);
+      else if (e.kind === 'derail') view.bump(0.7);
+      else if (e.kind === 'gold') toast('ゴールドコイン！', 1300);
+      else if (e.kind === 'premium') { view.bump(0.15); toast('◆ プレミアムコイン！！ ゴールまで もちかえろう', 2800); }
+      else if (e.kind === 'clear') toast(`${level.goalName}に とうちゃく！`, 4000);
+      else if (e.kind === 'coin') { elCoins.classList.remove('ks-pop'); void elCoins.offsetWidth; elCoins.classList.add('ks-pop'); }
+    }
+    const running = run.phase === 'running', speed = Math.min(1, run.v / BAL.vDash);
+    if (running) {
+      hints();
+      track.checkpoints.forEach((c, i) => {
+        if (run.s >= c.s && !run.air && (!saved || saved.s < c.s)) {
+          saved = { s: c.s, name: c.name, t: run.t, coins: run.coins, gold: run.gold, premium: run.premium, collected: new Set(run.collected) };
+          cpEls[i].classList.add('passed');
+          audio.sfx('checkpoint');
+          toast(`チェックポイント！ ${c.name}`, 2200);
+        }
+      });
+      // レールのつぎ目の「ガタン ゴトン」(走った距離で鳴らす)
+      if (!run.air && run.s >= nextClack) {
+        nextClack = run.s + 12.5;
+        thud(0.07, 0.16 + speed * 0.2, 420); thud(0.07, 0.14 + speed * 0.2, 360, Math.min(0.22, 1.4 / Math.max(4, run.v)));
+      }
+    }
+    if (loops) {
+      const moving = (running || run.phase === 'cleared') && run.v > 0.5;
+      setLoop(loops.wind, moving ? speed * speed * 0.2 : 0, 500 + speed * 1500);
+      setLoop(loops.rumble, moving && !run.air ? 0.1 + speed * 0.3 : 0, 110 + speed * 160);
+      setLoop(loops.screech, running && !run.air && ((run.braking && run.v > 3) || run.tilt > 0.15) ? 0.035 + speed * 0.05 : 0);
+    }
+    if (run.phase !== prevPhase) {
+      prevPhase = run.phase;
+      if (run.phase === 'cleared' || run.phase === 'failed') resultTimer = window.setTimeout(showResult, run.phase === 'cleared' ? 2800 : 1500);
+    }
+    paintHud();
+    view.render(run, dt);
+  };
+  paintHud();
+  paintStamina();
+  raf = requestAnimationFrame(frame);
+
+  // 動作確認用(開発中の自動テストから状態を読む)
+  (window as unknown as { __cart?: unknown }).__cart = { get run() { return run; }, track, input, level, view, audio };
+
+  return () => {
+    // 走っている途中でページを離れたら、失敗と同じく体力が減る(設計書 25-2)
+    if (run.phase === 'running' && !charged) { charged = true; wallet.fail(); }
+    cancelAnimationFrame(raf);
+    window.clearTimeout(toastTimer); window.clearTimeout(resultTimer);
+    window.removeEventListener('keydown', kd);
+    window.removeEventListener('keyup', ku);
+    window.removeEventListener('blur', onHidden);
+    document.removeEventListener('visibilitychange', onHidden);
+    root.removeEventListener('contextmenu', noMenu);
+    delete (window as unknown as { __cart?: unknown }).__cart;
+    if (loops) for (const l of Object.values(loops)) { try { l.src.stop(); } catch { /* 止まっていたら何もしない */ } }
+    audio.close();
+    view.dispose();
+  };
+}

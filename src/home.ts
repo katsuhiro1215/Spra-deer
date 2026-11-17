@@ -17,7 +17,7 @@ export const WORLDS: { no: number; name: string; play: string; stage?: number; c
   { no: 5, name: '鹿せんべいタワー', play: 'せんべいを、高く積む', color: '#c98a4b' },
   { no: 6, name: '鹿のおじぎ選手権', play: 'おじぎに合わせて、タップ', color: '#d36aa6' },
   { no: 7, name: '鹿を誘導せよ！', play: 'せんべいで、鹿を動かす', color: '#7a6ad8' },
-  { no: 8, name: '鹿と暴走トロッコ', play: '鹿が引いて、Spraが止める', color: '#6b8f3a' },
+  { no: 8, name: '鹿と暴走トロッコ', play: '鹿が引いて、Spraが止める', stage: 8, color: '#6b8f3a' },
 ];
 
 const stageOf = (stage: number) => STAGES.find(s => s.stage === stage);

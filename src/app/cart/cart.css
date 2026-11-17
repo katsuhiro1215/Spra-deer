@@ -1,0 +1,236 @@
+/* WORLD 8「鹿と暴走トロッコ」だけの見た目(共通部分は run.css)。クラス名は ct- で始める */
+
+/* 速さ(左上に大きく) */
+.ct-speed {
+  position: absolute;
+  left: 14px;
+  top: 104px;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.35), 0 0 12px rgba(0, 0, 0, 0.35);
+  font-style: italic;
+}
+.ct-speed b {
+  font-size: 58px;
+  font-weight: 900;
+  line-height: 1;
+  min-width: 2ch;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  transition: color 0.2s;
+}
+.ct-speed small {
+  font-size: 16px;
+  font-weight: 800;
+}
+.ct-speed span {
+  position: absolute;
+  left: 2px;
+  top: 62px;
+  font-size: 13px;
+  font-weight: 800;
+  font-style: normal;
+  white-space: nowrap;
+  opacity: 0.92;
+}
+.ct-speed.fast b {
+  color: #ffd23a;
+}
+
+/* 今やること(ブレーキ！・ジャンプ！など) */
+.ct-alert {
+  position: absolute;
+  left: 50%;
+  bottom: 222px;
+  transform: translate(-50%, 0) scale(0.9);
+  padding: 6px 18px;
+  border-radius: 999px;
+  font-weight: 900;
+  font-size: 19px;
+  white-space: nowrap;
+  color: #fff;
+  background: rgba(40, 40, 40, 0.75);
+  border: 3px solid #fff;
+  opacity: 0;
+  transition: opacity 0.1s, transform 0.1s;
+}
+.ct-alert.on {
+  opacity: 1;
+  transform: translate(-50%, 0) scale(1);
+}
+.ct-alert[data-tone='red'] {
+  background: rgba(216, 52, 44, 0.94);
+  animation: ct-pulse 0.4s ease-in-out infinite alternate;
+}
+.ct-alert[data-tone='yellow'] {
+  background: rgba(255, 196, 40, 0.95);
+  color: #3a2a1a;
+}
+.ct-alert[data-tone='jump'] {
+  background: rgba(255, 122, 42, 0.96);
+  font-size: 26px;
+}
+@keyframes ct-pulse {
+  to {
+    transform: translate(-50%, 0) scale(1.08);
+  }
+}
+.ct-toast {
+  top: 196px;
+  font-size: 16px;
+  padding: 8px 16px;
+}
+.ct-tip {
+  margin: 0 0 10px;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.6;
+  color: #6a5a48;
+  text-wrap: balance;
+  word-break: auto-phrase;
+}
+
+/* 操作: 左手=ブレーキ・かたむける、右手=ダッシュ・ジャンプ */
+.ct-controls {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: end;
+  gap: 12px 14px;
+  padding: 0 14px max(18px, env(safe-area-inset-bottom));
+}
+.ct-pad {
+  max-width: none;
+  height: 104px;
+}
+.ct-pad small {
+  font-size: 13px;
+  font-weight: 800;
+  opacity: 0.9;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.3);
+}
+.ct-btn {
+  position: relative;
+  overflow: hidden;
+  height: 68px;
+  border-radius: 20px;
+  border: 3px solid #fff;
+  color: #fff;
+  font: inherit;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  touch-action: none;
+  cursor: pointer;
+}
+.ct-btn b {
+  font-size: 19px;
+  font-weight: 900;
+  line-height: 1;
+}
+.ct-btn small {
+  font-size: 11px;
+  font-weight: 800;
+  opacity: 0.9;
+}
+.ct-brake {
+  background: linear-gradient(#5d7f95, #3d5c70);
+  box-shadow: 0 5px 0 #2a4252, 0 8px 14px rgba(0, 0, 0, 0.25);
+}
+.ct-dash {
+  width: 124px;
+  background: linear-gradient(#6fc04a, #3f9a2c);
+  box-shadow: 0 5px 0 #2b701d, 0 8px 14px rgba(0, 0, 0, 0.25);
+}
+.ct-btn.down {
+  transform: translateY(4px);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.4);
+}
+.ct-brake.down {
+  background: linear-gradient(#d8342c, #a8241d);
+}
+/* ダッシュの待ち時間: 暗い幕が、左へ引いていく */
+.ct-dash::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(20, 30, 20, 0.62);
+  transform-origin: right;
+  transform: scaleX(var(--cd, 0));
+  pointer-events: none;
+}
+.ct-dash.go {
+  background: linear-gradient(#ffd23a, #ff9a2a);
+  box-shadow: 0 5px 0 #c96a0c, 0 0 18px rgba(255, 210, 58, 0.8);
+}
+.ct-dash.go::after {
+  display: none;
+}
+
+/* 操作が4つあるので、説明を小さめに。低い画面では、カードの中身をつめる */
+.ct-root .ks-how {
+  font-size: 14px;
+  line-height: 1.65;
+  margin-bottom: 12px;
+}
+@media (max-height: 720px) {
+  .ct-root .ks-overlay {
+    padding: 12px;
+  }
+  .ct-root .ks-card {
+    padding: 14px 16px 12px;
+  }
+  .ct-root .ks-card h1,
+  .ct-root .ks-card h2 {
+    font-size: 28px;
+    margin: 2px 0 6px;
+  }
+  .ct-root .ks-lead {
+    margin-bottom: 6px;
+    font-size: 15px;
+  }
+  .ct-root .ks-how {
+    font-size: 13px;
+    line-height: 1.5;
+    padding: 6px 10px;
+    margin-bottom: 8px;
+  }
+  .ct-root .ks-btn {
+    padding: 10px 0;
+    font-size: 20px;
+  }
+  .ct-root .ks-stamina {
+    margin: 4px 0;
+  }
+  .ct-controls {
+    gap: 8px 10px;
+  }
+  .ct-btn {
+    height: 56px;
+  }
+  .ct-pad {
+    height: 88px;
+  }
+  .ct-controls .ks-jump {
+    width: 104px;
+    height: 104px;
+  }
+  .ct-dash {
+    width: 104px;
+  }
+  .ct-alert {
+    bottom: 176px;
+  }
+}
+/* せまい画面では、上の札は面の番号だけ(区間の名前は、速さの下に出ている) */
+@media (max-width: 420px) {
+  .ct-root .ks-level span {
+    display: none;
+  }
+}
