@@ -36,6 +36,12 @@ export function drive(level: CartLevel, policy: Policy = {}): CartRun {
       const limit = Math.sqrt((lat * 0.8) / Math.abs(curv));
       if (p.brake && v > limit) input.brake = true;
     }
+    // 横風: 風上へ傾ける(カーブの中なら、カーブと風を合わせた向き)
+    const w = track.windAt(s + v * 0.3);
+    if (Math.abs(w) > 0.5 && p.lean) {
+      const need = v * v * track.at(s + v * 0.3).curv - w;
+      input.right = need > 0; input.left = need < 0;
+    }
     if (branch && p.lean) { input.left = branch.side === 1; input.right = branch.side === -1; }
     // ずれた線路: 空中で、ずれた側へ傾ける
     if (run.air && p.lean) {
@@ -52,6 +58,8 @@ export function drive(level: CartLevel, policy: Policy = {}): CartRun {
       if (p.dash && gap.from - s < 70 && gap.from - s > 12 && v < need) input.dash = true;
       if (p.jump && !run.air && gap.from - s < Math.max(1.5, v * 0.06) && gap.from - s > -1) input.jump = true;
     }
+    // 上り坂: おそいときはダッシュで鹿をはげます
+    if (p.dash && !run.air && run.dashCool <= 0 && v < 12 && track.at(s).pitch > 0.05) input.dash = true;
     // 岩・倒木: 手前で跳ぶ
     const rock = track.obstacles.find(o => o.kind !== 'branch' && o.s > s && o.s - s < v * 0.4);
     if (rock && p.jump && !run.air) input.jump = true;

@@ -1,7 +1,7 @@
 // WORLD 8「鹿と暴走トロッコ」: 走りのルールと、8-1 がクリアできること
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Track, type TrackDef } from '../src/cart/track.ts';
+import { BRIDGED, Track, type TrackDef } from '../src/cart/track.ts';
 import { CartRun, BAL, type Input } from '../src/cart/sim.ts';
 import { CART_LEVELS, cartById, trackOf } from '../src/cart/levels.ts';
 import { DT, none, drive as driveLevel, type Policy } from './cartbot.ts';
@@ -105,7 +105,7 @@ test('コイン: まん中は通るだけ。横は体を傾けて、高い所は
 });
 
 // ---- 8-1 を、自動で走る(ボットは tests/cartbot.ts) ----
-const L1 = cartById('8-1')!, L2 = cartById('8-2')!, L3 = cartById('8-3')!, L4 = cartById('8-4')!, L5 = cartById('8-5')!;
+const L1 = cartById('8-1')!, L2 = cartById('8-2')!, L3 = cartById('8-3')!, L4 = cartById('8-4')!, L5 = cartById('8-5')!, L6 = cartById('8-6')!;
 const drive = (policy: Policy = {}) => driveLevel(L1, policy);
 
 test('8-1: 先を見て操作すれば、ハートを減らさずにクリアできる(60〜95秒)', () => {
@@ -174,7 +174,7 @@ test('すべての面: プレミアム1枚・切れ目は渓谷の中のまっ�
     assert.equal(t.coins.filter(c => c.kind === 'premium').length, 1, `${tag} プレミアム`);
     for (const g of t.gaps) {
       const seg = t.segments.find(x => g.from >= x.from && g.to <= x.to);
-      assert.equal(seg?.terrain, 'canyon', `${tag} 切れ目 ${g.from} は渓谷(橋)の中`);
+      assert.ok(seg?.terrain && BRIDGED.includes(seg.terrain), `${tag} 切れ目 ${g.from} は谷(橋)の中`);
       for (let s = g.from - 30; s <= g.to + 30; s += 5) assert.ok(Math.abs(t.at(s).curv) < 0.002, `${tag} 切れ目のまわりは、まっすぐ s=${s}`);
     }
     for (const c of t.coins) assert.ok(c.h > 1.5 || !t.inGap(c.s), `${tag} 切れ目の上のコインは、空中 s=${c.s}`);
@@ -301,6 +301,28 @@ test('沈んだ線路: 向こう側が低い。崩れる橋: 走りのルール�
   assert.equal(r.reason, 'fall');
 });
 
+// ---- 横風・雪・トンネル(8-6 から) ----
+test('横風: 傾けないと、やがて脱線。風上へ傾けると こらえられる。風下へ傾けると、すぐ脱線', () => {
+  const t = new Track(def({ segments: [{ len: 50, slope: 0 }, { len: 400, slope: 0, wind: 11 }] }));
+  const ride = (lean: Partial<Input>) => {
+    const r = new CartRun(t); r.start();
+    for (let i = 0; i < 30 / DT && r.phase === 'running' && r.s < 420; i++) { r.v = 15; r.step(DT, { ...none(), ...lean }); }
+    return r;
+  };
+  assert.equal(ride({}).reason, 'derail');
+  assert.equal(ride({ left: true }).phase, 'running', '風上(左)へ傾けると、こらえられる');
+  const down = ride({ right: true });
+  assert.equal(down.reason, 'derail'); assert.ok(down.s < ride({}).s, '風下へ傾けると、もっと早く脱線');
+});
+
+test('雪の上では、ブレーキが半分しかきかない。トンネルの区間がわかる', () => {
+  const t = new Track(def({ segments: [{ len: 300, slope: 0 }, { len: 300, slope: 0, snow: true }, { len: 200, slope: 0, terrain: 'tunnel' }] }));
+  const stop = (from: number) => { const r = new CartRun(t); r.restore(from, 0, 0, 0, false, []); r.start(); r.v = 25; const s0 = r.s; for (let i = 0; i < 2 / DT; i++) r.step(DT, { ...none(), brake: true }); return { v: r.v, d: r.s - s0 }; };
+  assert.ok(stop(400).v > stop(50).v + 6, `雪 ${stop(400).v.toFixed(1)} / 土 ${stop(50).v.toFixed(1)} m/s`);
+  assert.equal(t.inTunnel(700), true); assert.equal(t.inTunnel(500), false);
+  assert.deepEqual(t.tunnels(), [[600, 800]]);
+});
+
 // ---- 8-4 超高速ダウンヒル ----
 test('8-4: 144km/h 近くまで出る。こぶの先の急カーブは、こぶの手前で減速しないと、飛んだまま突っこんで脱線する', () => {
   const r = driveLevel(L4);
@@ -343,4 +365,25 @@ test('8-5: プレミアムは、ずれた線路で いったん左へ傾けて�
   assert.equal(quick.premium, true); assert.equal(quick.phase, 'running');
   assert.equal(tryIt(494.5).reason, 'miss', '右へ寄せるのが遅いと、外れる');
   assert.equal(driveLevel(L5, { until: 560 }).premium, false, 'ふつうに右へ寄せるだけでは取れない');
+});
+
+// ---- 8-6 山岳トロッコ ----
+test('8-6: 雪のカーブはブレーキが要る。天空の鉄橋は、風上へ傾けないと脱線。トンネルの先の谷は跳ぶ', () => {
+  const t = trackOf(L6);
+  assert.equal(t.tunnels().length, 2);
+  assert.ok(t.snowAt(800) > 0.9 && t.snowAt(1100) < 0.1, '雪は峠のまわりだけ');
+  const noBrake = driveLevel(L6, { brake: false });
+  assert.equal(noBrake.reason, 'derail'); assert.ok(noBrake.s > 860 && noBrake.s < 935, `雪のカーブで s=${noBrake.s.toFixed(0)}`);
+  const noLean = driveLevel(L6, { from: 985, until: 1270, lean: false });
+  assert.equal(noLean.reason, 'derail', '横風で脱線');
+  const noJump = driveLevel(L6, { jump: false, from: 440, until: 560 });
+  assert.equal(noJump.reason, 'fall'); assert.ok(noJump.s > 500 && noJump.s < 530);
+});
+
+test('8-6: プレミアムは、天空の鉄橋の風下がわ。取る直前だけ風下へ傾ける(長く傾けると脱線)', () => {
+  const tryIt = (from: number) => driveLevel(L6, { until: 1300, extra: (run, inp) => { if (run.s > from && run.s < 1247) { inp.right = true; inp.left = false; } } });
+  const quick = tryIt(1236);
+  assert.equal(quick.premium, true); assert.equal(quick.phase, 'running');
+  assert.equal(tryIt(1200).reason, 'derail', '長く風下へ傾けると、脱線');
+  assert.equal(driveLevel(L6, { until: 1300 }).premium, false);
 });

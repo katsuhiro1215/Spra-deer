@@ -26,6 +26,7 @@ export const BAL = {
   hitSlow: 0.55, hitSafe: 1.1, // ぶつかったときの減速と、そのあと無敵の時間
   clear: { rock: 0.9, log: 0.6 }, // 跳びこえるのに要る高さ
   leanDodge: 0.45, // 枝をよける・横のコインを取るのに要る傾き
+  snowSlip: 0.5, // 雪の上で、ブレーキがきかなくなる割合
   airSteer: 3.5, airSteerFree: 0.5, // 空中で体を傾けると、横へ動ける速さ(m/s)。ずれた線路へ向かう側だけ大きく動け、ほかは 0.5m まで
 } as const;
 
@@ -49,6 +50,8 @@ export class CartRun {
   tilt = 0; tiltDir = 0;
   /** 今かかっている横向きの力と、その上限(画面の警告用) */
   lat = 0; latLimit: number = BAL.latBase;
+  /** 今の横風(強弱をつけたあと。プラスは右へ押す) */
+  wind = 0;
   lives = 3; coins = 0; gold = 0; premium = false;
   collected = new Set<number>();
   hitIds = new Set<number>();
@@ -167,7 +170,8 @@ export class CartRun {
       const p = tr.at(this.s);
       let a = -BAL.g * Math.sin(p.pitch) - BAL.roll - BAL.drag * this.v * this.v;
       if (this.v < BAL.vPull) a += BAL.pull * (1 - this.v / BAL.vPull);
-      if (this.braking) a -= BAL.brake;
+      // 雪の上では、ブレーキが半分しかきかない(すべる)
+      if (this.braking) a -= BAL.brake * (1 - BAL.snowSlip * tr.snowAt(this.s));
       if (this.dashT > 0) a += BAL.dashAcc;
       this.v += a * dt;
       const cap = this.dashT > 0 ? this.vDash : this.vMax;
@@ -177,9 +181,12 @@ export class CartRun {
       const q = tr.at(this.s);
       this.px = q.x; this.py = q.y; this.pz = q.z; this.height = 0; this.side = 0;
 
-      // カーブ: 横向きの力が上限をこえると、車輪が浮いていき、やがて脱線
-      const dir = Math.sign(q.curv), inward = this.lean * dir;
-      this.lat = this.v * this.v * Math.abs(q.curv);
+      // カーブと横風: 横向きの力が上限をこえると、車輪が浮いていき、やがて脱線
+      // need はプラスなら「右へ傾けると、こらえられる」(右カーブの遠心力・左から吹く風)
+      this.wind = tr.windAt(this.s) * (0.7 + 0.3 * Math.sin(this.t * 1.6 + this.s * 0.031));
+      const need = this.v * this.v * q.curv - this.wind;
+      const dir = Math.sign(need), inward = this.lean * dir;
+      this.lat = Math.abs(need);
       this.latLimit = BAL.latBase + BAL.latLean * Math.max(0, inward) - BAL.latOut * Math.max(0, -inward);
       if (this.lat > this.latLimit) {
         this.tilt += (this.lat - this.latLimit) * BAL.tiltRate * dt; this.tiltDir = -dir;

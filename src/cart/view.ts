@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import { COLLAPSE_AT, type Gap, type Track } from './track.ts';
+import { BRIDGED, COLLAPSE_AT, type Gap, type Track } from './track.ts';
 import { BAL, type CartRun } from './sim.ts';
 
 const ASSET = '/assets';
@@ -104,6 +104,11 @@ export class CartView {
   private sky: THREE.Mesh;
   private far = new THREE.Group();
   private cart = new THREE.Group();
+  private hemi = new THREE.HemisphereLight(0xd6e9ff, 0x6b5a40, 0.85);
+  /** トンネルの中でともす、トロッコの明かり(トンネルのある面だけ) */
+  private cartLight: THREE.PointLight | null = null;
+  private tunnelList: [number, number][] | null = null;
+  private fogDay = new THREE.Color(SKY_HORIZON); private fogDark = new THREE.Color(0x15110d);
   private wheels: THREE.Object3D[] = [];
   private lever!: THREE.Object3D;
   private lantern!: THREE.Object3D;
@@ -130,7 +135,7 @@ export class CartView {
   private frames = 0; private slowFrames = 0; private tuned = false;
   private ro: ResizeObserver;
   private dummy = new THREE.Object3D();
-  private v1 = new THREE.Vector3(); private v2 = new THREE.Vector3(); private m1 = new THREE.Matrix4();
+  private v1 = new THREE.Vector3(); private v2 = new THREE.Vector3(); private m1 = new THREE.Matrix4(); private c1 = new THREE.Color();
   private disposables: { dispose(): void }[] = [];
   /** 区間ごとにまとめた木・岩(遠い区間は描かない) */
   private chunks: { mesh: THREE.InstancedMesh; from: number; to: number }[] = [];
@@ -152,7 +157,7 @@ export class CartView {
     const pmrem = new THREE.PMREMGenerator(this.renderer), env = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
     this.scene.environment = env; this.scene.environmentIntensity = 0.45;
     pmrem.dispose(); this.disposables.push(env);
-    this.scene.add(new THREE.HemisphereLight(0xd6e9ff, 0x6b5a40, 0.85));
+    this.scene.add(this.hemi);
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(1024, 1024);
     const sc = this.sun.shadow.camera;
@@ -166,6 +171,7 @@ export class CartView {
     this.buildTrack();
     this.buildBridges();
     this.buildCollapse();
+    this.buildTunnels();
     this.buildScenery();
     this.buildObstacles();
     this.buildSigns();
@@ -289,6 +295,7 @@ export class CartView {
     geo.computeVertexNormals();
     // 色: 平らな所は草と落ち葉、急な所は岩、線路ぎわは土
     const nrm = geo.getAttribute('normal'), grass = new THREE.Color(), rock = new THREE.Color(0x8b8478), dirt = new THREE.Color(0x8a7a5e), c1 = new THREE.Color();
+    const snowCol = new THREE.Color(0xf4f7fb);
     for (let r = 0; r < rows; r++) {
       const s = s0 + r * step;
       for (let c = 0; c < cols; c++) {
@@ -297,6 +304,9 @@ export class CartView {
         grass.setHex(0x5f8f3e).lerp(c1.setHex(0x9a8a45), patch * 0.55); // 草〜落ち葉
         c1.copy(grass).lerp(rock, smooth01((0.86 - ny) / 0.2));
         if (Math.abs(u) < 3.7) c1.lerp(dirt, Math.abs(u) < 2.4 ? 1 : 0.6);
+        // 雪: 平らな所ほど白く(急な岩かべには積もりにくい)。線路ぎわは、うっすら
+        const sn = this.track.snowAt(Math.max(0, s));
+        if (sn > 0.01) c1.lerp(snowCol, sn * (Math.abs(u) < 2.4 ? 0.3 : Math.abs(u) < 3.7 ? 0.6 : 0.95 * smooth01((ny - 0.55) / 0.3)));
         const shade = 0.9 + 0.2 * Math.sin(s * 0.9 + u * 1.7) * Math.sin(u * 0.6);
         col[i * 3] = c1.r * shade; col[i * 3 + 1] = c1.g * shade; col[i * 3 + 2] = c1.b * shade;
       }
@@ -312,7 +322,7 @@ export class CartView {
     // 谷底の川
     const water = new THREE.MeshStandardMaterial({ color: 0x3f86ad, roughness: 0.18, metalness: 0.25, transparent: true, opacity: 0.9 });
     this.disposables.push(water);
-    for (const g of this.track.segments.filter(x => x.terrain === 'canyon')) {
+    for (const g of this.track.segments.filter(x => x.terrain && BRIDGED.includes(x.terrain))) {
       const mid = (g.from + g.to) / 2, f = this.frame(mid, this.f, false), depth = this.track.terrain(mid).depth;
       const geoW = new THREE.PlaneGeometry(320, Math.max(18, g.len * 0.42));
       const m = new THREE.Mesh(geoW, water);
@@ -398,6 +408,88 @@ export class CartView {
     mesh.castShadow = true; mesh.receiveShadow = true; mesh.frustumCulled = false;
     this.scene.add(mesh);
     this.disposables.push(geo, mat, wood);
+  }
+
+  // ---- トンネル: 岩の内壁・入口の石の門・山の上面・壁のランタン ----
+  private buildTunnels(): void {
+    const tunnels = this.track.tunnels();
+    if (!tunnels.length) return;
+    const rockTex = grainTex('#77716a', [['#918a80', 900, 5], ['#57524b', 900, 5], ['#6a5f52', 300, 9]]);
+    const wallMat = new THREE.MeshStandardMaterial({ map: rockTex, roughness: 1, side: THREE.DoubleSide });
+    const stoneMat = new THREE.MeshStandardMaterial({ color: 0xd6cbb6, map: grainTex('#c9bfae', [['#e0d7c6', 600, 8], ['#a99f8e', 600, 8]], { color: '#8a8070', every: 18 }), roughness: 0.95 });
+    this.disposables.push(stoneMat.map!);
+    this.disposables.push(rockTex, wallMat, stoneMat);
+    const R = 4.8, CY = 0.6, N = 16, up = new THREE.Vector3(0, 1, 0);
+    // 内壁(半円の筒。少し下までのばして、地面とつなぐ)
+    const pos: number[] = [], uv: number[] = [], idx: number[] = [];
+    for (const [a, b] of tunnels) {
+      const n = Math.ceil(b - a), base = pos.length / 3;
+      for (let i = 0; i <= n; i++) {
+        const s = a + ((b - a) * i) / n, f = this.frame(s, this.f, false);
+        for (let k = 0; k <= N; k++) {
+          const ang = -0.3 + ((Math.PI + 0.6) * k) / N;
+          this.v1.copy(f.o).addScaledVector(f.r, Math.cos(ang) * R).addScaledVector(up, CY + Math.sin(ang) * R);
+          pos.push(this.v1.x, this.v1.y, this.v1.z); uv.push((k / N) * 5, s / 4);
+        }
+        if (i < n) for (let k = 0; k < N; k++) {
+          const p0 = base + i * (N + 1) + k, p1 = p0 + N + 1;
+          idx.push(p0, p1, p0 + 1, p0 + 1, p1, p1 + 1);
+        }
+      }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    geo.setIndex(idx); geo.computeVertexNormals();
+    const tube = new THREE.Mesh(geo, wallMat);
+    tube.castShadow = true; tube.receiveShadow = true; tube.frustumCulled = false;
+    this.scene.add(tube); this.disposables.push(geo);
+    // 山の上面(外から見ると、トンネルの上が山になっている)
+    const lidMat = new THREE.MeshStandardMaterial({ color: this.track.snowAt((tunnels[0][0] + tunnels[0][1]) / 2) > 0.4 ? 0xe9eef2 : 0x5f7d3e, roughness: 1 });
+    const lid = new THREE.Mesh(this.ribbon(tunnels, 17, 0, 23, 0, 0.1), lidMat);
+    lid.receiveShadow = true; lid.frustumCulled = false;
+    this.scene.add(lid); this.disposables.push(lid.geometry, lidMat);
+    // 入口・出口の石の門(アーチの穴があいた、石の壁)
+    const face = new THREE.Shape();
+    // 穴の下端と壁の下端が重なると、形が作れないので、壁は地面の下まで下げる
+    face.moveTo(-24, -7); face.lineTo(24, -7); face.lineTo(24, 26); face.lineTo(-24, 26); face.lineTo(-24, -7);
+    const hole = new THREE.Path();
+    hole.moveTo(-R, -3); hole.lineTo(R, -3); hole.lineTo(R, CY); hole.absarc(0, CY, R, 0, Math.PI, false); hole.lineTo(-R, -3);
+    face.holes.push(hole);
+    const faceGeo = new THREE.ExtrudeGeometry(face, { depth: 2.4, bevelEnabled: false }).translate(0, 0, -1.2);
+    const ringGeo = new THREE.TorusGeometry(R + 0.35, 0.45, 6, 18, Math.PI);
+    this.disposables.push(faceGeo, ringGeo);
+    for (const [a, b] of tunnels) for (const s of [a, b]) {
+      const f = this.frame(s, this.f, false), g = new THREE.Group();
+      g.position.copy(f.o);
+      g.setRotationFromMatrix(this.m1.makeBasis(f.r, up, this.v1.set(-f.t.x, 0, -f.t.z).normalize()));
+      const wall = new THREE.Mesh(faceGeo, stoneMat); wall.castShadow = true; wall.receiveShadow = true;
+      const ring = new THREE.Mesh(ringGeo, stoneMat); ring.position.set(0, CY, s === a ? 1.3 : -1.3); ring.castShadow = true;
+      g.add(wall, ring); this.scene.add(g);
+    }
+    // 壁のランタン(左右こうごに)。光る玉と、ぼんやりした明かり
+    const lampGeo = new THREE.BoxGeometry(0.32, 0.42, 0.32), lampMat = new THREE.MeshBasicMaterial({ color: 0xffc46b, toneMapped: false });
+    const glowMat = new THREE.SpriteMaterial({ map: softDot(), color: 0xffb04a, transparent: true, opacity: 0.55, depthWrite: false, blending: THREE.AdditiveBlending, fog: false });
+    this.disposables.push(lampGeo, lampMat, glowMat);
+    for (const [a, b] of tunnels) {
+      let side = 1;
+      for (let s = a + 10; s < b - 4; s += 18, side = -side) {
+        const f = this.frame(s, this.f, false);
+        const p = new THREE.Vector3().copy(f.o).addScaledVector(f.r, side * (R - 0.45)).addScaledVector(up, 2.6);
+        const lamp = new THREE.Mesh(lampGeo, lampMat); lamp.position.copy(p); this.scene.add(lamp);
+        const glow = new THREE.Sprite(glowMat); glow.position.copy(p); glow.scale.set(3.4, 3.4, 1); this.scene.add(glow);
+      }
+    }
+    // トロッコのランタンの明かり(トンネルの中だけ、ともす)
+    this.cartLight = new THREE.PointLight(0xffc477, 0, 28, 1.5);
+    this.cartLight.position.set(0, 2.2, -1.2);
+    this.cart.add(this.cartLight);
+  }
+  /** トンネルの暗さ 0〜1(カメラのいる所で決める。入口・出口は 14m かけて変わる) */
+  private darkAt(s: number): number {
+    let k = 0;
+    for (const [a, b] of (this.tunnelList ??= this.track.tunnels())) k = Math.max(k, clamp(Math.min(s - a, b - s) / 14 + 0.25, 0, 1) * (s > a - 3 && s < b + 3 ? 1 : 0));
+    return k;
   }
 
   // ---- 崩れる橋: 切れ目をふさぐ古い板とレール。近づくと落ちる ----
@@ -563,6 +655,7 @@ export class CartView {
 
     const cedars: Item[] = [], maples: Item[] = [], cedarsFar: Item[] = [], maplesFar: Item[] = [], rocks: Item[] = [], stones: Item[] = [];
     const greens = [0x2f6a3a, 0x3a7a42, 0x27603a, 0x44803f], autumn = [0xd4472a, 0xe8822b, 0xf0bd35, 0xc9552a, 0x86ac48, 0xe2a02e];
+    const snowTint = new THREE.Color(0xeef3f7);
     const p = new THREE.Vector3(), e = new THREE.Euler(), q = new THREE.Quaternion(), sc = new THREE.Vector3();
     const put = (list: Item[], s: number, u: number, scale: number, color: number, sink = 0.15, squash = 1) => {
       this.ground(s, u, p);
@@ -572,8 +665,11 @@ export class CartView {
     };
     for (let s = -40; s < this.track.total; s += 2.6) {
       const T = this.track.terrain(Math.max(0, s)), curv = this.track.at(Math.max(0, s)).curv;
+      // トンネルの中(山の中)には、木も石も置かない。雪の所は、白っぽい杉だけ
+      const tunnel = this.track.inTunnel(s - 3) || this.track.inTunnel(s + 3), sn = this.track.snowAt(Math.max(0, s));
       for (const side of [-1, 1]) {
         const slope = side < 0 ? T.l : T.r, wall = slope > 1.3; // 切り通しの岩かべ
+        if (tunnel) continue;
         // 線路ぎわの石
         if (rnd() < 0.5 && T.depth < 1) put(stones, s + rnd() * 2, side * (2.0 + rnd() * 1.6), 0.12 + rnd() * 0.22, 0x9a958a, 0.3, 0.7);
         if (wall && rnd() < 0.55) put(rocks, s + rnd() * 2, side * (3.4 + rnd() * 5), 0.7 + rnd() * 1.3, 0x8d877b, 0.35, 0.8);
@@ -588,7 +684,8 @@ export class CartView {
           if (rnd() > nearDensity) continue;
           const kind = Math.sin(s * 0.021 + side * 2) + (rnd() - 0.5) * 1.6;
           const near = Math.abs(u) < 24;
-          if (kind > 0.1) put(near ? cedars : cedarsFar, s + rnd() * 2, u, 0.85 + rnd() * 0.75, greens[Math.floor(rnd() * greens.length)]);
+          if (sn > 0.4) put(near ? cedars : cedarsFar, s + rnd() * 2, u, 0.7 + rnd() * 0.7, new THREE.Color(greens[Math.floor(rnd() * greens.length)]).lerp(snowTint, 0.35 + sn * 0.3).getHex());
+          else if (kind > 0.1) put(near ? cedars : cedarsFar, s + rnd() * 2, u, 0.85 + rnd() * 0.75, greens[Math.floor(rnd() * greens.length)]);
           else put(near ? maples : maplesFar, s + rnd() * 2, u, 0.9 + rnd() * 0.8, autumn[Math.floor(rnd() * autumn.length)]);
         }
         if (rnd() < 0.05 && T.depth < 1 && !wall) put(rocks, s, side * (4 + rnd() * 10), 0.6 + rnd() * 1.1, 0x8d877b, 0.4, 0.75);
@@ -1031,15 +1128,36 @@ export class CartView {
     });
     this.streaks.instanceMatrix.needsUpdate = true;
     // 落ち葉
+    // 雪の所では雪になり、横風の所では横へ流れる。トンネルの中には舞わない
     const lp = this.leaves.geometry.getAttribute('position') as THREE.BufferAttribute;
+    const lc = this.leaves.geometry.getAttribute('color') as THREE.BufferAttribute;
+    let recolor = false;
     this.leafData.forEach((l, i) => {
-      if (l.s < run.s - 10 || l.s > run.s + 130) { l.s = run.s + 30 + Math.random() * 95; l.u = (Math.random() - 0.5) * 26; l.h = 1 + Math.random() * 7; }
+      if (l.s < run.s - 10 || l.s > run.s + 130) {
+        l.s = run.s + 30 + Math.random() * 95; l.u = (Math.random() - 0.5) * 26; l.h = 1 + Math.random() * 7;
+        const snow = this.track.snowAt(l.s) > 0.4;
+        if (snow) lc.setXYZ(i, 0.97, 0.98, 1);
+        else { this.c1.setHex([0xe8822b, 0xd4472a, 0xf0bd35, 0xc98a2e][i % 4]); lc.setXYZ(i, this.c1.r, this.c1.g, this.c1.b); }
+        recolor = true;
+      }
       l.h -= dt * 0.5; if (l.h < 0.1) l.h = 6 + Math.random() * 2;
+      const w = this.track.windAt(l.s);
+      if (w) { l.u += w * dt * 1.6; if (Math.abs(l.u) > 16) l.u = -Math.sign(w) * 14; }
       const g = this.frame(l.s, this.f2, false);
       const sway = Math.sin(this.time * 1.7 + l.ph) * 0.8;
-      lp.setXYZ(i, g.o.x + g.r.x * (l.u + sway), g.o.y + l.h, g.o.z + g.r.z * (l.u + sway));
+      const hide = this.track.inTunnel(l.s) ? -400 : 0;
+      lp.setXYZ(i, g.o.x + g.r.x * (l.u + sway), g.o.y + l.h + hide, g.o.z + g.r.z * (l.u + sway));
     });
-    lp.needsUpdate = true;
+    lp.needsUpdate = true; if (recolor) lc.needsUpdate = true;
+
+    // トンネルの中は暗く、霧も近く。トロッコの明かりをともす
+    const dark = this.darkAt(run.s - 6);
+    this.hemi.intensity = 0.85 * (1 - 0.82 * dark);
+    this.sun.intensity = 2.4 * (1 - 0.95 * dark);
+    this.scene.environmentIntensity = 0.45 * (1 - 0.65 * dark);
+    const fog = this.scene.fog as THREE.Fog;
+    fog.color.copy(this.fogDay).lerp(this.fogDark, dark); fog.near = 70 - 58 * dark; fog.far = 430 - 345 * dark;
+    if (this.cartLight) this.cartLight.intensity = 30 * dark;
 
     // ---- カメラ: トロッコの後ろ上から。速いほど広く、カーブで少し傾く ----
     this.shake = Math.max(0, this.shake - dt * 1.8);

@@ -375,12 +375,83 @@ const LEVEL_8_5: CartLevel = {
   },
 };
 
-export const CART_LEVELS: CartLevel[] = [LEVEL_8_1, LEVEL_8_2, LEVEL_8_3, LEVEL_8_4, LEVEL_8_5];
+/**
+ * 8-6 山岳トロッコ(約2000m)。テーマは「けわしい山を、こえていく」。
+ * けわしい上り坂 → 長いトンネル(暗い・中にカーブと落石) → 出たらすぐ谷 → 雪の峠 → 雪の下りと急カーブ
+ * → 天空の鉄橋(深い谷・右へ押す横風・途中に切れ目) → 暗いトンネルの中の急カーブ → 急降下 → 谷風の鉄橋(左へ押す風)
+ * プレミアム: 天空の鉄橋の、風下がわ。風が弱まった一瞬に、風下へ傾けて取る(強い風のときに傾けると、あぶない)。
+ */
+const LEVEL_8_6: CartLevel = {
+  id: '8-6', title: '山岳トロッコ', summary: 'トンネル・雪の峠・天空の鉄橋',
+  intro: 'けわしい 山を こえて、向こうの 駅まで！',
+  goalName: '峠の向こうの駅',
+  notes: [
+    { s: 65, text: 'けわしい 上り坂！ ダッシュを くり返して のぼろう' },
+    { s: 225, text: 'トンネルだ！ 暗いから、岩に 気をつけて' },
+    { s: 690, text: '雪の上は すべる！ ブレーキが 半分しか きかないよ。早めに おとそう' },
+    { s: 440, text: 'トンネルを 出たら、すぐ 谷！ ジャンプの 用意' },
+    { s: 965, text: '天空の鉄橋！ 強い 横風が 右へ 押してくる。左へ かたむけて こらえよう' },
+    { s: 1330, text: '暗い トンネルの中で、急カーブ！' },
+    { s: 1625, text: '谷風が 左へ 押してくる！ 右へ かたむけて、切れ目は ジャンプ' },
+  ],
+  track: {
+    segments: [
+      { len: 70, slope: -1, terrain: 'forest', name: '山のふもと駅' },
+      { len: 130, slope: 4, terrain: 'forest', name: 'けわしい上り坂' },
+      { len: 40, slope: 1, terrain: 'cut' },
+      { len: 160, slope: -3, turn: 35, terrain: 'tunnel', name: '長いトンネル' },
+      { len: 70, slope: -3, terrain: 'tunnel' },
+      { len: 80, slope: -1, terrain: 'canyon', name: 'トンネルの先の谷' },
+      { len: 120, slope: 3.5, terrain: 'ridge', snow: true, name: '雪の峠へ' },
+      { len: 30, slope: 1, terrain: 'ridge', snow: true, name: '峠' },
+      { len: 160, slope: -11, terrain: 'hillL', snow: true, name: '雪の下り' },
+      { len: 70, slope: -2, turn: -95, terrain: 'cut', snow: true, name: '雪のカーブ' },
+      { len: 50, slope: -2, terrain: 'forest', snow: true },
+      { len: 280, slope: -3, terrain: 'gorge', wind: 11, name: '天空の鉄橋' },
+      { len: 80, slope: -3, turn: 50, terrain: 'hillR' },
+      { len: 100, slope: -3, turn: -90, terrain: 'tunnel', name: '暗いカーブのトンネル' },
+      { len: 50, slope: -3, terrain: 'tunnel' },
+      { len: 150, slope: -10, terrain: 'hillL', name: 'ふもとへの急降下' },
+      { len: 200, slope: -3, terrain: 'gorge', wind: -11, name: '谷風の鉄橋' },
+      { len: 120, slope: -4, terrain: 'forest', name: '峠の向こうの駅へ' },
+    ],
+    // 区間: 上り 70-200 / トンネル 240-470(カーブは 400 まで) / 谷 470-550 / 雪 550-980 / 天空の鉄橋 980-1260
+    //       / トンネル 1340-1490(カーブは 1440 まで) / 急降下 1490-1640 / 谷風の鉄橋 1640-1840 / ゴール 1960
+    gaps: [{ from: 500, to: 512 }, { from: 1170, to: 1180 }, { from: 1760, to: 1776 }],
+    obstacles: [
+      { s: 330, kind: 'rock' }, { s: 425, kind: 'rock' }, // トンネルの中の落石
+      { s: 790, kind: 'branch', side: 1 }, { s: 840, kind: 'rock' },
+      { s: 1465, kind: 'rock' }, // 暗いカーブを抜けた所
+      { s: 1600, kind: 'log' },
+      { s: 1910, kind: 'log' },
+    ],
+    coins: [
+      ...line(20, 65, 9), ...line(80, 190, 11), ...line(205, 235, 10),
+      ...line(250, 320, 10, 1), ...arc(324, 336, 3, 2), ...line(345, 395, 10, 1), ...arc(419, 431, 3, 2, 'gold'), ...line(440, 490, 10),
+      ...arc(496, 516, 4, 2.4), ...line(525, 545, 10), ...line(560, 665, 11),
+      ...line(680, 780, 10), ...line(785, 795, 5, -1), ...arc(834, 846, 3, 2), ...line(855, 858, 3),
+      ...line(865, 925, 10, -1), ...line(935, 975, 10),
+      // 天空の鉄橋: 風上(左)にコイン
+      ...line(990, 1160, 10, -1), ...arc(1166, 1184, 3, 2.4, 'gold'), ...line(1190, 1235, 9, -1),
+      // プレミアム: 風下(右)がわ。風が弱まった一瞬に
+      { s: 1245, side: 1, h: 0.9, kind: 'premium' },
+      ...line(1252, 1258, 6, -1),
+      ...line(1270, 1330, 10, 1), ...line(1350, 1430, 10, -1), ...line(1445, 1455, 10), ...arc(1459, 1471, 3, 2), ...line(1478, 1488, 10),
+      ...line(1500, 1590, 10), ...arc(1594, 1606, 3, 2), ...line(1615, 1635, 10),
+      // 谷風の鉄橋: 風上(右)にコイン
+      ...line(1650, 1750, 10, 1), ...arc(1756, 1780, 5, 2.6, 'gold'), ...line(1790, 1835, 9, 1),
+      ...line(1850, 1900, 10), ...arc(1904, 1916, 3, 2), ...line(1925, 1955, 10),
+    ],
+    checkpoints: [{ s: 985, name: '峠の山小屋' }, { s: 1520, name: 'トンネルの出口' }],
+  },
+};
+
+export const CART_LEVELS: CartLevel[] = [LEVEL_8_1, LEVEL_8_2, LEVEL_8_3, LEVEL_8_4, LEVEL_8_5, LEVEL_8_6];
 export const cartById = (id: string): CartLevel | undefined => CART_LEVELS.find(l => l.id === id);
 export const trackOf = (level: CartLevel): Track => new Track(level.track);
 
 /** これから作る面(名前だけ。面えらびに「準備中」で出す)。 */
 export const CART_PLANNED: { id: string; title: string }[] = [
-{ id: '8-6', title: '山岳トロッコ' }, { id: '8-7', title: '連続ジャンプ' },
+{ id: '8-7', title: '連続ジャンプ' },
   { id: '8-8', title: '霧の山道' }, { id: '8-9', title: '鹿の全力疾走' }, { id: '8-10', title: '奈良山脈 大滑降' },
 ];

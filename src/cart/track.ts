@@ -1,9 +1,13 @@
 // WORLD 8「鹿と暴走トロッコ」: 線路のデータと、形の計算(描画なし。テストからも使う)
 // 単位はメートル。s は線路にそった距離。向き(heading)は 0 が奥(-z)、増えると右へ曲がる。
 
-export type Terrain = 'forest' | 'hillL' | 'hillR' | 'cut' | 'ridge' | 'canyon';
-/** 線路の1区間。slope=坂(度。マイナスが下り)、turn=この区間で曲がる角度(度。プラスが右)。 */
-export type Segment = { len: number; slope?: number; turn?: number; terrain?: Terrain; name?: string };
+/** tunnel=トンネル(中は暗い)、gorge=とても深い谷(高い鉄橋) */
+export type Terrain = 'forest' | 'hillL' | 'hillR' | 'cut' | 'ridge' | 'canyon' | 'tunnel' | 'gorge';
+/**
+ * 線路の1区間。slope=坂(度。マイナスが下り)、turn=この区間で曲がる角度(度。プラスが右)。
+ * wind=横風(m/s²。プラスは右へ押す。強弱がある)、snow=雪の積もった所
+ */
+export type Segment = { len: number; slope?: number; turn?: number; terrain?: Terrain; name?: string; wind?: number; snow?: boolean };
 /**
  * 線路の切れ目(from〜to に線路が無い)。
  * shift=向こう側の線路が横へずれている(m。プラスが右。空中で体を傾けて寄せる)、drop=向こう側が低い(m)、
@@ -40,7 +44,11 @@ const TERRAIN: Record<Terrain, { l: number; r: number; cap: number; depth: numbe
   cut: { l: 1.7, r: 1.7, cap: 9, depth: 0 },
   ridge: { l: -0.5, r: -0.45, cap: 26, depth: 0 },
   canyon: { l: 0.12, r: 0.1, cap: 26, depth: 22 },
+  tunnel: { l: 2.2, r: 2.2, cap: 30, depth: 0 },
+  gorge: { l: 0.08, r: 0.08, cap: 30, depth: 62 },
 };
+/** 谷(橋がかかる地形) */
+export const BRIDGED: Terrain[] = ['canyon', 'gorge'];
 
 export type TrackPoint = { x: number; y: number; z: number; heading: number; pitch: number; curv: number };
 
@@ -69,6 +77,7 @@ export class Track {
   private px: Float64Array; private py: Float64Array; private pz: Float64Array;
   private hd: Float64Array; private pt: Float64Array; private cv: Float64Array;
   private tl: Float64Array; private tr: Float64Array; private tc: Float64Array; private td: Float64Array;
+  private wd: Float64Array; private sn: Float64Array; private tn: Float64Array;
 
   constructor(def: TrackDef) {
     let at = 0;
@@ -78,6 +87,7 @@ export class Track {
     const n = this.total + 1;
     const pitch = new Float64Array(n), curv = new Float64Array(n);
     const tl = new Float64Array(n), tr = new Float64Array(n), tc = new Float64Array(n), td = new Float64Array(n);
+    const wd = new Float64Array(n), sn = new Float64Array(n), tn = new Float64Array(n);
     for (let i = 0; i < n; i++) {
       const g = this.segments.find(x => i < x.to);
       // ゴールのあとは、平らな森の中をまっすぐ
@@ -85,9 +95,13 @@ export class Track {
       pitch[i] = g ? (g.slope ?? 0) * DEG : 0;
       curv[i] = g ? ((g.turn ?? 0) * DEG) / g.len : 0;
       tl[i] = t.l; tr[i] = t.r; tc[i] = t.cap; td[i] = t.depth;
+      wd[i] = g?.wind ?? 0; sn[i] = g?.snow ? 1 : 0; tn[i] = g?.terrain === 'tunnel' ? 1 : 0;
     }
     this.pt = smooth(pitch, 9); this.cv = smooth(curv, 7);
-    this.tl = smooth(tl, 16); this.tr = smooth(tr, 16); this.tc = smooth(tc, 16); this.td = smooth(td, 9);
+    this.tl = smooth(tl, 16); this.tr = smooth(tr, 16); this.tc = smooth(tc, 16);
+    // 深い谷は、ふちを少し広めになじませる(橋の手前で、がけが急に落ちないように)
+    this.td = smooth(td, 9);
+    this.wd = smooth(wd, 12); this.sn = smooth(sn, 30); this.tn = tn;
     // ずれた・沈んだ切れ目: 切れ目の中(線路の無い所)で、横と下へ少しずつ動かす
     const lat = new Float64Array(n), sink = new Float64Array(n);
     for (const g of def.gaps) {
@@ -123,6 +137,23 @@ export class Track {
   /** 線路の左右の地形(l・r は離れるほど上がる割合、cap は上限、depth は谷の深さ)。 */
   terrain(s: number): { l: number; r: number; cap: number; depth: number } {
     return { l: this.lerp(this.tl, s), r: this.lerp(this.tr, s), cap: this.lerp(this.tc, s), depth: this.lerp(this.td, s) };
+  }
+  /** 横風の強さ(強弱をつける前の値。プラスは右へ押す) */
+  windAt(s: number): number { return this.lerp(this.wd, s); }
+  /** 雪の積もり具合 0〜1 */
+  snowAt(s: number): number { return this.lerp(this.sn, s); }
+  /** トンネルの中か */
+  inTunnel(s: number): boolean { const c = Math.floor(Math.max(0, Math.min(this.total, s))); return this.tn[c] > 0.5; }
+  /** トンネルの区間 [入口, 出口] */
+  tunnels(): [number, number][] {
+    // 続いている区間は、1本のトンネルにまとめる
+    const out: [number, number][] = [];
+    for (const g of this.segments) {
+      if (g.terrain !== 'tunnel') continue;
+      const last = out[out.length - 1];
+      if (last && last[1] === g.from) last[1] = g.to; else out.push([g.from, g.to]);
+    }
+    return out;
   }
   gapAt(s: number): Gap | undefined { return this.gaps.find(g => s > g.from && s < g.to); }
   inGap(s: number): boolean { return this.gapAt(s) !== undefined; }

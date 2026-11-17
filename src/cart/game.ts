@@ -167,7 +167,14 @@ export function startCart(root: HTMLElement, level: CartLevel): () => void {
       if (Math.abs(crest.curveAfter) > 0.006) return ['ブレーキ！ こぶで 浮かないように', 'red'];
       if (crest.s - s < v * 0.8) return ['こぶで とぶぞ！', 'jump'];
     }
-    const curv = track.sharpestAhead(s + 3, v * 1.7 + 8), k = Math.abs(curv);
+    // 横風: 風上へ傾ける
+    const w = track.windAt(s + v * 0.5);
+    if (Math.abs(w) > 0.5) {
+      const need = v * v * track.at(s + v * 0.5).curv - w;
+      if (Math.abs(need) > BAL.latBase * 0.8 && run.lean * Math.sign(need) < 0.6) return [need > 0 ? '横風！ 右へ かたむけて ▶' : '◀ 横風！ 左へ かたむけて', 'yellow'];
+    }
+    // 雪の上はブレーキがききにくいので、先のカーブを早めに知らせる
+    const curv = track.sharpestAhead(s + 3, (v * 1.7 + 8) * (1 + track.snowAt(s))), k = Math.abs(curv);
     // 傾ける向きは、今いるカーブを優先(S字で、まだ右カーブの中なのに「左へ」と出さない)
     const here = track.sharpestAhead(s, Math.max(12, v * 0.4)), kh = Math.abs(here);
     if (k > 0.006 || kh > 0.004) {
@@ -361,6 +368,8 @@ export function startCart(root: HTMLElement, level: CartLevel): () => void {
       else if (k > 0.007) hint('curve', 'カーブでは ◀ ▶ で 内がわへ 体を かたむけると、速いまま 回れるよ', 3600);
       if ((seg.slope ?? 0) >= 3) hint('up', '上り坂！ ダッシュで 鹿に がんばってもらおう', 3200);
       if ((seg.slope ?? 0) <= -8) hint('down', '急な下り坂！ どんどん 速くなるよ', 2600);
+      if (seg.wind) hint('wind', '強い 横風！ 風上へ 体を かたむけて こらえよう', 3400);
+      if (seg.terrain === 'tunnel') hint('tunnel', 'トンネルだ！ 中は 暗いよ。明かりを たよりに', 3000);
     }
     const gap = track.gaps.find(g => !g.collapse && g.from > s && g.from - s < look + 25);
     if (gap?.shift) hint('shift', '線路が ずれている！ 跳んだら、空中で ずれた方へ 体を かたむけよう', 3800);
@@ -410,7 +419,9 @@ export function startCart(root: HTMLElement, level: CartLevel): () => void {
     }
     if (loops) {
       const moving = (running || run.phase === 'cleared') && run.v > 0.5;
-      setLoop(loops.wind, moving ? speed * speed * 0.2 : 0, 500 + speed * 1500);
+      // 横風の所では、風の音を大きく。トンネルの中は、こもった音
+      const gust = Math.abs(run.wind) / 9, tun = track.inTunnel(run.s);
+      setLoop(loops.wind, moving ? speed * speed * 0.2 * (tun ? 0.5 : 1) + gust * 0.12 : 0, (tun ? 300 : 500) + speed * (tun ? 600 : 1500) + gust * 400);
       setLoop(loops.rumble, moving && !run.air ? 0.1 + speed * 0.3 : 0, 110 + speed * 160);
       setLoop(loops.screech, running && !run.air && ((run.braking && run.v > 3) || run.tilt > 0.15) ? 0.035 + speed * 0.05 : 0);
     }
