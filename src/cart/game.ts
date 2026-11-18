@@ -370,6 +370,7 @@ export function startCart(root: HTMLElement, level: CartLevel): () => void {
   root.addEventListener('contextmenu', noMenu);
 
   /** はじめて出あうものに、一言(種類ごとに1回)。 */
+  const fogCurves = track.fogCurves();
   const hint = (key: string, msg: string, ms = 3000) => { if (!hinted.has(key)) { hinted.add(key); toast(msg, ms); } };
   const hints = () => {
     const s = run.s, v = run.v, look = v * 2.4 + 20;
@@ -382,6 +383,14 @@ export function startCart(root: HTMLElement, level: CartLevel): () => void {
       if ((seg.slope ?? 0) <= -8) hint('down', '急な下り坂！ どんどん 速くなるよ', 2600);
       if (seg.wind) hint('wind', '強い 横風！ 風上へ 体を かたむけて こらえよう', 3400);
       if (seg.terrain === 'tunnel') hint('tunnel', 'トンネルだ！ 中は 暗いよ。明かりを たよりに', 3000);
+      if ((seg.fog ?? 0) >= 0.6) hint('fog', '霧だ！ 先が 見えにくい。光る 灯籠が カーブの 目印。鈴が 鳴ったら カーブ', 4200);
+    }
+    // 霧の中の急カーブ: 手前で鈴を鳴らす(1つのカーブに1回)
+    for (const [a] of fogCurves) {
+      if (s < a && a - s < v * 2.2 + 15 && !hinted.has(`bell${a}`)) {
+        hinted.add(`bell${a}`);
+        tone(1568, 1560, 1.3, 'sine', 0.07); tone(2349, 2340, 0.9, 'sine', 0.035); tone(784, 780, 1.1, 'sine', 0.03, 0.02);
+      }
     }
     const gap = track.gaps.find(g => !g.collapse && !track.rampBefore(g) && g.from > s && g.from - s < look + 25);
     if (gap?.shift) hint('shift', '線路が ずれている！ 跳んだら、空中で ずれた方へ 体を かたむけよう', 3800);

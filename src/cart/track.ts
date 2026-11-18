@@ -5,9 +5,13 @@
 export type Terrain = 'forest' | 'hillL' | 'hillR' | 'cut' | 'ridge' | 'canyon' | 'tunnel' | 'gorge';
 /**
  * 線路の1区間。slope=坂(度。マイナスが下り)、turn=この区間で曲がる角度(度。プラスが右)。
- * wind=横風(m/s²。プラスは右へ押す。強弱がある)、snow=雪の積もった所
+ * wind=横風(m/s²。プラスは右へ押す。強弱がある)、snow=雪の積もった所、
+ * fog=霧の濃さ 0〜1(1 で 45m 先までしか見えない)、cloudSea=下に雲の海が広がる(霧の晴れた尾根)
  */
-export type Segment = { len: number; slope?: number; turn?: number; terrain?: Terrain; name?: string; wind?: number; snow?: boolean };
+export type Segment = {
+  len: number; slope?: number; turn?: number; terrain?: Terrain; name?: string;
+  wind?: number; snow?: boolean; fog?: number; cloudSea?: boolean;
+};
 /**
  * 線路の切れ目(from〜to に線路が無い)。
  * shift=向こう側の線路が横へずれている(m。プラスが右。空中で体を傾けて寄せる)、drop=向こう側が低い(m)、
@@ -31,6 +35,8 @@ export type TrackDef = {
   checkpoints?: Checkpoint[];
   /** この面の、ふつうの最高速(m/s)。無ければ BAL.vMax。ダッシュ中は、これより少し上まで出る */
   vMax?: number;
+  /** 灯籠の門(線路の両がわに立つ、光る灯籠。霧の中でも見える目印) */
+  lanternGates?: number[];
 };
 
 const DEG = Math.PI / 180;
@@ -76,11 +82,12 @@ export class Track {
   coins: Coin[];
   checkpoints: Checkpoint[];
   vMax?: number;
+  lanternGates: number[];
   segments: (Segment & { from: number; to: number })[] = [];
   private px: Float64Array; private py: Float64Array; private pz: Float64Array;
   private hd: Float64Array; private pt: Float64Array; private cv: Float64Array;
   private tl: Float64Array; private tr: Float64Array; private tc: Float64Array; private td: Float64Array;
-  private wd: Float64Array; private sn: Float64Array; private tn: Float64Array;
+  private wd: Float64Array; private sn: Float64Array; private tn: Float64Array; private fg: Float64Array;
 
   constructor(def: TrackDef) {
     let at = 0;
@@ -90,7 +97,7 @@ export class Track {
     const n = this.total + 1;
     const pitch = new Float64Array(n), curv = new Float64Array(n);
     const tl = new Float64Array(n), tr = new Float64Array(n), tc = new Float64Array(n), td = new Float64Array(n);
-    const wd = new Float64Array(n), sn = new Float64Array(n), tn = new Float64Array(n);
+    const wd = new Float64Array(n), sn = new Float64Array(n), tn = new Float64Array(n), fg = new Float64Array(n);
     for (let i = 0; i < n; i++) {
       const g = this.segments.find(x => i < x.to);
       // ゴールのあとは、平らな森の中をまっすぐ
@@ -98,13 +105,13 @@ export class Track {
       pitch[i] = g ? (g.slope ?? 0) * DEG : 0;
       curv[i] = g ? ((g.turn ?? 0) * DEG) / g.len : 0;
       tl[i] = t.l; tr[i] = t.r; tc[i] = t.cap; td[i] = t.depth;
-      wd[i] = g?.wind ?? 0; sn[i] = g?.snow ? 1 : 0; tn[i] = g?.terrain === 'tunnel' ? 1 : 0;
+      wd[i] = g?.wind ?? 0; sn[i] = g?.snow ? 1 : 0; tn[i] = g?.terrain === 'tunnel' ? 1 : 0; fg[i] = g?.fog ?? 0;
     }
     this.pt = smooth(pitch, 9); this.cv = smooth(curv, 7);
     this.tl = smooth(tl, 16); this.tr = smooth(tr, 16); this.tc = smooth(tc, 16);
     // 深い谷は、ふちを少し広めになじませる(橋の手前で、がけが急に落ちないように)
     this.td = smooth(td, 9);
-    this.wd = smooth(wd, 12); this.sn = smooth(sn, 30); this.tn = tn;
+    this.wd = smooth(wd, 12); this.sn = smooth(sn, 30); this.tn = tn; this.fg = smooth(fg, 25);
     // ずれた・沈んだ切れ目: 切れ目の中(線路の無い所)で、横と下へ少しずつ動かす
     const lat = new Float64Array(n), sink = new Float64Array(n);
     for (const g of def.gaps) {
@@ -124,6 +131,7 @@ export class Track {
     this.coins = def.coins.map((c, id) => ({ ...c, id })).sort((a, b) => a.s - b.s);
     this.checkpoints = (def.checkpoints ?? []).map(c => ({ ...c }));
     this.vMax = def.vMax;
+    this.lanternGates = def.lanternGates ?? [];
   }
 
   private lerp(a: Float64Array, s: number): number {
@@ -145,6 +153,12 @@ export class Track {
   windAt(s: number): number { return this.lerp(this.wd, s); }
   /** 雪の積もり具合 0〜1 */
   snowAt(s: number): number { return this.lerp(this.sn, s); }
+  /** 霧の濃さ 0〜1 */
+  fogAt(s: number): number { return this.lerp(this.fg, s); }
+  /** 霧の中の急カーブ(灯籠と鈴で知らせる)。[区間の始まり, 終わり, 曲がる向き(+1 右)] */
+  fogCurves(): [number, number, number][] {
+    return this.segments.filter(g => Math.abs(g.turn ?? 0) >= 40 && this.fogAt((g.from + g.to) / 2) > 0.3).map(g => [g.from, g.to, Math.sign(g.turn!)]);
+  }
   /** トンネルの中か */
   inTunnel(s: number): boolean { const c = Math.floor(Math.max(0, Math.min(this.total, s))); return this.tn[c] > 0.5; }
   /** トンネルの区間 [入口, 出口] */

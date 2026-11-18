@@ -530,11 +530,85 @@ const LEVEL_8_7: CartLevel = {
   },
 };
 
-export const CART_LEVELS: CartLevel[] = [LEVEL_8_1, LEVEL_8_2, LEVEL_8_3, LEVEL_8_4, LEVEL_8_5, LEVEL_8_6, LEVEL_8_7];
+/**
+ * 8-8 霧の山道(約1790m)。テーマは「見えない道を、灯りと音で読む」。
+ * 霧の入口 → 見えないカーブ → 霧のS字 → 霧の谷 → 雲の上へ(霧が晴れて、雲海の尾根) → 霧へふたたび(急降下)
+ * → 霧の急カーブ → 霧の古い橋(崩れる) → ずれた霧の線路 → 最後の下り(枝) → 最後の霧カーブ → 霧の晴れた駅
+ * 霧の中の急カーブには、外がわに光る灯籠が並び、手前で鈴が鳴る。
+ * プレミアム: 霧の中に立つ「灯籠の門」の下の空中。門が見えたら、すぐ跳ぶ。
+ */
+const LEVEL_8_8: CartLevel = {
+  id: '8-8', title: '霧の山道', summary: '見えない道を、灯りと鈴の音で',
+  intro: '霧の 山道だ。灯籠の 明かりと、鈴の 音を たよりに 進もう',
+  goalName: '霧の晴れた駅',
+  notes: [
+    { s: 595, text: '霧を ぬけて、雲の上へ！' },
+    { s: 880, text: 'また 霧の中へ… 急な下りの先に、急カーブ' },
+    { s: 1160, text: '霧の中の 古い橋！ 崩れたら すぐ ジャンプ' },
+    { s: 1395, text: 'ずれた線路！ 跳んだら 空中で 左へ' },
+    { s: 1600, text: '最後の 霧の カーブ！' },
+  ],
+  track: {
+    // 区間: 霧のカーブ 210-280・330-400・400-470 / 霧の谷 510-600 / 雲海の尾根 730-870 / 急降下 894-1034
+    //       / 霧の急カーブ 1034-1114 / 古い橋 1164-1324 / ずれた線路 1384-1484 / 最後の霧カーブ 1604-1674 / ゴール 1794
+    segments: [
+      { len: 70, slope: -2, terrain: 'forest', fog: 0.3, name: '霧の入口' },
+      { len: 140, slope: -6, terrain: 'hillL', fog: 0.7, name: '白い下り坂' },
+      { len: 70, slope: -2, turn: 75, terrain: 'cut', fog: 0.95, name: '見えないカーブ' },
+      { len: 50, slope: -3, terrain: 'forest', fog: 0.95 },
+      { len: 70, slope: -2, turn: -75, terrain: 'hillR', fog: 1, name: '霧のS字' },
+      { len: 70, slope: -2, turn: 75, terrain: 'hillL', fog: 1 },
+      { len: 40, slope: -2, terrain: 'forest', fog: 0.9 },
+      { len: 90, slope: -1, terrain: 'canyon', fog: 0.8, name: '霧の谷' },
+      { len: 130, slope: 5, terrain: 'ridge', fog: 0.2, name: '雲の上へ' },
+      { len: 140, slope: -2, terrain: 'ridge', cloudSea: true, name: '雲海の尾根' },
+      { len: 24, slope: 6, terrain: 'ridge', name: '雲海のこぶ' },
+      { len: 140, slope: -12, terrain: 'hillR', fog: 0.6, name: '霧へ ふたたび' },
+      { len: 80, slope: -2, turn: -95, terrain: 'cut', fog: 1, name: '霧の急カーブ' },
+      { len: 50, slope: -2, terrain: 'forest', fog: 1 },
+      { len: 160, slope: -1, terrain: 'canyon', fog: 0.9, name: '霧の古い橋' },
+      { len: 60, slope: -3, turn: 60, terrain: 'hillL', fog: 0.8 },
+      { len: 100, slope: -1, terrain: 'canyon', fog: 0.8, name: 'ずれた霧の線路' },
+      { len: 120, slope: -8, terrain: 'ridge', fog: 0.4, name: '最後の下り' },
+      { len: 70, slope: -2, turn: 90, terrain: 'cut', fog: 0.9, name: '最後の霧カーブ' },
+      { len: 120, slope: -3, terrain: 'forest', name: '霧の晴れた駅へ' },
+    ],
+    gaps: [
+      { from: 545, to: 557 },
+      { from: 1200, to: 1209, collapse: true },
+      { from: 1425, to: 1435, shift: -2.4 },
+    ],
+    obstacles: [
+      { s: 315, kind: 'rock' },
+      { s: 640, kind: 'log' },
+      { s: 1150, kind: 'rock' },
+      { s: 1530, kind: 'branch', side: 1 }, { s: 1560, kind: 'branch', side: -1 },
+      { s: 1740, kind: 'log' },
+    ],
+    lanternGates: [490],
+    coins: [
+      ...line(20, 65, 9), ...line(80, 200, 10),
+      ...line(220, 270, 10, 1), ...line(285, 305, 10), ...arc(309, 321, 3, 2), ...line(330, 395, 9, -1), ...line(405, 465, 9, 1),
+      // プレミアム: 霧の中の灯籠の門の下の空中(門が見えたら、すぐ跳ぶ)
+      { s: 490, side: 0, h: 3.0, kind: 'premium' },
+      ...line(500, 535, 9), ...arc(541, 561, 4, 2.4, 'gold'), ...line(565, 595, 10),
+      ...line(610, 630, 10), ...arc(634, 646, 3, 2), ...line(655, 725, 10),
+      ...line(735, 865, 10), ...air([[872, 1.6], [880, 1.9], [888, 1.6]]),
+      ...line(900, 1030, 10), ...line(1040, 1110, 10, -1), ...line(1120, 1140, 10), ...arc(1144, 1156, 3, 2),
+      ...line(1165, 1190, 9), ...arc(1196, 1213, 3, 2, 'gold'), ...line(1220, 1320, 10),
+      ...line(1330, 1380, 10, 1), ...line(1390, 1415, 9), ...air([[1429, 2.4], [1435, 2.9], [1441, 2.6]], -1), ...line(1450, 1480, 10),
+      ...line(1490, 1520, 10), ...line(1525, 1535, 5, -1), ...line(1545, 1550, 5), ...line(1555, 1565, 5, 1), ...line(1575, 1600, 9),
+      ...line(1610, 1670, 10, 1), ...line(1685, 1730, 9), ...arc(1734, 1746, 3, 2), ...line(1755, 1790, 9),
+    ],
+    checkpoints: [{ s: 700, name: '雲の上の小屋' }, { s: 1140, name: '霧の見はり小屋' }],
+  },
+};
+
+export const CART_LEVELS: CartLevel[] = [LEVEL_8_1, LEVEL_8_2, LEVEL_8_3, LEVEL_8_4, LEVEL_8_5, LEVEL_8_6, LEVEL_8_7, LEVEL_8_8];
 export const cartById = (id: string): CartLevel | undefined => CART_LEVELS.find(l => l.id === id);
 export const trackOf = (level: CartLevel): Track => new Track(level.track);
 
 /** これから作る面(名前だけ。面えらびに「準備中」で出す)。 */
 export const CART_PLANNED: { id: string; title: string }[] = [
-  { id: '8-8', title: '霧の山道' }, { id: '8-9', title: '鹿の全力疾走' }, { id: '8-10', title: '奈良山脈 大滑降' },
+{ id: '8-9', title: '鹿の全力疾走' }, { id: '8-10', title: '奈良山脈 大滑降' },
 ];

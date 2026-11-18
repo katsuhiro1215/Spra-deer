@@ -105,7 +105,7 @@ test('コイン: まん中は通るだけ。横は体を傾けて、高い所は
 });
 
 // ---- 8-1 を、自動で走る(ボットは tests/cartbot.ts) ----
-const L1 = cartById('8-1')!, L2 = cartById('8-2')!, L3 = cartById('8-3')!, L4 = cartById('8-4')!, L5 = cartById('8-5')!, L6 = cartById('8-6')!, L7 = cartById('8-7')!;
+const L1 = cartById('8-1')!, L2 = cartById('8-2')!, L3 = cartById('8-3')!, L4 = cartById('8-4')!, L5 = cartById('8-5')!, L6 = cartById('8-6')!, L7 = cartById('8-7')!, L8 = cartById('8-8')!;
 const drive = (policy: Policy = {}) => driveLevel(L1, policy);
 
 test('8-1: 先を見て操作すれば、ハートを減らさずにクリアできる(60〜95秒)', () => {
@@ -433,4 +433,22 @@ test('8-7: プレミアムは、森のジャンプ台で台の上でジャンプ
   assert.equal(tryIt(566.5).premium, true, '台を離れてすぐでも、まにあう');
   assert.equal(tryIt(0).premium, false, '乗るだけ');
   assert.equal(tryIt(569).premium, false, 'おそい');
+});
+
+// ---- 8-8 霧の山道 ----
+test('8-8: 霧の中の急カーブには灯籠と鈴(fogCurves)。雲海の尾根では霧が晴れる。ブレーキ・傾き・ジャンプが要る', () => {
+  const t = trackOf(L8);
+  assert.ok(t.fogAt(360) > 0.9 && t.fogAt(800) < 0.1 && t.fogAt(1760) < 0.1, '霧は濃い所と晴れた所がある');
+  assert.deepEqual(t.fogCurves().map(c => c[0]), [210, 330, 400, 1034, 1324, 1604]);
+  assert.ok(t.segments.some(g => g.cloudSea));
+  assert.deepEqual(t.lanternGates, [490]);
+  assert.equal(driveLevel(L8, { brake: false }).reason, 'derail');
+  assert.equal(driveLevel(L8, { lean: false }).reason, 'miss');
+  assert.equal(driveLevel(L8, { jump: false }).reason, 'fall');
+});
+
+test('8-8: プレミアムは、霧の中の灯籠の門の下。門の手前で跳んだときだけ', () => {
+  const tryIt = (at: number) => driveLevel(L8, { until: 520, extra: (run, inp) => { if (at && run.s > at && run.s < at + 0.5) inp.jump = true; } });
+  assert.equal(tryIt(480).premium, true);
+  assert.equal(tryIt(0).premium, false); assert.equal(tryIt(489).premium, false, 'おそい'); assert.equal(tryIt(468).premium, false, '早すぎる');
 });

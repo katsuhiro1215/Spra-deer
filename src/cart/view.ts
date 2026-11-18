@@ -108,7 +108,9 @@ export class CartView {
   /** トンネルの中でともす、トロッコの明かり(トンネルのある面だけ) */
   private cartLight: THREE.PointLight | null = null;
   private tunnelList: [number, number][] | null = null;
-  private fogDay = new THREE.Color(SKY_HORIZON); private fogDark = new THREE.Color(0x15110d);
+  private fogDay = new THREE.Color(SKY_HORIZON); private fogDark = new THREE.Color(0x15110d); private fogMist = new THREE.Color(0xd5dbdf);
+  /** 霧が濃いとき、カメラのまわりを包む「もや」(空と遠くの山を白くかすませる) */
+  private mist: THREE.Mesh | null = null;
   private wheels: THREE.Object3D[] = [];
   private lever!: THREE.Object3D;
   private lantern!: THREE.Object3D;
@@ -172,6 +174,7 @@ export class CartView {
     this.buildBridges();
     this.buildCollapse();
     this.buildTunnels();
+    this.buildFog();
     this.buildScenery();
     this.buildObstacles();
     this.buildSigns();
@@ -485,6 +488,65 @@ export class CartView {
     this.cartLight.position.set(0, 2.2, -1.2);
     this.cart.add(this.cartLight);
   }
+  // ---- 霧: 道しるべの灯籠・灯籠の門・雲海・もや ----
+  private buildFog(): void {
+    const curves = this.track.fogCurves(), gates = this.track.lanternGates;
+    const seas = this.track.segments.filter(g => g.cloudSea);
+    const foggy = this.track.segments.some(g => (g.fog ?? 0) > 0);
+    if (!foggy && !gates.length && !seas.length) return;
+    const up = new THREE.Vector3(0, 1, 0);
+    // 灯籠: 木の柱と、光る火袋(霧の中でも見えるように、霧の影響を受けない)
+    const postGeo = new THREE.BoxGeometry(0.22, 1, 0.22), headGeo = new THREE.BoxGeometry(0.5, 0.55, 0.5);
+    const postMat = new THREE.MeshStandardMaterial({ color: 0x4a3526, roughness: 1 });
+    const headMat = new THREE.MeshBasicMaterial({ color: 0xffc46b, toneMapped: false, fog: false });
+    const glowMat = new THREE.SpriteMaterial({ map: softDot(), color: 0xffb04a, transparent: true, opacity: 0.6, depthWrite: false, blending: THREE.AdditiveBlending, fog: false });
+    const beamMat = new THREE.MeshStandardMaterial({ color: 0xc8402e, roughness: 0.8 });
+    this.disposables.push(postGeo, headGeo, postMat, headMat, glowMat, beamMat);
+    const lantern = (s: number, u: number, h: number) => {
+      const f = this.frame(s, this.f, false);
+      const base = new THREE.Vector3().copy(f.o).addScaledVector(f.r, u);
+      const post = new THREE.Mesh(postGeo, postMat); post.scale.y = h; post.position.copy(base).addScaledVector(up, h / 2 - 0.3); post.castShadow = true;
+      const head = new THREE.Mesh(headGeo, headMat); head.position.copy(base).addScaledVector(up, h);
+      const glow = new THREE.Sprite(glowMat); glow.position.copy(head.position); glow.scale.set(2.6, 2.6, 1);
+      this.scene.add(post, head, glow);
+    };
+    // 霧の中の急カーブ: 外がわに、手前 40m から灯籠を並べる(曲がる向きが、霧の向こうから見える)
+    for (const [a, b, dir] of curves) for (let s = a - 40; s <= b; s += 9) lantern(s, -dir * 4.3, 2.2);
+    // 灯籠の門: 両がわの灯籠と、上の赤い横木
+    for (const s of gates) {
+      lantern(s, -3.1, 3.4); lantern(s, 3.1, 3.4);
+      const f = this.frame(s, this.f, false);
+      const beam = new THREE.Mesh(new THREE.BoxGeometry(8.2, 0.32, 0.4), beamMat);
+      beam.position.copy(f.o).addScaledVector(up, 4.7);
+      beam.setRotationFromMatrix(this.m1.makeBasis(f.r, up, this.v1.set(-f.t.x, 0, -f.t.z).normalize()));
+      beam.castShadow = true; this.scene.add(beam); this.disposables.push(beam.geometry);
+    }
+    // 雲海: 尾根の下に広がる白い雲の海(霧の中では、霧にかくれる)
+    const seaMat = new THREE.MeshLambertMaterial({ color: 0xf6f8fb, emissive: 0x8d97a3 });
+    const puffMat = new THREE.SpriteMaterial({ map: softDot(), color: 0xffffff, transparent: true, opacity: 0.85, depthWrite: false });
+    this.disposables.push(seaMat, puffMat, puffMat.map!);
+    const rnd = mulberry(7788);
+    for (const g of seas) {
+      const mid = this.frame((g.from + g.to) / 2, this.f, false).o;
+      const geo = new THREE.PlaneGeometry(1400, 1400).rotateX(-Math.PI / 2);
+      // 尾根の左右 30m あたりから先が、雲にしずむ高さ
+      const sea = new THREE.Mesh(geo, seaMat); sea.position.set(mid.x, mid.y - 16, mid.z);
+      this.scene.add(sea); this.disposables.push(geo);
+      for (let i = 0; i < 60; i++) {
+        const a = rnd() * Math.PI * 2, r = 45 + rnd() * 420;
+        const sp = new THREE.Sprite(puffMat);
+        sp.position.set(mid.x + Math.cos(a) * r, mid.y - 15 + rnd() * 4, mid.z + Math.sin(a) * r);
+        sp.scale.set(40 + rnd() * 50, 10 + rnd() * 8, 1);
+        this.scene.add(sp);
+      }
+    }
+    // もや
+    if (foggy) {
+      const geo = new THREE.SphereGeometry(400, 24, 12), mat = new THREE.MeshBasicMaterial({ color: 0xd5dbdf, side: THREE.BackSide, transparent: true, opacity: 0, depthWrite: false, fog: false });
+      this.mist = new THREE.Mesh(geo, mat); this.mist.frustumCulled = false; this.mist.renderOrder = -5;
+      this.scene.add(this.mist); this.disposables.push(geo, mat);
+    }
+  }
   /** トンネルの暗さ 0〜1(カメラのいる所で決める。入口・出口は 14m かけて変わる) */
   private darkAt(s: number): number {
     let k = 0;
@@ -667,6 +729,8 @@ export class CartView {
       const T = this.track.terrain(Math.max(0, s)), curv = this.track.at(Math.max(0, s)).curv;
       // トンネルの中(山の中)には、木も石も置かない。雪の所は、白っぽい杉だけ
       const tunnel = this.track.inTunnel(s - 3) || this.track.inTunnel(s + 3), sn = this.track.snowAt(Math.max(0, s));
+      // 雲海の尾根: 見晴らしをよくするため、木はほとんど置かない
+      const sea = this.track.segments.some(g => g.cloudSea && s > g.from - 25 && s < g.to + 25);
       for (const side of [-1, 1]) {
         const slope = side < 0 ? T.l : T.r, wall = slope > 1.3; // 切り通しの岩かべ
         if (tunnel) continue;
@@ -679,6 +743,7 @@ export class CartView {
           const u = side * (6.5 + Math.pow(rnd(), 1.7) * 95);
           if (Math.abs(curv) > 1e-4 && Math.sign(u) === Math.sign(curv) && Math.abs(u) > 0.7 / Math.abs(curv)) continue;
           if (wall && Math.abs(u) < 9) continue;
+          if (sea && rnd() < 0.94) continue;
           if (T.depth > 3 && Math.abs(u) < 30 && rnd() < 0.8) continue;
           const nearDensity = Math.abs(u) < 14 ? 0.5 : 0.85;
           if (rnd() > nearDensity) continue;
@@ -1183,8 +1248,18 @@ export class CartView {
     this.hemi.intensity = 0.85 * (1 - 0.82 * dark);
     this.sun.intensity = 2.4 * (1 - 0.95 * dark);
     this.scene.environmentIntensity = 0.45 * (1 - 0.65 * dark);
+    // 霧: 濃いほど近くしか見えない。空と遠くの山は「もや」で白くかすむ
+    const fk = this.track.fogAt(run.s + 6);
     const fog = this.scene.fog as THREE.Fog;
-    fog.color.copy(this.fogDay).lerp(this.fogDark, dark); fog.near = 70 - 58 * dark; fog.far = 430 - 345 * dark;
+    fog.color.copy(this.fogDay).lerp(this.fogMist, fk).lerp(this.fogDark, dark);
+    fog.near = Math.min(70 - 67 * fk, 70 - 58 * dark); fog.far = Math.min(430 - 384 * fk, 430 - 345 * dark);
+    this.sun.intensity *= 1 - 0.55 * fk;
+    if (this.mist) {
+      const m = this.mist.material as THREE.MeshBasicMaterial;
+      m.opacity = clamp((fk - 0.1) / 0.5, 0, 1) * 0.98; m.color.copy(fog.color);
+      this.mist.visible = m.opacity > 0.01;
+      this.mist.position.copy(this.camPos);
+    }
     if (this.cartLight) this.cartLight.intensity = 30 * dark;
 
     // ---- カメラ: トロッコの後ろ上から。速いほど広く、カーブで少し傾く ----
