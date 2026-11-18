@@ -25,7 +25,10 @@ const watch = page => {
 const installBot = () => {
   const c = window.__cart, run = c.run, track = c.track, step = run.step.bind(run);
   const B = { latBase: 7, latLean: 5, latOut: 3 };
-  run.step = (dt, input) => {
+  // ヘッドレスのブラウザは絵を描くのが遅い(1秒に1〜2枚)ので、1回の呼び出しで4歩すすめて、確認の時間を短くする
+  const SPEED = 4;
+  run.step = (dt, input) => { for (let k = 0; k < SPEED && (k === 0 || run.phase === 'running'); k++) one(dt, input); };
+  const one = (dt, input) => {
     if (run.phase === 'running') {
       const s = run.s, v = run.v;
       input.left = input.right = input.brake = input.dash = input.jump = false;
@@ -44,17 +47,23 @@ const installBot = () => {
       if (branch) { input.left = branch.side === 1; input.right = branch.side === -1; }
       if (!run.air && run.dashCool <= 0 && v < 12 && track.at(s).pitch > 0.05) input.dash = true;
       if (run.air) {
-        const sg = track.gaps.find(g => g.shift && g.to > s - 30 && g.from < s + 30);
+        const sg = track.shiftGapNear(s);
         if (sg) { input.right = sg.shift > 0; input.left = sg.shift < 0; }
       }
       const crest = track.crestAhead(s, v * 2 + 10);
       if (crest && Math.abs(crest.curveAfter) > 0.006 && !run.air && v > crest.vLift * 0.93) input.brake = true;
-      const gap = track.gaps.find(g => g.to > s);
-      if (gap) {
+      const gap = track.gaps.find(g => g.to > s), ramp = gap && track.rampBefore(gap);
+      if (gap && ramp && ramp.s > s - 1) {
+        // ジャンプ台: 台の上でジャンプ。届かない速さなら手前でダッシュ(平らな所へ、台+ジャンプで 2秒とぶ)
+        if (ramp.s - s < 70 && ramp.s - s > 8 && v * 2 < gap.to + 4 - ramp.s) input.dash = true;
+        if (ramp.s - s < Math.max(1, v * 0.06)) input.jump = true;
+      } else if (gap) {
+        const next = track.gaps.find(g => g.from > gap.to);
+        if (next && !run.air && next.from - gap.from < 45 && gap.from - s < 50 && v > next.from - 3 - gap.from) input.brake = true;
         if (gap.from - s < 70 && gap.from - s > 12 && v < gap.to - gap.from + 5) input.dash = true;
         if (!run.air && gap.from - s < Math.max(1.5, v * 0.06) && gap.from - s > -1) input.jump = true;
       }
-      const rock = track.obstacles.find(o => o.kind !== 'branch' && o.s > s && o.s - s < v * 0.4);
+      const rock = track.obstacles.find(o => (o.kind === 'rock' || o.kind === 'log') && o.s > s && o.s - s < v * 0.4);
       if (rock && !run.air) input.jump = true;
     }
     step(dt, input);
@@ -128,7 +137,7 @@ try {
   assert.ok(perf.triangles < 260000, '三角形が多すぎる');
 
   // 5) 8-2・8-3 も、自動操作でゴールまで走れる(8-2 は 8-1 の「次の面へ」から)
-  for (const [id, shots] of [['8-2', [[250, 's-curve'], [590, 'hairpin'], [890, 'branch-curve'], [1250, 'three-curves']]], ['8-3', [[475, 'double-gap'], [725, 'uphill-gap'], [1145, 'rock-gap'], [1565, 'big-gap']]], ['8-4', [[150, 'steep'], [290, 'hump'], [520, 'fast-s'], [800, 'hump-curve'], [1190, 'long-jump'], [1330, 'slalom'], [1565, 'big-hump'], [1700, 'brake-zone']]], ['8-5', [[250, 'rattle-bridge'], [494, 'shifted'], [796, 'sunken'], [990, 'collapse'], [1220, 'shift-sunk'], [1530, 'collapse-2']]], ['8-6', [[150, 'climb'], [320, 'tunnel'], [495, 'tunnel-gap'], [760, 'snow'], [1100, 'sky-bridge'], [1400, 'dark-curve'], [1750, 'wind-bridge']]]]) {
+  for (const [id, shots] of [['8-2', [[250, 's-curve'], [590, 'hairpin'], [890, 'branch-curve'], [1250, 'three-curves']]], ['8-3', [[475, 'double-gap'], [725, 'uphill-gap'], [1145, 'rock-gap'], [1565, 'big-gap']]], ['8-4', [[150, 'steep'], [290, 'hump'], [520, 'fast-s'], [800, 'hump-curve'], [1190, 'long-jump'], [1330, 'slalom'], [1565, 'big-hump'], [1700, 'brake-zone']]], ['8-5', [[250, 'rattle-bridge'], [494, 'shifted'], [796, 'sunken'], [990, 'collapse'], [1220, 'shift-sunk'], [1530, 'collapse-2']]], ['8-6', [[150, 'climb'], [320, 'tunnel'], [495, 'tunnel-gap'], [760, 'snow'], [1100, 'sky-bridge'], [1400, 'dark-curve'], [1750, 'wind-bridge']]], ['8-7', [[232, 'ramp'], [440, 'islands'], [575, 'forest-ramp'], [820, 'big-ramp'], [1200, 'steps'], [1445, 'zigzag'], [1665, 'sky']]]]) {
     if (id === '8-2') {
       // もう一度 8-1 をクリアして、結果の「次の面へ」から入る
       await page.goto(`${base}/cart/?level=8-1`); await page.waitForFunction(() => !!window.__cart);

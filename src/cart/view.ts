@@ -711,6 +711,12 @@ export class CartView {
     const logGeo = new THREE.CylinderGeometry(0.34, 0.4, 3.6, 10), limbGeo = new THREE.CylinderGeometry(0.2, 0.34, 4.4, 8);
     const trunkGeo = new THREE.CylinderGeometry(0.42, 0.6, 5, 9), leafGeo = lumpy(new THREE.IcosahedronGeometry(1, 1), 0.3, rnd);
     this.disposables.push(rockGeo, rockMat, bark, barkMat, cutMat, leafMat, logGeo, limbGeo, trunkGeo, leafGeo);
+    const rampTex = canvasTex(128, 256, c => {
+      for (let i = 0; i < 8; i++) { c.fillStyle = i % 2 ? '#d8342c' : '#ffd23a'; c.fillRect(0, i * 32, 128, 32); }
+      c.fillStyle = 'rgba(80,50,20,0.25)'; for (let x = 0; x < 128; x += 16) c.fillRect(x, 0, 2, 256);
+    });
+    const rampMat = new THREE.MeshStandardMaterial({ map: rampTex, roughness: 0.8 }), rampGeo = new THREE.BoxGeometry(2.5, 0.16, 3.6);
+    this.disposables.push(rampTex, rampMat, rampGeo);
     for (const o of this.track.obstacles) {
       const f = this.frame(o.s, this.f), g = new THREE.Group();
       g.position.copy(f.o);
@@ -721,6 +727,16 @@ export class CartView {
           const m = new THREE.Mesh(rockGeo, rockMat);
           m.position.set(x, y, z); m.scale.set(sx, sy, sx); m.rotation.set(rnd() * 3, rnd() * 3, rnd() * 3);
           m.castShadow = true; g.add(m);
+        }
+      } else if (o.kind === 'ramp') {
+        // ジャンプ台: 黄色と赤のしま模様の板。前(台の先)が高い。下に支え
+        const board = new THREE.Mesh(rampGeo, rampMat);
+        board.rotation.x = 0.28; board.position.set(0, 0.52, 1.75); board.castShadow = true; board.receiveShadow = true;
+        g.add(board);
+        for (const x of [-1.05, 1.05]) {
+          const post = new THREE.Mesh(limbGeo, barkMat);
+          post.scale.set(0.45, 0.22, 0.45); post.position.set(x, 0.45, 0.25); post.castShadow = true;
+          g.add(post);
         }
       } else if (o.kind === 'log') {
         const m = new THREE.Mesh(logGeo, [barkMat, cutMat, cutMat]);
@@ -793,6 +809,18 @@ export class CartView {
             plate(g, 256, 256, '#ffd23a', '#2b2b2b');
             g.fillStyle = '#2b2b2b'; g.font = '900 58px sans-serif'; g.textAlign = 'center'; g.fillText('古い橋', 128, 100);
             g.font = '900 50px sans-serif'; g.fillText('あぶない', 128, 178);
+          });
+          continue;
+        }
+        const ramp = this.track.rampBefore(gap);
+        if (ramp) {
+          // ジャンプ台の先の切れ目: 台の上でジャンプしたときに要る速さ
+          const needR = Math.ceil(((gap.to + 4 - ramp.s) / ((2 * (BAL.rampV + BAL.rampBoost)) / BAL.airG)) * 3.6 / 5) * 5;
+          sign(ramp.s - 30, side * 3.3, 2.5, 2.5, g => {
+            plate(g, 256, 256, '#fff7e0', '#e8822b');
+            g.fillStyle = '#e8822b'; g.font = '900 46px sans-serif'; g.textAlign = 'center'; g.fillText('ジャンプ台', 128, 86);
+            g.fillStyle = '#2b2b2b'; g.font = '900 78px sans-serif'; g.fillText(`${needR}`, 128, 170);
+            g.font = '800 28px sans-serif'; g.fillText('台で ジャンプ', 128, 222);
           });
           continue;
         }

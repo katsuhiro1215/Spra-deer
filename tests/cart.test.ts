@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { BRIDGED, Track, type TrackDef } from '../src/cart/track.ts';
-import { CartRun, BAL, type Input } from '../src/cart/sim.ts';
+import { CartRun, BAL, rampReach, type Input } from '../src/cart/sim.ts';
 import { CART_LEVELS, cartById, trackOf } from '../src/cart/levels.ts';
 import { DT, none, drive as driveLevel, type Policy } from './cartbot.ts';
 const def = (extra: Partial<TrackDef> & Pick<TrackDef, 'segments'>): TrackDef => ({ gaps: [], obstacles: [], coins: [], ...extra });
@@ -105,7 +105,7 @@ test('コイン: まん中は通るだけ。横は体を傾けて、高い所は
 });
 
 // ---- 8-1 を、自動で走る(ボットは tests/cartbot.ts) ----
-const L1 = cartById('8-1')!, L2 = cartById('8-2')!, L3 = cartById('8-3')!, L4 = cartById('8-4')!, L5 = cartById('8-5')!, L6 = cartById('8-6')!;
+const L1 = cartById('8-1')!, L2 = cartById('8-2')!, L3 = cartById('8-3')!, L4 = cartById('8-4')!, L5 = cartById('8-5')!, L6 = cartById('8-6')!, L7 = cartById('8-7')!;
 const drive = (policy: Policy = {}) => driveLevel(L1, policy);
 
 test('8-1: 先を見て操作すれば、ハートを減らさずにクリアできる(60〜95秒)', () => {
@@ -323,6 +323,31 @@ test('雪の上では、ブレーキが半分しかきかない。トンネル�
   assert.deepEqual(t.tunnels(), [[600, 800]]);
 });
 
+// ---- ジャンプ台(8-7 から) ----
+test('ジャンプ台: 乗るだけで高く飛ぶ。台の直前・離れてすぐにジャンプすると、もっと遠くへ。台を飛びこさない', () => {
+  const t = new Track(def({ segments: [{ len: 400, slope: 0 }], obstacles: [{ s: 100, kind: 'ramp' }] }));
+  const fly = (jumpFrom = 0, jumpTo = 0) => {
+    const r = new CartRun(t); r.start(); let from = 0, maxH = 0;
+    for (let i = 0; i < 20 / DT && r.phase === 'running' && r.s < 200; i++) {
+      if (!r.air) r.v = 20;
+      const wasAir = r.air;
+      r.step(DT, { ...none(), jump: r.s > jumpFrom && r.s < jumpTo });
+      if (r.air && !wasAir) from = r.s;
+      maxH = Math.max(maxH, r.height);
+      if (!r.air && wasAir) return { dist: r.s - from, maxH, r };
+    }
+    return { dist: 0, maxH, r };
+  };
+  const plain = fly(), boostBefore = fly(99, 100.5), boostAfter = fly(101, 102);
+  assert.ok(Math.abs(plain.dist - rampReach(20, false)) < 2, `乗るだけ ${plain.dist.toFixed(1)}m`);
+  assert.ok(plain.maxH > 4 && plain.maxH < 5, `高さ ${plain.maxH.toFixed(1)}m`);
+  assert.ok(Math.abs(boostBefore.dist - rampReach(20, true)) < 2, `台の直前でジャンプ ${boostBefore.dist.toFixed(1)}m`);
+  assert.ok(Math.abs(boostAfter.dist - rampReach(20, true)) < 2, `台を離れてすぐ ${boostAfter.dist.toFixed(1)}m`);
+  assert.equal(boostBefore.r.ramps, 1, '台の直前で押しても、台を飛びこさない');
+  assert.equal(fly(104, 106).r.rampBoosts, 0, 'おそいと、上乗せはきかない');
+  assert.equal(plain.r.lives, 3, 'ジャンプ台には、ぶつからない');
+});
+
 // ---- 8-4 超高速ダウンヒル ----
 test('8-4: 144km/h 近くまで出る。こぶの先の急カーブは、こぶの手前で減速しないと、飛んだまま突っこんで脱線する', () => {
   const r = driveLevel(L4);
@@ -386,4 +411,26 @@ test('8-6: プレミアムは、天空の鉄橋の風下がわ。取る直前だ
   assert.equal(quick.premium, true); assert.equal(quick.phase, 'running');
   assert.equal(tryIt(1200).reason, 'derail', '長く風下へ傾けると、脱線');
   assert.equal(driveLevel(L6, { until: 1300 }).premium, false);
+});
+
+// ---- 8-7 連続ジャンプ ----
+test('8-7: 最後の大空は、ダッシュして台の上でジャンプしないと届かない。空中の線路は、速すぎると落ちる', () => {
+  const noBoost = driveLevel(L7, { rampJump: false });
+  assert.equal(noBoost.reason, 'fall'); assert.ok(noBoost.s > 1650 && noBoost.s < 1720, `大空へで s=${noBoost.s.toFixed(0)}`);
+  const noDash = driveLevel(L7, { dash: false });
+  assert.equal(noDash.reason, 'fall'); assert.ok(noDash.s > 1650 && noDash.s < 1720);
+  const r = driveLevel(L7);
+  assert.equal(r.ramps, 4); assert.ok(r.jumps >= 12, `ジャンプ ${r.jumps} 回`);
+  // 空中の線路へ、ダッシュで速いまま入ると、次の切れ目に落ちる
+  const tooFast = driveLevel(L7, { until: 540, brake: false, extra: (run, inp) => { if (run.s > 380 && run.s < 385) inp.dash = true; } });
+  assert.equal(tooFast.reason, 'fall'); assert.ok(tooFast.s > 445 && tooFast.s < 500, `次の切れ目で s=${tooFast.s.toFixed(0)}`);
+  assert.equal(driveLevel(L7, { until: 540 }).phase, 'running');
+});
+
+test('8-7: プレミアムは、森のジャンプ台で台の上でジャンプしたときだけ(乗るだけでは届かない)', () => {
+  const tryIt = (jumpAt: number) => driveLevel(L7, { until: 700, rampJump: false, extra: (run, inp) => { if (jumpAt && run.s > jumpAt && run.s < jumpAt + 0.6) inp.jump = true; } });
+  assert.equal(tryIt(564.3).premium, true);
+  assert.equal(tryIt(566.5).premium, true, '台を離れてすぐでも、まにあう');
+  assert.equal(tryIt(0).premium, false, '乗るだけ');
+  assert.equal(tryIt(569).premium, false, 'おそい');
 });

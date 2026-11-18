@@ -3,7 +3,7 @@
 import type { Track } from './track.ts';
 
 export type Input = { left: boolean; right: boolean; jump: boolean; brake: boolean; dash: boolean };
-export type CartEventKind = 'coin' | 'gold' | 'premium' | 'jump' | 'lift' | 'land' | 'hit' | 'drop' | 'derail' | 'dash' | 'tilt' | 'clear' | 'fail';
+export type CartEventKind = 'coin' | 'gold' | 'premium' | 'jump' | 'lift' | 'ramp' | 'land' | 'hit' | 'drop' | 'derail' | 'dash' | 'tilt' | 'clear' | 'fail';
 export type CartEvent = { kind: CartEventKind; id?: number };
 export type FailReason = '' | 'fall' | 'derail' | 'miss' | 'broken';
 
@@ -27,8 +27,12 @@ export const BAL = {
   clear: { rock: 0.9, log: 0.6 }, // 跳びこえるのに要る高さ
   leanDodge: 0.45, // 枝をよける・横のコインを取るのに要る傾き
   snowSlip: 0.5, // 雪の上で、ブレーキがきかなくなる割合
+  rampV: 12, rampBoost: 4, rampWindow: 0.15, // ジャンプ台: 上向きの速さ、台の上でジャンプしたときの上乗せ、台を離れてからジャンプがきく時間
   airSteer: 3.5, airSteerFree: 0.5, // 空中で体を傾けると、横へ動ける速さ(m/s)。ずれた線路へ向かう側だけ大きく動け、ほかは 0.5m まで
 } as const;
+
+/** ジャンプ台から平らな所へ飛んだときの、とぶ距離(boost=台の上でジャンプした) */
+export const rampReach = (v: number, boost: boolean): number => (v * 2 * (BAL.rampV + (boost ? BAL.rampBoost : 0))) / BAL.airG;
 
 export class CartRun {
   track: Track;
@@ -60,6 +64,9 @@ export class CartRun {
   maxV = 0; jumps = 0;
   /** こぶで浮いた回数 */
   lifts = 0;
+  /** ジャンプ台で飛んだ回数と、そのうち台の上でジャンプした回数 */
+  ramps = 0; rampBoosts = 0;
+  private rampT = 99; private rampBoosted = false;
   /** この面の、ふつうの最高速と、ダッシュ中の最高速 */
   vMax: number; vDash: number;
   private events: CartEvent[] = [];
@@ -99,7 +106,7 @@ export class CartRun {
   }
   private takeOff(vy: number): void {
     const p = this.track.at(this.s), flat = Math.cos(p.pitch);
-    this.air = true; this.airT = 0; this.edgeT = 0;
+    this.air = true; this.airT = 0; this.edgeT = 0; this.rampT = 99;
     this.vx = Math.sin(p.heading) * flat * this.v;
     this.vz = -Math.cos(p.heading) * flat * this.v;
     this.vy = Math.sin(p.pitch) * this.v + vy;
@@ -136,7 +143,11 @@ export class CartRun {
     this.braking = input.brake && !this.air;
 
     if (this.air) {
-      this.airT += dt;
+      this.airT += dt; this.rampT += dt;
+      // ジャンプ台を離れてすぐにジャンプしても、上乗せがきく
+      if (!this.rampBoosted && this.rampT < BAL.rampWindow && this.jumpBuf > 0) {
+        this.jumpBuf = 0; this.rampBoosted = true; this.rampBoosts++; this.vy += BAL.rampBoost; this.events.push({ kind: 'jump' });
+      }
       this.vy -= BAL.airG * dt;
       this.px += this.vx * dt; this.py += this.vy * dt; this.pz += this.vz * dt;
       // 体を傾けると、横へ少し動ける
@@ -208,7 +219,10 @@ export class CartRun {
         else if (this.edgeT > BAL.coyote) this.takeOff(0);
       } else {
         this.edgeT = 0;
-        if (this.jumpBuf > 0) { this.jumpBuf = 0; this.jumps++; this.takeOff(BAL.jumpV); this.events.push({ kind: 'jump' }); }
+        // ジャンプ台の直前で押したときは、台の上まで とっておく(台を飛びこさない)
+        // (この一瞬で台を通りすぎる場合も、台のために とっておく)
+        const rampSoon = tr.obstacles.some(o => o.kind === 'ramp' && o.s > prevS && o.s - this.s < this.v * BAL.jumpBuffer + 1);
+        if (this.jumpBuf > 0 && !rampSoon) { this.jumpBuf = 0; this.jumps++; this.takeOff(BAL.jumpV); this.events.push({ kind: 'jump' }); }
       }
     }
     this.maxV = Math.max(this.maxV, this.v);
@@ -216,10 +230,20 @@ export class CartRun {
     // 障害物(通りすぎた瞬間に判定)
     while (this.nextObstacle < tr.obstacles.length && tr.obstacles[this.nextObstacle].s <= this.s) {
       const o = tr.obstacles[this.nextObstacle++];
+      if (o.kind === 'ramp') {
+        // ジャンプ台: 地面を走っていれば、高く飛びだす。台の上でジャンプしていれば、もっと高く
+        if (o.s <= prevS || this.doomed || this.air) continue;
+        const boost = this.jumpBuf > 0;
+        if (boost) { this.jumpBuf = 0; this.rampBoosts++; }
+        this.ramps++; this.takeOff(BAL.rampV + (boost ? BAL.rampBoost : 0));
+        this.rampT = 0; this.rampBoosted = boost;
+        this.events.push({ kind: 'ramp' });
+        continue;
+      }
       if (o.s <= prevS || this.safeT > 0 || this.doomed) continue;
       const hit = o.kind === 'branch'
         ? this.lean * (o.side ?? 1) > -BAL.leanDodge // 枝の反対へ、体を傾けていないと当たる
-        : this.height < BAL.clear[o.kind];
+        : this.height < BAL.clear[o.kind as 'rock' | 'log'];
       if (!hit) continue;
       this.lives--; this.hitIds.add(o.id); this.safeT = BAL.hitSafe;
       this.v = Math.max(BAL.vMin + 2, this.v * BAL.hitSlow);

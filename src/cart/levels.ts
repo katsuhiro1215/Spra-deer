@@ -446,12 +446,95 @@ const LEVEL_8_6: CartLevel = {
   },
 };
 
-export const CART_LEVELS: CartLevel[] = [LEVEL_8_1, LEVEL_8_2, LEVEL_8_3, LEVEL_8_4, LEVEL_8_5, LEVEL_8_6];
+/**
+ * 8-7 連続ジャンプ(約1880m)。テーマは「跳んで、跳んで、跳びつづける」。
+ * ジャンプ台の谷 → 空中の線路(短い線路が続く。速すぎると次の切れ目に落ちる) → 森のジャンプ台(倒木を2本 とびこす)
+ * → 大ジャンプ台(36m。台の上でジャンプ) → 下りの連続倒木 → 段々の谷(1段ずつ下へ) → ジグザグの線路(右へ・左へ)
+ * → 大空へ(44m。ダッシュして、台の上でジャンプしないと届かない)
+ * プレミアム: 森のジャンプ台の、ずっと上(高さ約8.5m)。乗るだけで倒木はこえられるが、台の上でジャンプしたときだけ届く。
+ */
+const LEVEL_8_7: CartLevel = {
+  id: '8-7', title: '連続ジャンプ', summary: 'ジャンプ台で、谷から谷へ',
+  intro: '跳んで、跳んで、跳びつづけろ！',
+  goalName: '雲の上の駅',
+  notes: [
+    { s: 195, text: 'ジャンプ台だ！ 乗るだけで、高く とびだすよ' },
+    { s: 375, text: '空中の線路！ 短い線路が 続くよ。速すぎると、次の切れ目に 落ちる' },
+    { s: 760, text: '大ジャンプ台！ 台の上で ジャンプすると、もっと高く 遠くへ' },
+    { s: 1145, text: '段々の谷！ 1段ずつ 下へ とびおりよう' },
+    { s: 1365, text: 'ジグザグの線路！ 右へ、そして すぐ左へ' },
+    { s: 1600, text: '最後の大空へ！ ダッシュして、台の上で ジャンプ！' },
+  ],
+  track: {
+    // 区間: 助走 70-200 / ジャンプ台の谷 200-320 / 空中の線路 380-540 / 森 540-640 / 大ジャンプ台 770-910
+    //       / 段々の谷 1150-1290 / ジグザグ 1370-1490 / 大空へ 1610-1770 / ゴール 1880
+    segments: [
+      { len: 70, slope: -2, terrain: 'forest', name: '出発の駅' },
+      { len: 130, slope: -7, terrain: 'hillL', name: '助走の坂' },
+      { len: 120, slope: -1, terrain: 'canyon', name: 'ジャンプ台の谷' },
+      { len: 60, slope: -3, turn: 40, terrain: 'hillR' },
+      { len: 160, slope: -1, terrain: 'canyon', name: '空中の線路' },
+      { len: 100, slope: -6, terrain: 'forest', name: '森のジャンプ台' },
+      { len: 70, slope: -2, turn: -70, terrain: 'cut', name: '岩のカーブ' },
+      { len: 60, slope: -6, terrain: 'forest' },
+      { len: 140, slope: -1, terrain: 'canyon', name: '大ジャンプ台' },
+      { len: 120, slope: -8, terrain: 'hillL', name: '下りの連続倒木' },
+      { len: 70, slope: -2, turn: 80, terrain: 'cut', name: '谷へのカーブ' },
+      { len: 50, slope: -2, terrain: 'forest' },
+      { len: 140, slope: -1, terrain: 'canyon', name: '段々の谷' },
+      { len: 80, slope: -4, turn: -50, terrain: 'hillR' },
+      { len: 120, slope: -1, terrain: 'canyon', name: 'ジグザグの線路' },
+      { len: 120, slope: -7, terrain: 'ridge', name: '最後の助走' },
+      { len: 160, slope: -1, terrain: 'gorge', name: '大空へ' },
+      { len: 110, slope: -3, terrain: 'forest', name: '雲の上の駅へ' },
+    ],
+    gaps: [
+      { from: 236, to: 258 },
+      { from: 418, to: 430 }, { from: 445, to: 457 }, { from: 472, to: 484 }, { from: 499, to: 511 },
+      { from: 808, to: 844 },
+      { from: 1170, to: 1180, drop: 4 }, { from: 1205, to: 1215, drop: 4 }, { from: 1240, to: 1250, drop: 4 },
+      { from: 1408, to: 1418, shift: 2.2 }, { from: 1440, to: 1450, shift: -2.2 },
+      { from: 1650, to: 1694 },
+    ],
+    obstacles: [
+      { s: 228, kind: 'ramp' },
+      { s: 565, kind: 'ramp' }, { s: 578, kind: 'log' }, { s: 592, kind: 'log' },
+      { s: 800, kind: 'ramp' },
+      { s: 950, kind: 'log' }, { s: 975, kind: 'log' }, { s: 1000, kind: 'log' },
+      { s: 1640, kind: 'ramp' },
+      { s: 1830, kind: 'log' },
+    ],
+    coins: [
+      ...line(20, 65, 9), ...line(80, 195, 11), ...line(205, 222, 8),
+      ...air([[234, 3.4], [240, 4.9], [246, 5.4, 'gold'], [252, 4.9], [258, 3.4]]),
+      ...line(268, 315, 9), ...line(330, 375, 10, 1), ...line(385, 412, 9),
+      ...[418, 445, 472].flatMap(e => air([[e + 4, 2.3], [e + 10, 2.9]])), ...air([[503, 2.3], [509, 2.9, 'gold']]),
+      ...line(435, 440, 5), ...line(462, 467, 5), ...line(489, 494, 5),
+      // 森のジャンプ台: 乗るだけで倒木2本をこえる。プレミアムは、そのずっと上(台の上でジャンプしたときだけ届く)
+      ...line(520, 556, 9), ...air([[571, 3.3], [577, 4.8], [589, 4.8], [595, 3.3]]),
+      { s: 583, side: 0, h: 8.5, kind: 'premium' },
+      ...line(605, 635, 10),
+      ...line(650, 700, 10, -1), ...line(715, 792, 11),
+      ...air([[808, 5.2], [816, 7.9], [824, 8.9, 'gold'], [832, 8.3], [840, 6.0]]),
+      ...line(855, 905, 10), ...line(915, 940, 9), ...arc(944, 956, 3, 2), ...line(962, 968, 6), ...arc(969, 981, 3, 2),
+      ...line(987, 993, 6), ...arc(994, 1006, 3, 2, 'gold'), ...line(1012, 1025, 7),
+      ...line(1040, 1090, 10, 1), ...line(1105, 1162, 11),
+      ...line(1185, 1200, 5), ...line(1220, 1235, 5), ...line(1255, 1285, 10),
+      ...line(1300, 1360, 10, -1), ...line(1375, 1400, 9),
+      ...air([[1412, 2.4], [1418, 2.9]], 1), ...line(1428, 1436, 8), ...air([[1444, 2.4], [1450, 2.9]], -1), ...line(1460, 1485, 9),
+      ...line(1495, 1605, 11), ...line(1618, 1634, 8),
+      ...air([[1655, 6.9], [1670, 8.9, 'gold'], [1685, 6.9], [1694, 3.8]]), ...line(1705, 1765, 10),
+      ...line(1780, 1820, 10), ...arc(1824, 1836, 3, 2), ...line(1845, 1875, 10),
+    ],
+    checkpoints: [{ s: 725, name: '森の見はり台' }, { s: 1120, name: '谷の小屋' }],
+  },
+};
+
+export const CART_LEVELS: CartLevel[] = [LEVEL_8_1, LEVEL_8_2, LEVEL_8_3, LEVEL_8_4, LEVEL_8_5, LEVEL_8_6, LEVEL_8_7];
 export const cartById = (id: string): CartLevel | undefined => CART_LEVELS.find(l => l.id === id);
 export const trackOf = (level: CartLevel): Track => new Track(level.track);
 
 /** これから作る面(名前だけ。面えらびに「準備中」で出す)。 */
 export const CART_PLANNED: { id: string; title: string }[] = [
-{ id: '8-7', title: '連続ジャンプ' },
   { id: '8-8', title: '霧の山道' }, { id: '8-9', title: '鹿の全力疾走' }, { id: '8-10', title: '奈良山脈 大滑降' },
 ];

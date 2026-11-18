@@ -14,8 +14,11 @@ export type Segment = { len: number; slope?: number; turn?: number; terrain?: Te
  * collapse=ふだんは橋がかかっていて、近づくと崩れ落ちる(見た目と警告だけ。走りのルールでは、はじめから切れ目)
  */
 export type Gap = { from: number; to: number; shift?: number; drop?: number; collapse?: boolean };
-/** rock=落石・log=倒木(跳んで越える)、branch=横から張り出した枝(side の反対へ体を傾けてよける)。 */
-export type ObstacleKind = 'rock' | 'log' | 'branch';
+/**
+ * rock=落石・log=倒木(跳んで越える)、branch=横から張り出した枝(side の反対へ体を傾けてよける)、
+ * ramp=ジャンプ台(乗ると高く飛ぶ。台の上でジャンプすると、もっと高く遠くへ。ぶつかることはない)
+ */
+export type ObstacleKind = 'rock' | 'log' | 'branch' | 'ramp';
 export type Obstacle = { id: number; s: number; kind: ObstacleKind; side?: -1 | 1 };
 /** コイン。side=-1 左 / 0 まん中 / 1 右(横は体を傾けて取る)、h=線路からの高さ。kind 無しはシルバー。 */
 export type Coin = { id: number; s: number; side: -1 | 0 | 1; h: number; kind?: 'gold' | 'premium' };
@@ -154,6 +157,16 @@ export class Track {
       if (last && last[1] === g.from) last[1] = g.to; else out.push([g.from, g.to]);
     }
     return out;
+  }
+  /** 空中で寄せる先の「ずれた線路」(いちばん新しく跳んだもの。まだなら、すぐ先のもの) */
+  shiftGapNear(s: number): Gap | undefined {
+    const near = this.gaps.filter(g => g.shift && g.from < s + 30 && g.to > s - 30);
+    const passed = near.filter(g => g.from <= s + 3);
+    return passed.length ? passed[passed.length - 1] : near[0];
+  }
+  /** 切れ目のすぐ手前(20m 以内)のジャンプ台 */
+  rampBefore(g: Gap): Obstacle | undefined {
+    return this.obstacles.find(o => o.kind === 'ramp' && o.s <= g.from && g.from - o.s <= 20);
   }
   gapAt(s: number): Gap | undefined { return this.gaps.find(g => s > g.from && s < g.to); }
   inGap(s: number): boolean { return this.gapAt(s) !== undefined; }

@@ -4,7 +4,7 @@ import { Wallet, clearRewards, waitText, STAMINA_MAX, STAMINA_FAIL } from '../wa
 import { RunnerAudio } from '../runner/audio.ts';
 import { CART_LEVELS, trackOf, type CartLevel } from './levels.ts';
 import { COLLAPSE_AT } from './track.ts';
-import { BAL, CartRun, type CartEvent, type Input } from './sim.ts';
+import { BAL, CartRun, rampReach, type CartEvent, type Input } from './sim.ts';
 import { CartView } from './view.ts';
 
 const STEP = 1 / 120;
@@ -109,6 +109,7 @@ export function startCart(root: HTMLElement, level: CartLevel): () => void {
       case 'gold': audio.sfx('gold'); break;
       case 'premium': audio.sfx('premium'); break;
       case 'jump': audio.sfx('jump'); break;
+      case 'ramp': audio.sfx('jump'); tone(300, 1100, 0.4, 'triangle', 0.08); break;
       case 'lift': tone(520, 900, 0.35, 'sine', 0.07); hint('lift', 'ふわっ！ こぶで 空へ とびだした！', 2400); break;
       case 'dash': audio.sfx('dash'); break;
       case 'land': thud(0.22, 0.4, 260); tone(120, 60, 0.12, 'sine', 0.08); break;
@@ -138,11 +139,22 @@ export function startCart(root: HTMLElement, level: CartLevel): () => void {
     if (run.tilt > 0.2) return ['あぶない！ 車輪が 浮いている！', 'red'];
     if (run.air) {
       // ずれた線路の上: 空中で、ずれた側へ傾ける
-      const sg = track.gaps.find(g => g.shift && g.to > s - 30 && g.from < s + 30);
+      const sg = track.shiftGapNear(s);
       return sg ? [sg.shift! > 0 ? '右へ かたむけて ▶ 線路が ずれてる！' : '◀ 左へ かたむけて 線路が ずれてる！', 'jump'] : ['', ''];
+    }
+    // ジャンプ台
+    const ramp = track.obstacles.find(o => o.kind === 'ramp' && o.s > s - 0.5 && o.s - s < v * 2.2 + 12);
+    if (ramp) {
+      const rg = track.gaps.find(x => x.from >= ramp.s && x.from - ramp.s <= 20);
+      if (ramp.s - s < Math.max(4, v * 0.3)) return ['ジャンプ台で ジャンプ！', 'jump'];
+      if (rg && rampReach(v, true) < rg.to + 4 - ramp.s) return [run.dashCool <= 0 ? 'スピードが たりない！ ダッシュ！' : 'スピードが たりない！', 'red'];
+      return ['ジャンプ台！ 台の上で ジャンプすると、もっと遠くへ', 'yellow'];
     }
     const gap = track.gaps.find(g => g.to > s);
     if (gap && gap.from - s < v * 2.2 + 12 && gap.from - s > -1) {
+      // 次の切れ目がすぐ先(空中の線路): 速すぎると、次の切れ目に落ちる
+      const next = track.gaps.find(g => g.from > gap.to);
+      if (next && next.from - gap.from < 45 && v > next.from - 3 - gap.from && gap.from - s > Math.max(5, v * 0.4)) return ['速すぎる！ ブレーキ', 'red'];
       const need = gap.to - gap.from + 3;
       if (gap.from - s < Math.max(5, v * 0.4)) return [gap.shift ? `ジャンプ！ 空中で ${gap.shift > 0 ? '右へ ▶' : '◀ 左へ'}` : 'ジャンプ！', 'jump'];
       // 崩れる橋: 崩れるまでは、まだ橋がある
@@ -371,11 +383,12 @@ export function startCart(root: HTMLElement, level: CartLevel): () => void {
       if (seg.wind) hint('wind', '強い 横風！ 風上へ 体を かたむけて こらえよう', 3400);
       if (seg.terrain === 'tunnel') hint('tunnel', 'トンネルだ！ 中は 暗いよ。明かりを たよりに', 3000);
     }
-    const gap = track.gaps.find(g => !g.collapse && g.from > s && g.from - s < look + 25);
+    const gap = track.gaps.find(g => !g.collapse && !track.rampBefore(g) && g.from > s && g.from - s < look + 25);
     if (gap?.shift) hint('shift', '線路が ずれている！ 跳んだら、空中で ずれた方へ 体を かたむけよう', 3800);
     else if (gap) hint(gap.to - gap.from > 15 ? 'biggap' : 'gap', gap.to - gap.from > 15 ? '大きな 切れ目！ 看板の 速さまで ダッシュして、黄色い枕木で ジャンプ！' : '線路が 切れている！ 黄色い枕木の所で ジャンプ！', 3600);
     const o = track.obstacles.find(x => x.s > s && x.s - s < look);
-    if (o) hint(o.kind, o.kind === 'branch' ? '枝が 張り出している！ 反対へ 体を かたむけて よけよう' : o.kind === 'rock' ? '線路に 岩が！ ジャンプで とびこえよう' : '倒木だ！ ジャンプで とびこえよう', 3000);
+    if (o?.kind === 'ramp') hint('ramp', 'ジャンプ台！ 乗るだけで 高く とぶ。台の上で ジャンプすると、もっと高く 遠くへ', 3600);
+    else if (o) hint(o.kind, o.kind === 'branch' ? '枝が 張り出している！ 反対へ 体を かたむけて よけよう' : o.kind === 'rock' ? '線路に 岩が！ ジャンプで とびこえよう' : '倒木だ！ ジャンプで とびこえよう', 3000);
     // その面ならではの所(ほかの一言より優先)
     level.notes?.forEach((n, i) => { if (s >= n.s - look && s < n.s + 10) hint(`note${i}`, n.text, 3800); });
   };
