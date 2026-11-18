@@ -1,0 +1,385 @@
+/* WORLD 2「鹿せんべい大作戦」(せんべい屋台)だけの見た目(共通部分は run.css)。クラス名は bk- で始める */
+
+.bk-root .ks-frame {
+  background: #bfe2f2;
+}
+/* 上の段: コインを小さくして、面の名前が切れないように */
+.bk-root .ks-hud-top .ks-chip {
+  min-width: 0;
+  padding: 5px 10px;
+  font-size: 18px;
+  gap: 5px;
+}
+.bk-root .ks-hud-top .ks-level {
+  max-width: none;
+  padding: 3px 10px;
+  font-size: 13px;
+}
+.bk-root .ks-level span {
+  font-size: 12px;
+}
+
+/* 2段目: のこり時間・まんぞくした鹿 */
+.bk-bar {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.bk-time,
+.bk-served {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 4px 12px 6px;
+  border-radius: 14px;
+  background: rgba(70, 40, 20, 0.62);
+  backdrop-filter: blur(4px);
+  font-weight: 800;
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.18);
+}
+.bk-time {
+  position: relative;
+  flex: 1;
+}
+.bk-time b,
+.bk-served b {
+  font-size: 26px;
+  font-weight: 900;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.bk-time small,
+.bk-served small {
+  font-size: 13px;
+}
+.bk-time-bar {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 4px;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.22);
+  overflow: hidden;
+}
+.bk-time-bar i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: #ffd23a;
+  border-radius: 999px;
+}
+.bk-time.hurry {
+  background: rgba(216, 52, 44, 0.9);
+  animation: bk-pulse 0.5s ease-in-out infinite alternate;
+}
+.bk-served {
+  align-items: center;
+}
+.bk-deer-icon {
+  width: 26px;
+  height: 26px;
+  background: url('/assets/bake/stag_front.png') center / contain no-repeat;
+}
+
+/* こんがりの連続 */
+/* 2段目の右下に小さく(一言・鹿のふきだしに重ならない所) */
+.bk-streak {
+  position: absolute;
+  right: 14px;
+  top: calc(max(12px, env(safe-area-inset-top)) + 90px);
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #ffd84a, #f0a21a);
+  color: #5a3200;
+  font-weight: 900;
+  font-size: 13px;
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.18);
+}
+.bk-streak[hidden] {
+  display: none;
+}
+/* 一言が出ている間は、重ならないように消す */
+.ks-hud:has(.bk-toast.on) .bk-streak {
+  opacity: 0;
+}
+
+/* 鉄板の札・鹿の注文のふきだし(3Dの位置に合わせて、毎フレーム動かす) */
+.bk-labels {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.bk-tag {
+  position: absolute;
+  left: 0;
+  top: 0;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-weight: 900;
+  font-size: 14px;
+  white-space: nowrap;
+  color: #fff;
+  background: rgba(50, 35, 25, 0.7);
+  border: 2px solid rgba(255, 255, 255, 0.8);
+}
+.bk-tag[hidden] {
+  display: none;
+}
+.bk-tag[data-tone='empty'] {
+  background: rgba(255, 255, 255, 0.82);
+  color: #8a5a2a;
+  border-color: #e8b25a;
+}
+.bk-tag[data-tone='wait'] {
+  background: rgba(50, 35, 25, 0.5);
+  border-color: rgba(255, 255, 255, 0.4);
+  font-size: 12px;
+}
+.bk-tag[data-tone='ok'] {
+  background: #3f9d3a;
+}
+.bk-tag[data-tone='gold'] {
+  background: linear-gradient(180deg, #ffd84a, #f0a21a);
+  color: #5a3200;
+  border-color: #fff;
+  font-size: 16px;
+  animation: bk-pulse 0.18s ease-in-out infinite alternate;
+}
+.bk-tag[data-tone='red'] {
+  background: #d8342c;
+  animation: bk-pulse 0.25s ease-in-out infinite alternate;
+}
+
+.bk-order {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 9px 5px 6px;
+  border-radius: 999px;
+  background: #fffaf0;
+  border: 3px solid #e8b25a;
+  box-shadow: 0 3px 0 rgba(0, 0, 0, 0.18);
+}
+.bk-order[hidden] {
+  display: none;
+}
+.bk-order::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -9px;
+  width: 12px;
+  height: 12px;
+  background: #fffaf0;
+  border-right: 3px solid #e8b25a;
+  border-bottom: 3px solid #e8b25a;
+  transform: translateX(-50%) rotate(45deg);
+}
+/* 待てる時間(のこりが減るほど、輪が欠けていく) */
+.bk-pat {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: conic-gradient(#4caf50 calc(var(--p, 1) * 360deg), #e6dccb 0);
+  mask: radial-gradient(circle, transparent 5px, #000 6px);
+  -webkit-mask: radial-gradient(circle, transparent 5px, #000 6px);
+}
+.bk-order[data-tone='yellow'] .bk-pat {
+  background: conic-gradient(#f0a21a calc(var(--p, 1) * 360deg), #e6dccb 0);
+}
+.bk-order[data-tone='red'] {
+  border-color: #d8342c;
+  animation: bk-shake 0.2s linear infinite;
+}
+.bk-order[data-tone='red'] .bk-pat {
+  background: conic-gradient(#d8342c calc(var(--p, 1) * 360deg), #e6dccb 0);
+}
+.bk-icons {
+  display: flex;
+  gap: 3px;
+}
+.bk-icons i {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 40% 35%, #f3cf86, #d99a43 70%, #b97a32);
+  box-shadow: inset 0 0 0 2px rgba(120, 70, 20, 0.35);
+}
+.bk-icons i.got {
+  opacity: 0.3;
+  filter: grayscale(1);
+}
+
+/* 今いちばん大事なこと */
+/* 鉄板の札より下(台の前の面)に出す。位置(top)は 3D の台の前面から、毎フレーム決める */
+.bk-alert {
+  position: absolute;
+  left: 50%;
+  top: 70%;
+  transform: translate(-50%, -50%) scale(0.9);
+  padding: 6px 18px;
+  border-radius: 999px;
+  font-weight: 900;
+  font-size: 18px;
+  white-space: nowrap;
+  color: #fff;
+  background: rgba(40, 40, 40, 0.75);
+  border: 3px solid #fff;
+  opacity: 0;
+  transition: opacity 0.1s, transform 0.1s;
+}
+.bk-alert.on {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+}
+.bk-alert[data-tone='red'] {
+  background: rgba(216, 52, 44, 0.94);
+  animation: bk-pulse 0.4s ease-in-out infinite alternate;
+}
+.bk-alert[data-tone='yellow'] {
+  background: rgba(255, 196, 40, 0.95);
+  color: #3a2a1a;
+}
+.bk-alert[data-tone='gold'] {
+  background: linear-gradient(180deg, #ffd84a, #f0a21a);
+  color: #5a3200;
+}
+/* 一言は、2段目のすぐ下に小さめに(鹿のふきだしに重ならないように) */
+.bk-toast {
+  top: 108px;
+  max-width: 76%;
+  padding: 7px 14px;
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+/* 左下の Spra と、ひとこと */
+.bk-spra {
+  position: absolute;
+  left: 6px;
+  bottom: max(6px, env(safe-area-inset-bottom));
+  width: 92px;
+  pointer-events: none;
+}
+@media (max-height: 700px) {
+  .bk-spra {
+    width: 72px;
+  }
+  .bk-spra img {
+    height: 92px !important;
+  }
+  .bk-say {
+    left: 64px !important;
+    bottom: 50px !important;
+  }
+}
+.bk-spra img {
+  display: block;
+  width: 100%;
+  height: 118px;
+  object-fit: contain;
+  object-position: bottom;
+  filter: drop-shadow(0 4px 2px rgba(0, 0, 0, 0.25));
+  transform-origin: 50% 100%;
+}
+.bk-spra img[data-pose='hooray'] {
+  animation: bk-hop 0.35s ease-out 2;
+}
+.bk-spra img[data-pose='trouble'] {
+  animation: bk-shake 0.18s linear 3;
+}
+.bk-say {
+  position: absolute;
+  left: 82px;
+  bottom: 70px;
+  padding: 6px 12px;
+  border-radius: 14px 14px 14px 4px;
+  background: #fffaf0;
+  color: #5a3a1a;
+  font-weight: 900;
+  font-size: 15px;
+  white-space: nowrap;
+  box-shadow: 0 3px 0 rgba(0, 0, 0, 0.15);
+  opacity: 0;
+  transform: scale(0.8);
+  transform-origin: 0 100%;
+  transition: opacity 0.12s, transform 0.12s;
+}
+.bk-say.on {
+  opacity: 1;
+  transform: scale(1);
+}
+
+/* はじめ・おわりの画面: 小さい画面でも収まるように */
+.bk-root .ks-overlay {
+  overflow-y: auto;
+  align-items: safe center;
+  padding: 16px;
+}
+.bk-root .ks-card {
+  padding: 22px 18px 18px;
+}
+.bk-root .ks-card h1 {
+  font-size: 32px;
+}
+.bk-root .ks-how {
+  margin-bottom: 8px;
+  font-size: 15px;
+  line-height: 1.7;
+}
+.bk-root .ks-how b {
+  min-width: 2.6em;
+}
+.bk-keys {
+  margin: 0 0 10px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #8a7a68;
+}
+@media (max-height: 700px) {
+  .bk-root .ks-card h1 {
+    font-size: 26px;
+  }
+  .bk-root .ks-lead {
+    font-size: 15px;
+    margin-bottom: 8px;
+  }
+  .bk-root .ks-stats div {
+    padding: 3px 0;
+    font-size: 16px;
+  }
+}
+
+.bk-tip {
+  margin: -4px 0 8px;
+  font-weight: 800;
+  font-size: 15px;
+  color: #8a5a2a;
+}
+
+/* 位置は transform で動かしているので、ふくらむのは scale だけ(位置を上書きしない) */
+@keyframes bk-pulse {
+  to {
+    scale: 1.07;
+  }
+}
+@keyframes bk-shake {
+  0%,
+  100% {
+    translate: 0 0;
+  }
+  25% {
+    translate: -2px 0;
+  }
+  75% {
+    translate: 2px 0;
+  }
+}
+@keyframes bk-hop {
+  50% {
+    transform: translateY(-14px);
+  }
+}

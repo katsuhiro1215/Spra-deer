@@ -2,6 +2,7 @@ import { FIELD } from './stage.ts';
 import type { ArenaDefinition, HungryDefinition, LineDefinition, NightDefinition, SenbeiDefinition } from './stage.ts';
 import { RUNNER_LEVELS } from '../runner/levels.ts';
 import { CART_LEVELS, CART_PLANNED } from '../cart/levels.ts';
+import { BAKE_LEVELS } from '../bake/levels.ts';
 import type { ChaserDefinition, CoinDefinition, CrosserDefinition, CrossDefinition, DeliveryDefinition, HedgeDefinition, PondDefinition, RescueDefinition, StoneDefinition, SweepDefinition, GoalDefinition, Point, RainDefinition, SliderDefinition, TrapDefinition, WallDefinition } from './stage.ts';
 
 /** 画面上の位置（Y）がこの値より下にいる間、text を案内として表示する。上から順に判定する。 */
@@ -1060,8 +1061,8 @@ const PLANNED: Record<string, { title: string; summary: string }> = {};
 
 export const STAGES: { stage: number; title: string; slots: LevelSlot[] }[] = [
   { stage: 1, title: '足元にご用心', slots: STAGE_1 },
-  // WORLD 2 は、新しい「せんべい焼き」を作るまで空(準備中)。旧ステージ2(配達)は WORLD 1 へ入れた
-  { stage: 2, title: '鹿せんべい大作戦', slots: [] },
+  // WORLD 2 は、Three.js のせんべい屋台(/bake/)。面は bake/levels.ts(設計書 30章)。旧ステージ2(配達)は WORLD 1 へ入れた
+  { stage: 2, title: '鹿せんべい大作戦', slots: BAKE_LEVELS.map(l => ({ id: l.id, title: l.title, summary: l.summary, runnerId: l.id, page: '/bake/' })) },
   {
     // ステージ3は、Three.js の3D走りゲーム(/run/)。作った面は runner/levels.ts、まだの面は行き先だけ書いた「準備中」
     stage: 3, title: '鹿、走る。', slots: Array.from({ length: 10 }, (_, i) => `3-${i + 1}`).map(id => {

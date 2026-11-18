@@ -10,8 +10,8 @@ export const APP_VERSION = `v${pkg.version}`;
 /** ワールド1〜8(設計書 22章)。stage = 面のデータ(game/levels.ts の STAGES)の番号。無いものは準備中 */
 export const WORLDS: { no: number; name: string; play: string; stage?: number; color: string }[] = [
   { no: 1, name: 'Spraの大冒険', play: 'よけて、あつめて、とどける', stage: 1, color: '#5db443' },
-  // せんべい焼き(新しいゲーム)を作るまで準備中。旧ステージ2(配達)は WORLD 1 へ入れた(設計書 28章)
-  { no: 2, name: '鹿せんべい大作戦', play: 'せんべいを、こがさず焼く', stage: 2, color: '#e99a2c' },
+  // 3Dのせんべい屋台(設計書 30章)。旧ステージ2(配達)は WORLD 1 へ入れた(設計書 28章)
+  { no: 2, name: '鹿せんべい大作戦', play: 'せんべいを焼いて、鹿にわたす', stage: 2, color: '#e99a2c' },
   { no: 3, name: '鹿、走る。', play: '3Dで、奈良から大阪湾へ', stage: 3, color: '#e0533d' },
   { no: 4, name: '奈良公園、大掃除！', play: 'ほうきで、まとめて片付け', stage: 4, color: '#3aa6c9' },
   { no: 5, name: '鹿せんべいタワー', play: 'せんべいを、高く積む', color: '#c98a4b' },

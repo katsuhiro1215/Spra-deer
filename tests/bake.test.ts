@@ -1,0 +1,145 @@
+// WORLD 2 せんべい屋台(設計書 30章): 焼く・裏返す・焦げる・渡す・怒る・プレミアム と、2-1 のバランス
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { BakeRun, BAL } from '../src/bake/sim.ts';
+import { BAKE_LEVELS, LEVEL_2_1, type BakeLevel } from '../src/bake/levels.ts';
+import { drive } from './bakebot.ts';
+
+const quiet = (extra: Partial<BakeLevel> = {}): BakeLevel => ({ ...LEVEL_2_1, arrivals: [], notes: [], ...extra });
+const run = (lv: BakeLevel) => { const r = new BakeRun(lv); r.start(); return r; };
+const wait = (r: BakeRun, sec: number) => { for (let i = 0; i < Math.round(sec * 100); i++) r.step(0.01); };
+
+test('焼く: 生地 → 片面 → 早すぎると裏返せない → 裏返す → もう片面 → 台へ', () => {
+  const r = run(quiet());
+  r.tapPlate(0);
+  assert.equal(r.plates[0].state, 'pour');
+  wait(r, BAL.pour + 1);
+  r.tapPlate(0);
+  assert.equal(r.plates[0].state, 'side1', '早すぎると、そのまま');
+  assert.ok(r.drainEvents().some(e => e.kind === 'early'));
+  wait(r, 3);
+  r.tapPlate(0);
+  assert.equal(r.plates[0].state, 'flip');
+  wait(r, BAL.flip + LEVEL_2_1.cook.ok + 0.2);
+  r.tapPlate(0);
+  assert.equal(r.plates[0].state, 'empty');
+  assert.equal(r.tray.length, 1);
+});
+
+test('こんがり: 両面とも金色の間でタップすると極上。5枚続けるとプレミアム', () => {
+  const r = run(quiet());
+  const mid = (LEVEL_2_1.cook.perfect[0] + LEVEL_2_1.cook.perfect[1]) / 2;
+  for (let n = 0; n < 5; n++) {
+    r.tapPlate(0); wait(r, BAL.pour + mid); r.tapPlate(0);
+    wait(r, BAL.flip + mid); r.tapPlate(0);
+    if (n < 4) assert.equal(r.premium, false);
+  }
+  assert.equal(r.gokujoCount, 5);
+  assert.equal(r.premium, true);
+  assert.ok(r.tray.every(s => s.gokujo));
+  // 普通のせんべい(焼けてすぐ)は極上にならず、続けた数が 0 に戻る
+  r.tray.length = 0;
+  r.tapPlate(0); wait(r, BAL.pour + LEVEL_2_1.cook.ok + 0.05); r.tapPlate(0);
+  wait(r, BAL.flip + mid); r.tapPlate(0);
+  assert.equal(r.tray[0].gokujo, false);
+  assert.equal(r.streak, 0);
+});
+
+test('焦げる: 煙が出て、焼きすぎるとハートが減る。タップで片づけると、また使える', () => {
+  const r = run(quiet());
+  r.tapPlate(1);
+  wait(r, BAL.pour + LEVEL_2_1.cook.smoke + 0.05);
+  assert.equal(r.plates[1].smoking, true);
+  assert.equal(r.lives, 3);
+  wait(r, LEVEL_2_1.cook.burn - LEVEL_2_1.cook.smoke);
+  assert.equal(r.plates[1].state, 'burnt');
+  assert.equal(r.lives, 2);
+  r.tapPlate(1);
+  wait(r, BAL.discard + 0.05);
+  assert.equal(r.plates[1].state, 'empty');
+});
+
+test('台は6枚まで。いっぱいだと台へ移せない(鉄板の上で焼けつづける)', () => {
+  const r = run(quiet());
+  r.tray = Array.from({ length: BAL.trayMax }, (_, i) => ({ id: 100 + i, gokujo: false }));
+  r.tapPlate(0); wait(r, BAL.pour + 3.5); r.tapPlate(0); wait(r, BAL.flip + 3.5);
+  r.tapPlate(0);
+  assert.equal(r.plates[0].state, 'side2');
+  assert.ok(r.drainEvents().some(e => e.kind === 'full'));
+});
+
+test('鹿: 歩いてきて、注文の数だけ受け取ると満足。待たせすぎると怒ってハートが減る', () => {
+  const r = run(quiet({ arrivals: [{ t: 0, kind: 'doe', want: 2 }, { t: 0, kind: 'fawn', want: 1 }] }));
+  wait(r, 0.05);
+  const [a, b] = [r.spots.find(d => d?.kind === 'doe')!, r.spots.find(d => d?.kind === 'fawn')!];
+  r.tray = [{ id: 1, gokujo: true }, { id: 2, gokujo: true }];
+  r.tapDeer(a.spot);
+  assert.equal(a.got, 0, '歩いている間は受け取らない');
+  wait(r, BAL.walk);
+  r.tapDeer(a.spot); wait(r, BAL.eat + 0.05);
+  r.tapDeer(a.spot); wait(r, BAL.eat + 0.05);
+  assert.equal(a.phase, 'happy');
+  assert.equal(r.served, 1);
+  assert.equal(r.gold, 1, '2枚以上の注文を、全部極上でわたすとゴールド');
+  assert.equal(r.coins, BAL.coinGokujo * 2);
+  r.tapDeer(b.spot);
+  assert.ok(r.drainEvents().some(e => e.kind === 'empty'), '台が空なら、わたせない');
+  wait(r, LEVEL_2_1.patience.fawn);
+  assert.equal(b.phase, 'angry');
+  assert.equal(r.lives, 2);
+  wait(r, BAL.angry + 0.1);
+  assert.equal(r.spots[b.spot], null, '怒った鹿は帰る');
+});
+
+test('鹿の場所は3つ。空きがないときは、空くまで待ってから来る', () => {
+  const r = run(quiet({ arrivals: [0, 0, 0, 0].map(t => ({ t, kind: 'fawn' as const, want: 1 })) }));
+  wait(r, 0.05);
+  assert.equal(r.deer.length, 3);
+  const first = r.deer[0];
+  r.tray = [{ id: 1, gokujo: false }];
+  wait(r, BAL.walk); r.tapDeer(first.spot); wait(r, BAL.eat + BAL.happy + 0.1);
+  assert.equal(r.deer.length, 3, '帰った場所に、4頭目が来る');
+  assert.equal(r.spots[first.spot]!.phase, 'walk');
+});
+
+test('時間切れで失敗。ハートが0でも失敗', () => {
+  const r = run(quiet({ time: 5 }));
+  wait(r, 5.05);
+  assert.equal(r.phase, 'failed');
+  assert.equal(r.reason, 'time');
+});
+
+test('2-1: こんがりを狙うと、ハートを減らさずクリアし、プレミアムも出る', () => {
+  const r = drive(LEVEL_2_1, { timing: 'perfect', delay: 0.4 });
+  assert.equal(r.phase, 'cleared', `served=${r.served} t=${r.t.toFixed(1)} lives=${r.lives}`);
+  assert.equal(r.lives, 3);
+  assert.equal(r.premium, true);
+  assert.ok(r.t < LEVEL_2_1.time - 20, `時間に余裕がある t=${r.t.toFixed(1)}`);
+});
+
+test('2-1: 焼けてすぐタップでもクリアできる(プレミアムは出ない)', () => {
+  const r = drive(LEVEL_2_1, { timing: 'ok', delay: 0.4 });
+  assert.equal(r.phase, 'cleared');
+  assert.equal(r.premium, false);
+});
+
+test('2-1: 裏返さないと焦げて失敗。鹿にわたさないと怒らせて失敗', () => {
+  const a = drive(LEVEL_2_1, { timing: 'never' });
+  assert.equal(a.phase, 'failed'); assert.equal(a.reason, 'burnt');
+  const b = drive(LEVEL_2_1, { serve: false });
+  assert.equal(b.phase, 'failed'); assert.equal(b.reason, 'angry');
+});
+
+test('2-1: 先に焼きためないと(1枚ずつ)、鹿を待たせてしまう', () => {
+  const r = drive(LEVEL_2_1, { stock: 1, delay: 0.4 });
+  assert.ok(r.phase === 'failed' || r.lives < 3, `phase=${r.phase} lives=${r.lives}`);
+});
+
+test('どの面も: 鹿の来る時刻が順番どおり・注文は1〜3枚・こんがりの幅は ok と smoke の間', () => {
+  for (const lv of BAKE_LEVELS) {
+    lv.arrivals.forEach((a, i) => { if (i) assert.ok(a.t >= lv.arrivals[i - 1].t, lv.id); assert.ok(a.want >= 1 && a.want <= 3, lv.id); });
+    const c = lv.cook;
+    assert.ok(c.ok < c.perfect[0] && c.perfect[0] < c.perfect[1] && c.perfect[1] < c.smoke && c.smoke < c.burn, lv.id);
+    assert.ok(lv.arrivals.length >= lv.goal + 3, `${lv.id}: 失敗しても取りかえせる数の鹿が来る`);
+  }
+});

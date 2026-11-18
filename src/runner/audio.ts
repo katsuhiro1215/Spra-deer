@@ -81,23 +81,23 @@ export class RunnerAudio {
     this.playBuffer(`/assets/audio/sfx/${name}.mp3`, SFX_VOLUME[name]);
   }
 
-  /** BGMを頭から流す(もう流れているなら、そのまま) */
-  startMusic(): void {
+  /** BGMを頭から流す(もう流れているなら、そのまま)。曲は、ほかのワールドが選べる(既定は WORLD 3 の曲) */
+  startMusic(bgm: typeof RUN_BGM = RUN_BGM): void {
     const ctx = this.ctx;
     const out = this.out;
     if (!ctx || !out || this.music) return;
     const gain = ctx.createGain();
-    gain.gain.value = RUN_BGM.volume;
+    gain.gain.value = bgm.volume;
     gain.connect(out);
     const slot = { src: null as AudioBufferSourceNode | null, gain };
     this.music = slot as { src: AudioBufferSourceNode; gain: GainNode };
-    void this.load(RUN_BGM.url).then((buf) => {
+    void this.load(bgm.url).then((buf) => {
       if (!buf || this.music !== slot) return; // 読みこむ前に止められた
       const src = ctx.createBufferSource();
       src.buffer = buf;
       src.loop = true;
-      src.loopStart = RUN_BGM.loopStart;
-      src.loopEnd = Math.min(RUN_BGM.loopEnd, buf.duration);
+      src.loopStart = bgm.loopStart;
+      src.loopEnd = Math.min(bgm.loopEnd, buf.duration);
       src.connect(gain);
       src.start();
       slot.src = src;
