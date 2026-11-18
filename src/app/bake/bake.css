@@ -383,3 +383,29 @@
     transform: translateY(-14px);
   }
 }
+
+/* くいしんぼう鹿の頭の上の「！」(ねらっている間は赤く点滅) */
+.bk-sneak-mark {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #ffd23a;
+  color: #5a3200;
+  font-weight: 900;
+  font-size: 22px;
+  border: 3px solid #fff;
+  box-shadow: 0 3px 0 rgba(0, 0, 0, 0.2);
+}
+.bk-sneak-mark[hidden] {
+  display: none;
+}
+.bk-sneak-mark[data-tone='red'] {
+  background: #d8342c;
+  color: #fff;
+  animation: bk-pulse 0.2s ease-in-out infinite alternate;
+}

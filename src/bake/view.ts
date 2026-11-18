@@ -16,6 +16,12 @@ const SPOT_Z = -1.78;
 const SPOT_X = [-1.25, 0, 1.25];
 const DEER_H: Record<DeerKind, number> = { fawn: 1.3, doe: 1.45, stag: 1.6 };
 const START_Z = -5.6;
+// くいしんぼう鹿: 横から、台の端(カウンターのすぐ向こう)へ忍びよる
+const SNEAK_H = 1.2;
+const SNEAK_X = 0.98;
+const SNEAK_Z = -1.12;
+/** 台に前足をかけて、身をのり出す高さ(奈良の鹿がよくやる仕草) */
+const SNEAK_LIFT = 0.55;
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 const ease = (x: number) => { const t = clamp(x, 0, 1); return t * t * (3 - 2 * t); };
@@ -124,6 +130,14 @@ export class BakeView {
   private deerTex: Record<string, THREE.Texture> = {};
   private deerSprites = new Map<number, DeerSprite>();
   private bgDeer: { s: THREE.Sprite; ph: number; x: number }[] = [];
+  /** くいしんぼう鹿(1頭ずつ)。絵は左向き・右向きの2つ */
+  private sneak!: THREE.Sprite;
+  private sneakShadow!: THREE.Mesh;
+  private sneakTex: { l: THREE.Texture; r: THREE.Texture } | null = null;
+  /** いまの位置(タップの当たりと、ふきだしに使う)。いないときは null */
+  sneakAt: THREE.Vector3 | null = null;
+  private sneakFrom = new THREE.Vector3();
+  private blinkMat = new THREE.MeshStandardMaterial({ color: '#e2b467', roughness: 0.78, emissive: new THREE.Color('#ff2a1a'), emissiveIntensity: 0 });
   private tmpV = new THREE.Vector3();
 
   constructor(host: HTMLElement, level: BakeLevel) {
@@ -381,6 +395,18 @@ export class BakeView {
     for (const kind of ['fawn', 'doe', 'stag'] as const) for (const d of ['l', 'r']) for (let i = 0; i < 4; i++) this.deerTex[`${kind}_${d}_${i}`] = loadTex(`${ASSET}/deer-walk/${kind}_${d}_${i}.png`);
     for (const k of ['stag_front', 'stag_wink']) this.deerTex[k] = loadTex(`${ASSET}/bake/${k}.png`);
     this.disposables.push(...Object.values(this.deerTex));
+    if (this.level.sneaks?.length) {
+      // いたずら顔の絵は、左を向いている。左から来るときは左右を反転する
+      const l = loadTex(`${ASSET}/bake/stag_sneak.png`), r = l.clone();
+      r.repeat.x = -1; r.offset.x = 1; r.needsUpdate = true;
+      this.sneakTex = { l, r };
+      this.disposables.push(l, r);
+    }
+    this.sneak = new THREE.Sprite(new THREE.SpriteMaterial({ transparent: true, alphaTest: 0.08 }));
+    this.sneak.center.set(0.5, 0.02); this.sneak.visible = false;
+    this.sneakShadow = new THREE.Mesh(new THREE.CircleGeometry(0.42, 24), new THREE.MeshBasicMaterial({ color: '#000000', transparent: true, opacity: 0.2, depthWrite: false }));
+    this.sneakShadow.rotation.x = -Math.PI / 2; this.sneakShadow.scale.set(1.4, 0.6, 1); this.sneakShadow.visible = false;
+    this.scene.add(this.sneak, this.sneakShadow);
   }
 
   // ---- 位置 ----
@@ -394,7 +420,13 @@ export class BakeView {
   deerHeight(kind: DeerKind): number { return DEER_H[kind]; }
 
   /** タップした所が、どの鉄板・どの鹿か(画面の位置で決める) */
-  pick(x: number, y: number, run: BakeRun): { plate: number } | { spot: number } | null {
+  pick(x: number, y: number, run: BakeRun): { plate: number } | { spot: number } | { sneak: true } | null {
+    // くいしんぼう鹿がいちばん先(お客の鹿の手前にいるので)。指で押しやすいよう、絵より少し広く
+    if (run.sneak && this.sneakAt) {
+      const p = this.sneakAt;
+      const a = this.toScreen(new THREE.Vector3(p.x - 0.7, p.y + 0.1, p.z)), b = this.toScreen(new THREE.Vector3(p.x + 0.7, p.y + SNEAK_H + 0.35, p.z));
+      if (x >= Math.min(a.x, b.x) && x <= Math.max(a.x, b.x) && y >= Math.min(a.y, b.y) && y <= Math.max(a.y, b.y)) return { sneak: true };
+    }
     for (let i = 0; i < this.plateX.length; i++) {
       const c = this.plateCenter(i), o = this.toScreen(c);
       const ex = this.toScreen(c.clone().add(new THREE.Vector3(0.5, 0, 0))), ez = this.toScreen(c.clone().add(new THREE.Vector3(0, 0, 0.5)));
@@ -511,6 +543,18 @@ export class BakeView {
       case 'angry':
         if (deer) this.emit('soft', this.spotPos(deer.spot).setY(DEER_H[deer.kind] + 0.1), { n: 4, spread: 0.3, v: new THREE.Vector3(0, 0.6, 0), size: 0.25, life: 0.8, color: '#ff8a7a', opacity: 0.7 });
         break;
+      case 'steal': {
+        // 台の端のせんべいが、くいしんぼう鹿の口へ
+        const at = this.sneakAt ?? new THREE.Vector3(0, 0, SNEAK_Z);
+        const from = this.traySlot(clamp(e.plate ?? 0, 0, BAL.trayMax - 1)), to = at.clone().setY(at.y + SNEAK_H * 0.55).add(new THREE.Vector3(0, 0, 0.15));
+        const fl = this.flyingSenbei(!!e.gokujo, 0.6);
+        this.fly(fl, from, to, 0.28, 0.25, Math.PI, () => this.emit('crumb', to, { n: 10, spread: 0.2, vr: 1.6, size: 0.06, life: 0.6, gravity: 4 }));
+        this.shake = Math.max(this.shake, 0.25);
+        break;
+      }
+      case 'shoo':
+        if (this.sneakAt) this.emit('soft', this.sneakAt.clone().setY(0.25), { n: 8, spread: 0.6, v: new THREE.Vector3(0, 0.4, 0), vr: 0.8, size: 0.32, life: 0.7, grow: 0.8, color: '#e8dcc4', opacity: 0.8 });
+        break;
       case 'premium':
         this.emit('star', new THREE.Vector3(0, GRIDDLE_TOP + 0.8, PLATE_Z), { n: 30, spread: 1.4, vr: 3, size: 0.22, life: 1.4, gravity: 2.5, color: '#e8b8ff' });
         break;
@@ -528,12 +572,20 @@ export class BakeView {
       m.visible = !!s && !m.userData.hold;
       if (s) m.material = s.gokujo ? this.trayMat.gokujo : this.trayMat.normal;
     });
+    // くいしんぼう鹿にねらわれている台の端のせんべいは、赤く点滅
+    const sn = run.sneak;
+    if (sn && (sn.phase === 'aim' || sn.phase === 'eat') && run.tray.length && run.phase === 'running') {
+      const k = sn.side < 0 ? 0 : run.tray.length - 1;
+      this.blinkMat.emissiveIntensity = 0.35 + 0.35 * Math.sin(this.time * 16);
+      this.trayItems[k].material = this.blinkMat;
+    }
     if (run.tray.some(s => s.gokujo) && Math.random() < dt * 3) {
       const k = run.tray.findIndex(s => s.gokujo);
       this.emit('star', this.traySlot(k).add(new THREE.Vector3(0, 0.08, 0)), { n: 1, spread: 0.2, size: 0.12, life: 0.6, vr: 0.3 });
     }
     // 鹿
     this.paintDeer(run, dt);
+    this.paintSneak(run);
     for (const b of this.bgDeer) b.s.position.y = Math.max(0, Math.sin(this.time * 1.3 + b.ph)) * 0.015;
     // 飛んでいるせんべい
     this.flyers = this.flyers.filter(f => {
@@ -711,6 +763,56 @@ export class BakeView {
     s.scale.set(h * aspect * sx, h * sy, 1);
     s.position.copy(pos);
     ds.shadow.position.set(pos.x, 0.01, pos.z);
+  }
+
+  private paintSneak(run: BakeRun): void {
+    const sn = run.sneak, s = this.sneak;
+    if (!sn || !this.sneakTex) { s.visible = this.sneakShadow.visible = false; this.sneakAt = null; return; }
+    const side = sn.side, start = new THREE.Vector3(side * 4.4, 0, -2.4), stand = new THREE.Vector3(side * SNEAK_X, 0, SNEAK_Z);
+    let pos = stand.clone(), sx = 1, sy = 1, face: 'l' | 'r' = side > 0 ? 'l' : 'r';
+    const mat = s.material;
+    mat.color.set('#ffffff');
+    switch (sn.phase) {
+      case 'walk': {
+        // こそこそ: 小さく、すばやく跳ねながら近づく
+        const k = ease(sn.t / BAL.sneakWalk);
+        pos = start.clone().lerp(stand, k);
+        // 台に近づいたら、前足をかけて のり出す
+        pos.y = Math.abs(Math.sin(sn.t * 12)) * 0.06 * (1 - k) + ease((k - 0.7) / 0.3) * SNEAK_LIFT;
+        break;
+      }
+      case 'aim':
+        // 身をかがめて、ねらう(ぷるぷる)
+        sy = 0.94 + Math.sin(this.time * 30) * 0.03; sx = 1.04;
+        pos.x -= side * 0.08; pos.y = SNEAK_LIFT;
+        mat.color.set(Math.sin(this.time * 14) > 0 ? '#ffd2c8' : '#ffffff');
+        break;
+      case 'eat':
+        pos.x -= side * 0.18; pos.y = SNEAK_LIFT + 0.05;
+        sy = 1 - Math.abs(Math.sin(sn.t * 20)) * 0.07;
+        break;
+      case 'flee':
+      case 'leave': {
+        if (sn.t < 0.05) this.sneakFrom.copy(this.sneakAt ?? stand);
+        const dur = sn.phase === 'flee' ? BAL.sneakFlee : BAL.sneakLeave, k = ease(sn.t / dur);
+        pos = this.sneakFrom.clone().lerp(start, k);
+        // 逃げるときは、大きく跳ねて、向こうを向く(台から下りる)
+        const lift = this.sneakFrom.y * (1 - ease(sn.t / 0.25));
+        pos.y = lift + Math.abs(Math.sin(sn.t * (sn.phase === 'flee' ? 9 : 10))) * (sn.phase === 'flee' ? 0.35 : 0.05);
+        face = side > 0 ? 'r' : 'l';
+        break;
+      }
+    }
+    const tex = this.sneakTex[face];
+    if (mat.map !== tex) { mat.map = tex; mat.needsUpdate = true; }
+    const img = tex.image as { width?: number; height?: number } | undefined;
+    const aspect = img?.width && img.height ? img.width / img.height : 0.92;
+    s.scale.set(SNEAK_H * aspect * sx, SNEAK_H * sy, 1);
+    s.position.copy(pos);
+    s.visible = true;
+    this.sneakShadow.visible = pos.y < 0.2;
+    this.sneakShadow.position.set(pos.x, 0.012, pos.z);
+    this.sneakAt = (this.sneakAt ?? new THREE.Vector3()).copy(pos);
   }
 
   dispose(): void {

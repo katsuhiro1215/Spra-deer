@@ -78,7 +78,7 @@ export function BakeShell() {
             <h1 data-ks="s-title" />
             <p className="ks-lead" data-ks="s-lead" />
             <p className="ks-prem-note" data-ks="s-prem" />
-            <ul className="ks-how">
+            <ul className="ks-how" data-ks="how">
               <li>
                 <b>鉄板</b> タップで 生地を のせる
               </li>
@@ -92,7 +92,7 @@ export function BakeShell() {
                 <b>♥</b> 焦がす・待たせすぎで へる
               </li>
             </ul>
-            <p className="bk-keys">キーボード: 1・2・3 = 鉄板/Q・W・E = 鹿</p>
+            <p className="bk-keys" data-ks="keys">キーボード: 1・2・3 = 鉄板/Q・W・E = 鹿</p>
             <p className="ks-stamina" data-ks="s-stamina" />
             <button type="button" className="ks-sound" data-ks="snd-s" aria-pressed="true">
               ♪ 音 ON

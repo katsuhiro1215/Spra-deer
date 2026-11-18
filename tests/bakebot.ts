@@ -11,10 +11,12 @@ export type Policy = {
   stock?: number;
   /** 人の反応のおそさ(秒)。タップできると分かってから、これだけ待つ */
   delay?: number;
+  /** くいしんぼう鹿を追いはらうか。aim=台をねらいはじめてから/late=食べはじめてから(1枚は取られる) */
+  shoo?: boolean | 'aim' | 'late';
 };
 
 export function drive(level: BakeLevel, policy: Policy = {}, dt = 1 / 60): BakeRun {
-  const { timing = 'perfect', serve = true, stock = 5, delay = 0 } = policy;
+  const { timing = 'perfect', serve = true, stock = 5, delay = 0, shoo = true } = policy;
   const run = new BakeRun(level);
   run.start();
   const c = level.cook;
@@ -26,6 +28,10 @@ export function drive(level: BakeLevel, policy: Policy = {}, dt = 1 / 60): BakeR
     return run.t - seen.get(key)! >= delay;
   };
   while (run.phase === 'running' && run.t < level.time + 1) {
+    // くいしんぼう鹿: 見えたら(aim/late なら、ねらいはじめて・食べはじめてから)追いはらう
+    const sn = run.sneak;
+    const when = shoo === true ? ['walk', 'aim'] : shoo === 'aim' ? ['aim'] : shoo === 'late' ? ['eat'] : [];
+    if (sn && when.includes(sn.phase) && ready(`s${sn.id}`, true)) run.tapSneak();
     run.plates.forEach((p, i) => {
       const cooking = run.plates.filter(x => x.state !== 'empty' && x.state !== 'burnt' && x.state !== 'discard').length;
       if (p.state === 'burnt' && ready(`b${i}`, true)) run.tapPlate(i);

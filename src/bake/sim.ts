@@ -25,6 +25,15 @@ export const BAL = {
   coin: 5,
   coinGokujo: 10,
   lives: 3,
+  // くいしんぼう鹿: 歩いてくる → 台をねらう(予告) → 1枚ずつ食べる。タップで逃げていく
+  sneakWalk: 2.6,
+  sneakAim: 1.6,
+  sneakBite: 1.1,
+  sneakBites: 3,
+  /** 台が空のとき、待ってから帰るまで */
+  sneakWaitEmpty: 4.5,
+  sneakFlee: 0.9,
+  sneakLeave: 1.4,
 } as const;
 
 export type Quality = 'good' | 'perfect';
@@ -43,9 +52,13 @@ export type Deer = {
   /** 来た向き(−1=左から、1=右から) */
   from: -1 | 1;
 };
-export type FailReason = 'burnt' | 'angry' | 'time';
+export type SneakPhase = 'walk' | 'aim' | 'eat' | 'flee' | 'leave';
+/** くいしんぼう鹿(1頭ずつ来る) */
+export type Sneaker = { id: number; side: -1 | 1; phase: SneakPhase; t: number; bites: number };
+export type FailReason = 'burnt' | 'angry' | 'stolen' | 'time';
 export type BakeEvent = {
-  kind: 'pour' | 'early' | 'flip' | 'collect' | 'full' | 'smoke' | 'burnt' | 'discard' | 'arrive' | 'serve' | 'empty' | 'happy' | 'angry' | 'heart' | 'premium' | 'clear' | 'fail';
+  kind: 'pour' | 'early' | 'flip' | 'collect' | 'full' | 'smoke' | 'burnt' | 'discard' | 'arrive' | 'serve' | 'empty' | 'happy' | 'angry' | 'heart' | 'premium' | 'clear' | 'fail'
+    | 'sneak' | 'aim' | 'steal' | 'shoo' | 'sneakLeave';
   plate?: number; deer?: number; q?: Quality; gokujo?: boolean; gold?: boolean; sid?: number;
 };
 
@@ -70,14 +83,24 @@ export class BakeRun {
   plates: Plate[];
   tray: Senbei[] = [];
   spots: (Deer | null)[] = [null, null, null];
+  sneak: Sneaker | null = null;
+  /** くいしんぼう鹿に取られた枚数・追いはらった数 */
+  stolen = 0;
+  shooed = 0;
+  /** 台に着いてから(ねらう・食べる間に)追いはらった数 */
+  lateShoo = 0;
   private nextArrival = 0;
+  private nextSneak = 0;
   private nextId = 1;
   private deerCount = 0;
   events: BakeEvent[] = [];
 
   readonly level: BakeLevel;
-  constructor(level: BakeLevel) {
+  /** プレミアムコインを出すか(もう取った面では出さない) */
+  private premiumOn: boolean;
+  constructor(level: BakeLevel, opts: { premium?: boolean } = {}) {
     this.level = level;
+    this.premiumOn = opts.premium ?? true;
     this.plates = Array.from({ length: level.plates }, () => ({ state: 'empty' as PlateState, t: 0, side1: null, smoking: false, sid: 0 }));
   }
 
@@ -127,10 +150,8 @@ export class BakeRun {
         this.tray.push({ id: p.sid, gokujo });
         if (gokujo) { this.gokujoCount++; this.streak++; } else this.streak = 0;
         this.events.push({ kind: 'collect', plate: i, q, gokujo, sid: p.sid });
-        if (gokujo && this.streak >= this.level.premiumStreak && !this.premium) {
-          this.premium = true;
-          this.events.push({ kind: 'premium' });
-        }
+        const pr = this.level.premium;
+        if (gokujo && pr.kind === 'streak' && this.streak >= pr.n) this.givePremium();
         p.state = 'empty'; p.t = 0; p.side1 = null; p.smoking = false;
         break;
       }
@@ -139,6 +160,22 @@ export class BakeRun {
         this.events.push({ kind: 'discard', plate: i, sid: p.sid });
         break;
     }
+  }
+
+  private givePremium() {
+    if (this.premium || !this.premiumOn) return;
+    this.premium = true;
+    this.events.push({ kind: 'premium' });
+  }
+
+  /** くいしんぼう鹿をタップ: おどろいて逃げていく(食べている途中でも) */
+  tapSneak(): void {
+    const s = this.sneak;
+    if (!s || this.phase !== 'running' || (s.phase !== 'walk' && s.phase !== 'aim' && s.phase !== 'eat')) return;
+    if (s.phase !== 'walk') this.lateShoo++;
+    s.phase = 'flee'; s.t = 0;
+    this.shooed++;
+    this.events.push({ kind: 'shoo', deer: s.id });
   }
 
   /** 鹿をタップ: 台のせんべいを1枚わたす */
@@ -181,11 +218,55 @@ export class BakeRun {
     });
     if (this.phase !== 'running') return;
     this.arrive();
+    this.stepSneak(dt);
     for (const d of this.deer) {
       this.stepDeer(d, dt);
       if (this.phase !== 'running') return;
     }
     if (this.t >= this.level.time) this.fail('time');
+  }
+
+  /** くいしんぼう鹿: 時刻が来たら1頭ずつ(前の鹿がいる間は、待ってから)来る */
+  private stepSneak(dt: number) {
+    const list = this.level.sneaks ?? [];
+    if (!this.sneak && this.nextSneak < list.length && this.t >= list[this.nextSneak].t) {
+      const a = list[this.nextSneak++];
+      this.sneak = { id: this.nextId++, side: a.side, phase: 'walk', t: 0, bites: 0 };
+      this.events.push({ kind: 'sneak', deer: this.sneak.id });
+    }
+    const s = this.sneak;
+    if (!s) return;
+    s.t += dt;
+    switch (s.phase) {
+      case 'walk':
+        if (s.t >= BAL.sneakWalk) { s.phase = 'aim'; s.t = 0; this.events.push({ kind: 'aim', deer: s.id }); }
+        break;
+      case 'aim':
+        if (s.t >= BAL.sneakAim) { s.phase = 'eat'; s.t = 0; this.bite(s); }
+        break;
+      case 'eat':
+        if (s.bites >= BAL.sneakBites) { if (s.t >= BAL.sneakBite) { s.phase = 'leave'; s.t = 0; } }
+        else if (this.tray.length && s.t >= BAL.sneakBite) { s.t = 0; this.bite(s); }
+        else if (!this.tray.length && s.t >= BAL.sneakWaitEmpty) { s.phase = 'leave'; s.t = 0; }
+        break;
+      case 'flee':
+      case 'leave':
+        if (s.t >= (s.phase === 'flee' ? BAL.sneakFlee : BAL.sneakLeave)) {
+          this.sneak = null;
+          this.events.push({ kind: 'sneakLeave', deer: s.id });
+        }
+        break;
+    }
+  }
+  /** 台の、鹿のいる側の端から1枚食べる。1頭目の1枚目でハート −1(食べられたら負け、が分かるように) */
+  private bite(s: Sneaker) {
+    if (!this.tray.length) return;
+    const k = s.side < 0 ? 0 : this.tray.length - 1;
+    const [e] = this.tray.splice(k, 1);
+    s.bites++;
+    this.stolen++;
+    this.events.push({ kind: 'steal', deer: s.id, gokujo: e.gokujo, sid: e.id, plate: k });
+    if (s.bites === 1) this.loseHeart('stolen');
   }
 
   private arrive() {
@@ -227,7 +308,11 @@ export class BakeRun {
             const gold = d.allGokujo && d.want >= 2;
             if (gold) this.gold++;
             this.events.push({ kind: 'happy', deer: d.id, gold });
-            if (this.served >= this.level.goal) { this.phase = 'cleared'; this.events.push({ kind: 'clear' }); }
+            if (this.served >= this.level.goal) {
+              // 2-2 のプレミアム: くいしんぼう鹿を、台に着く前(歩いている間)に全部追いはらってクリア
+              if (this.level.premium.kind === 'earlyShoo' && this.stolen === 0 && this.lateShoo === 0 && this.shooed > 0) this.givePremium();
+              this.phase = 'cleared'; this.events.push({ kind: 'clear' });
+            }
           } else { d.phase = 'wait'; d.t = 0; }
         }
         break;
