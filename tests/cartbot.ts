@@ -10,6 +10,8 @@ export type Policy = {
   brake?: boolean; lean?: boolean; jump?: boolean; dash?: boolean;
   /** ジャンプ台の上でジャンプする(もっと高く遠くへ) */
   rampJump?: boolean;
+  /** 横にある鹿せんべいを、傾けて取りにいく */
+  senbei?: boolean;
   extra?: (run: CartRun, input: Input) => void;
   /** チェックポイントなど、途中から走る */
   from?: number;
@@ -18,7 +20,7 @@ export type Policy = {
 };
 
 export function drive(level: CartLevel, policy: Policy = {}): CartRun {
-  const p = { brake: true, lean: true, jump: true, dash: true, rampJump: true, ...policy };
+  const p = { brake: true, lean: true, jump: true, dash: true, rampJump: true, senbei: true, ...policy };
   const track = trackOf(level), run = new CartRun(track);
   if (p.from) run.restore(p.from, 0, 0, 0, false, []);
   run.start();
@@ -44,6 +46,9 @@ export function drive(level: CartLevel, policy: Policy = {}): CartRun {
       const need = v * v * track.at(s + v * 0.3).curv - w;
       input.right = need > 0; input.left = need < 0;
     }
+    // 横にある鹿せんべい: その向きへ傾けて取る(枝のほうが先)
+    const sb = track.obstacles.find(o => o.kind === 'senbei' && o.side && o.s > s && o.s - s < Math.max(8, v * 0.5));
+    if (sb && p.lean && p.senbei) { input.right = sb.side === 1; input.left = sb.side === -1; }
     if (branch && p.lean) { input.left = branch.side === 1; input.right = branch.side === -1; }
     // ずれた線路: 空中で、ずれた側へ傾ける
     if (run.air && p.lean) {
@@ -71,6 +76,8 @@ export function drive(level: CartLevel, policy: Policy = {}): CartRun {
     }
     // 上り坂: おそいときはダッシュで鹿をはげます
     if (p.dash && !run.air && run.dashCool <= 0 && v < 12 && track.at(s).pitch > 0.05) input.dash = true;
+    // 大岩・なだれが近いときは、ダッシュで にげる
+    if (p.dash && run.chaser && !run.air && run.dashCool <= 0 && s - run.chaser.s < 40) input.dash = true;
     // 岩・倒木: 手前で跳ぶ(ジャンプ台は、乗るだけ)
     const rock = track.obstacles.find(o => (o.kind === 'rock' || o.kind === 'log') && o.s > s && o.s - s < v * 0.4);
     if (rock && p.jump && !run.air) input.jump = true;

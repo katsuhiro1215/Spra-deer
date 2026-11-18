@@ -15,7 +15,10 @@ const FAIL_TEXT: Record<string, [string, string]> = {
   derail: ['カーブで 脱線した…', 'カーブの前で ブレーキ。内がわへ 体を かたむけると、ねばれるよ'],
   miss: ['着地が 線路から はずれた…', 'ジャンプは、まっすぐな所で'],
   broken: ['トロッコが こわれた…', '岩と 倒木は ジャンプ。枝は、反対へ 体を かたむけて よけよう'],
+  caught: ['大岩に 追いつかれた…', '上り坂は ダッシュ！ 鹿せんべいを 食べると、鹿が 全力で 走るよ'],
+  caughtAvalanche: ['なだれに のみこまれた…', '止まらずに すべりおりよう。ダッシュで なだれを ふりきれ！'],
 };
+const CHASER_NAME = { boulder: '大岩', avalanche: 'なだれ' } as const;
 
 export function startCart(root: HTMLElement, level: CartLevel): () => void {
   const q = <T extends HTMLElement>(k: string) => root.querySelector<T>(`[data-ks="${k}"]`)!;
@@ -83,7 +86,7 @@ export function startCart(root: HTMLElement, level: CartLevel): () => void {
   };
   // 走っている間ずっと鳴る音: 風・車輪のゴロゴロ・ブレーキのキーッ(大きさを、速さに合わせて変える)
   type Loop = { gain: GainNode; filter: BiquadFilterNode; src: AudioBufferSourceNode };
-  let loops: { wind: Loop; rumble: Loop; screech: Loop } | null = null;
+  let loops: { wind: Loop; rumble: Loop; screech: Loop; roar: Loop } | null = null;
   const startLoops = () => {
     if (!ac || loops) return;
     const make = (type: BiquadFilterType, freq: number, Q: number): Loop => {
@@ -95,7 +98,8 @@ export function startCart(root: HTMLElement, level: CartLevel): () => void {
       src.start();
       return { gain, filter, src };
     };
-    loops = { wind: make('bandpass', 700, 0.6), rumble: make('lowpass', 150, 0.8), screech: make('bandpass', 2900, 9) };
+    // roar: 後ろから追ってくる大岩・なだれの地鳴り
+    loops = { wind: make('bandpass', 700, 0.6), rumble: make('lowpass', 150, 0.8), screech: make('bandpass', 2900, 9), roar: make('lowpass', 90, 0.7) };
   };
   const setLoop = (l: Loop, vol: number, freq?: number) => {
     if (!ac) return;
@@ -117,6 +121,11 @@ export function startCart(root: HTMLElement, level: CartLevel): () => void {
       case 'tilt': tone(1400, 1700, 0.12, 'square', 0.04); tone(1400, 1700, 0.12, 'square', 0.04, 0.16); break;
       case 'drop': tone(620, 60, 0.9, 'triangle', 0.09); break;
       case 'derail': thud(0.9, 0.5, 900); tone(180, 40, 0.6, 'sawtooth', 0.08); break;
+      // 鹿せんべい: サクッ と食べて、鹿が はりきる
+      case 'senbei': thud(0.09, 0.35, 3200); thud(0.08, 0.3, 2600, 0.07); tone(660, 1320, 0.25, 'triangle', 0.07, 0.1); audio.sfx('dash'); break;
+      case 'chase': thud(1.4, 0.55, 140); tone(70, 45, 1.4, 'sawtooth', 0.05); break;
+      case 'chaseEnd': thud(1.2, 0.5, 120, 0.25); break;
+      case 'caught': thud(1.2, 0.7, 260); tone(120, 35, 0.9, 'sawtooth', 0.09); break;
       case 'clear': audio.stopMusic(); audio.jingle('clear'); break;
       case 'fail': audio.stopMusic(); audio.jingle('fail'); break;
     }
@@ -126,6 +135,7 @@ export function startCart(root: HTMLElement, level: CartLevel): () => void {
   const elCoins = q('coins'), elGold = q('gold'), elPrem = q('prem'), elHearts = q('hearts'), elFill = q('fill'), elMark = q('mark');
   const elSpeed = q('speed'), elSeg = q('seg'), elAlert = q('alert'), elToast = q('toast'), elStart = q('start'), elResult = q('result');
   const elDash = q('dash'), elBrake = q('brake'), elJump = q('jump'), elPad = q('pad');
+  const elChase = q('chase'), elChaseName = q('chase-name'), elChaseM = q('chase-m'), elChaseBar = q('chase-bar');
   let toastTimer = 0;
   const toast = (msg: string, ms = 2400) => {
     elToast.textContent = msg; elToast.classList.add('on');
@@ -162,8 +172,10 @@ export function startCart(root: HTMLElement, level: CartLevel): () => void {
       if (v < need) return [run.dashCool <= 0 ? 'スピードが たりない！ ダッシュ！' : 'スピードが たりない！', 'red'];
       return ['もうすぐ 切れ目！ 黄色で ジャンプ', 'yellow'];
     }
-    const o = track.obstacles.find(x => x.s > s && !run.hitIds.has(x.id));
+    // まん中の鹿せんべいは、通るだけで食べられる(知らせない)
+    const o = track.obstacles.find(x => x.s > s && !run.hitIds.has(x.id) && !(x.kind === 'senbei' && !x.side));
     if (o && o.s - s < v * 1.3 + 6) {
+      if (o.kind === 'senbei') return [o.side === 1 ? 'せんべいは 右！ ▶' : '◀ せんべいは 左！', 'yellow'];
       if (o.kind === 'branch') {
         const dodge = o.side === 1 ? '◀ 左へ よけて！' : '右へ よけて！ ▶';
         // カーブの内がわの枝: よけると外へ傾くので、速すぎたら先にブレーキ
@@ -178,6 +190,16 @@ export function startCart(root: HTMLElement, level: CartLevel): () => void {
     if (crest && v > crest.vLift * 0.95) {
       if (Math.abs(crest.curveAfter) > 0.006) return ['ブレーキ！ こぶで 浮かないように', 'red'];
       if (crest.s - s < v * 0.8) return ['こぶで とぶぞ！', 'jump'];
+    }
+    // 後ろから大岩・なだれが せまる: ダッシュで にげる(先の急カーブでブレーキが要るときは、そちらが先)
+    const ch = run.chaser;
+    if (ch && s - ch.s < 30) {
+      const kc = Math.abs(track.sharpestAhead(s + 3, (v * 1.7 + 8) * (1 + track.snowAt(s))));
+      if (!(kc > 0.006 && v > Math.sqrt((BAL.latBase + BAL.latLean) / kc) * 0.96)) {
+        const who = CHASER_NAME[ch.kind];
+        const sb = track.obstacles.some(x => x.kind === 'senbei' && x.s > s && x.s - s < 60);
+        return [run.dashCool <= 0 ? `${who}が せまる！ ダッシュ！` : sb ? `${who}が せまる！ せんべいを 食べて！` : `${who}が せまる！ にげろ！`, 'red'];
+      }
     }
     // 横風: 風上へ傾ける
     const w = track.windAt(s + v * 0.5);
@@ -212,6 +234,16 @@ export function startCart(root: HTMLElement, level: CartLevel): () => void {
     if (elAlert.textContent !== msg) elAlert.textContent = msg;
     elAlert.dataset.tone = tone_;
     elAlert.classList.toggle('on', msg !== '');
+    // 後ろから追ってくるものとの距離(近いほど、バーがのびて赤くなる)
+    const ch = run.phase === 'running' ? run.chaser : null;
+    elChase.hidden = !ch;
+    if (ch) {
+      const d = Math.max(0, run.s - ch.s - BAL.catchDist);
+      elChaseName.textContent = CHASER_NAME[ch.kind];
+      elChaseM.textContent = `${Math.round(d)}m`;
+      elChaseBar.style.width = `${Math.max(0, Math.min(1, 1 - d / 50)) * 100}%`;
+      elChase.classList.toggle('close', d < 15);
+    }
     elDash.style.setProperty('--cd', String(run.dashCool / BAL.dashCool));
     elDash.classList.toggle('wait', run.dashCool > 0 && run.dashT <= 0);
     elDash.classList.toggle('go', run.dashT > 0);
@@ -240,7 +272,7 @@ export function startCart(root: HTMLElement, level: CartLevel): () => void {
       q('r-reward').classList.add('lose');
     }
     paintStamina();
-    const best = progress.get(level.id).best, why = FAIL_TEXT[run.reason];
+    const best = progress.get(level.id).best, why = FAIL_TEXT[run.reason === 'caught' && run.caughtBy === 'avalanche' ? 'caughtAvalanche' : run.reason];
     q('r-title').textContent = cleared ? `${level.goalName}に とうちゃく！` : why?.[0] ?? 'ざんねん…';
     q('r-tip').textContent = cleared ? '' : why?.[1] ?? '';
     q('r-stars').textContent = cleared ? '★'.repeat(stars) + '☆'.repeat(3 - stars) : '';
@@ -379,7 +411,7 @@ export function startCart(root: HTMLElement, level: CartLevel): () => void {
       const k = Math.abs(((seg.turn ?? 0) * Math.PI) / 180 / seg.len);
       if (k > 0.015) hint('sharp', '急カーブ！ ブレーキで 速さを おとして、内がわへ 体を かたむけよう', 3600);
       else if (k > 0.007) hint('curve', 'カーブでは ◀ ▶ で 内がわへ 体を かたむけると、速いまま 回れるよ', 3600);
-      if ((seg.slope ?? 0) >= 3) hint('up', '上り坂！ ダッシュで 鹿に がんばってもらおう', 3200);
+      if ((seg.slope ?? 0) >= 3 && seg.len >= 50) hint('up', '上り坂！ ダッシュで 鹿に がんばってもらおう', 3200);
       if ((seg.slope ?? 0) <= -8) hint('down', '急な下り坂！ どんどん 速くなるよ', 2600);
       if (seg.wind) hint('wind', '強い 横風！ 風上へ 体を かたむけて こらえよう', 3400);
       if (seg.terrain === 'tunnel') hint('tunnel', 'トンネルだ！ 中は 暗いよ。明かりを たよりに', 3000);
@@ -397,6 +429,7 @@ export function startCart(root: HTMLElement, level: CartLevel): () => void {
     else if (gap) hint(gap.to - gap.from > 15 ? 'biggap' : 'gap', gap.to - gap.from > 15 ? '大きな 切れ目！ 看板の 速さまで ダッシュして、黄色い枕木で ジャンプ！' : '線路が 切れている！ 黄色い枕木の所で ジャンプ！', 3600);
     const o = track.obstacles.find(x => x.s > s && x.s - s < look);
     if (o?.kind === 'ramp') hint('ramp', 'ジャンプ台！ 乗るだけで 高く とぶ。台の上で ジャンプすると、もっと高く 遠くへ', 3600);
+    else if (o?.kind === 'senbei') hint('senbei', '鹿せんべいだ！ 食べると、鹿が 全力で 走るよ', 3200);
     else if (o) hint(o.kind, o.kind === 'branch' ? '枝が 張り出している！ 反対へ 体を かたむけて よけよう' : o.kind === 'rock' ? '線路に 岩が！ ジャンプで とびこえよう' : '倒木だ！ ジャンプで とびこえよう', 3000);
     // その面ならではの所(ほかの一言より優先)
     level.notes?.forEach((n, i) => { if (s >= n.s - look && s < n.s + 10) hint(`note${i}`, n.text, 3800); });
@@ -404,6 +437,7 @@ export function startCart(root: HTMLElement, level: CartLevel): () => void {
 
   // ---- ループ ----
   let raf = 0, last = performance.now(), acc = 0, prevPhase = run.phase;
+  let chaseKind: 'boulder' | 'avalanche' = 'boulder';
   const frame = (now: number) => {
     raf = requestAnimationFrame(frame);
     const dt = Math.min(0.1, (now - last) / 1000);
@@ -416,6 +450,12 @@ export function startCart(root: HTMLElement, level: CartLevel): () => void {
         const o = e.id !== undefined ? obstacleById.get(e.id) : undefined;
         toast(o?.kind === 'branch' ? '枝に ぶつかった！' : o?.kind === 'log' ? '倒木に ぶつかった！' : '岩に ぶつかった！', 1800);
       } else if (e.kind === 'dash') toast('鹿の ダッシュ！', 1200);
+      else if (e.kind === 'senbei') toast('もぐもぐ！ 鹿の 全力疾走！', 1300);
+      else if (e.kind === 'chase' && run.chaser) {
+        chaseKind = run.chaser.kind; view.bump(0.4);
+        toast(chaseKind === 'avalanche' ? 'なだれだ！ 止まらずに すべりおりろ！' : 'ゴゴゴ… 後ろから 大岩が 転がってきた！ にげろ！', 3200);
+      } else if (e.kind === 'chaseEnd') toast(chaseKind === 'avalanche' ? 'トンネルに 逃げこんだ！ なだれを ふりきった！' : '大岩は 谷へ 落ちていった！ ふりきった！', 2600);
+      else if (e.kind === 'caught') view.bump(0.9);
       else if (e.kind === 'derail') view.bump(0.7);
       else if (e.kind === 'gold') toast('ゴールドコイン！', 1300);
       else if (e.kind === 'premium') { view.bump(0.15); toast('◆ プレミアムコイン！！ ゴールまで もちかえろう', 2800); }
@@ -446,6 +486,9 @@ export function startCart(root: HTMLElement, level: CartLevel): () => void {
       setLoop(loops.wind, moving ? speed * speed * 0.2 * (tun ? 0.5 : 1) + gust * 0.12 : 0, (tun ? 300 : 500) + speed * (tun ? 600 : 1500) + gust * 400);
       setLoop(loops.rumble, moving && !run.air ? 0.1 + speed * 0.3 : 0, 110 + speed * 160);
       setLoop(loops.screech, running && !run.air && ((run.braking && run.v > 3) || run.tilt > 0.15) ? 0.035 + speed * 0.05 : 0);
+      // 地鳴り: 追ってくるものが近いほど大きい
+      const near = run.chaser && running ? Math.max(0, Math.min(1, 1 - (run.s - run.chaser.s - 4) / 50)) : 0;
+      setLoop(loops.roar, run.chaser && running ? 0.12 + near * 0.55 : 0, 70 + near * 90);
     }
     if (run.phase !== prevPhase) {
       prevPhase = run.phase;

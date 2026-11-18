@@ -106,6 +106,7 @@ test('コイン: まん中は通るだけ。横は体を傾けて、高い所は
 
 // ---- 8-1 を、自動で走る(ボットは tests/cartbot.ts) ----
 const L1 = cartById('8-1')!, L2 = cartById('8-2')!, L3 = cartById('8-3')!, L4 = cartById('8-4')!, L5 = cartById('8-5')!, L6 = cartById('8-6')!, L7 = cartById('8-7')!, L8 = cartById('8-8')!;
+const L9 = cartById('8-9')!, L10 = cartById('8-10')!;
 const drive = (policy: Policy = {}) => driveLevel(L1, policy);
 
 test('8-1: 先を見て操作すれば、ハートを減らさずにクリアできる(60〜95秒)', () => {
@@ -451,4 +452,121 @@ test('8-8: プレミアムは、霧の中の灯籠の門の下。門の手前で
   const tryIt = (at: number) => driveLevel(L8, { until: 520, extra: (run, inp) => { if (at && run.s > at && run.s < at + 0.5) inp.jump = true; } });
   assert.equal(tryIt(480).premium, true);
   assert.equal(tryIt(0).premium, false); assert.equal(tryIt(489).premium, false, 'おそい'); assert.equal(tryIt(468).premium, false, '早すぎる');
+});
+
+// ---- 鹿せんべい・追ってくるもの・夕焼け(8-9 から) ----
+test('鹿せんべい: 通ると鹿が食べて、すぐ全力で走る(ダッシュの待ち時間も0に)。横のものは傾けて取る。高く跳んでいると食べられない', () => {
+  const t = new Track(def({ segments: [{ len: 400, slope: 0 }], obstacles: [{ s: 50, kind: 'senbei' }, { s: 150, kind: 'senbei', side: 1 }, { s: 250, kind: 'senbei' }] }));
+  const ride = (input: (r: CartRun) => Partial<Input>, until = 300) => {
+    const r = new CartRun(t); r.start();
+    for (let i = 0; i < 30 / DT && r.phase === 'running' && r.s < until; i++) { if (!r.air) r.v = 15; r.step(DT, { ...none(), ...input(r) }); }
+    return r;
+  };
+  const r = new CartRun(t); r.start(); r.dashCool = 4;
+  for (let i = 0; i < 10 / DT && r.s < 51; i++) r.step(DT, none());
+  assert.equal(r.senbei, 1); assert.ok(r.dashT > 1.4, '食べると、すぐ全力で走る'); assert.equal(r.dashCool, 0, 'ダッシュの待ち時間も0に');
+  assert.deepEqual([...ride(() => ({})).eaten].map(id => t.obstacles[id].s), [50, 250], '横のせんべいは、傾けないと取れない');
+  assert.equal(ride(r2 => ({ right: r2.s > 140 && r2.s < 155 })).senbei, 3);
+  // 15m/s で 7.5m 手前から跳ぶと、いちばん高い所(2m)で通る
+  assert.equal(ride(r2 => ({ jump: r2.s > 242.5 && r2.s < 243 })).eaten.has(2), false, '跳んで、高い所を通ると食べられない');
+});
+
+test('追ってくるもの: from を通ると後ろにあらわれ、おそいと追いつかれる。to をこえて着地すると、ふりきれる', () => {
+  const t = new Track(def({ segments: [{ len: 600, slope: 0 }], chases: [{ from: 50, to: 400, v: 14, behind: 30, kind: 'boulder' }] }));
+  const ride = (v: number) => {
+    const r = new CartRun(t); r.start(); const ev: string[] = [];
+    for (let i = 0; i < 60 / DT && r.phase === 'running' && r.s < 500; i++) { r.v = v; r.step(DT, none()); for (const e of r.drainEvents()) ev.push(e.kind); }
+    return { r, ev };
+  };
+  const slow = ride(10);
+  assert.equal(slow.r.reason, 'caught'); assert.equal(slow.r.caughtBy, 'boulder');
+  // 30m 後ろから 4m/s ずつ近づき、4m まで来ると追いつかれる(6.5秒で 65m 進んだ所)
+  assert.ok(slow.r.s > 110 && slow.r.s < 120, `追いつかれた s=${slow.r.s.toFixed(0)}`);
+  const fast = ride(18);
+  assert.equal(fast.r.phase, 'running'); assert.equal(fast.r.chaser, null);
+  assert.deepEqual(fast.ev.filter(k => k === 'chase' || k === 'chaseEnd'), ['chase', 'chaseEnd']);
+  // 途中から続けても、すぐ後ろにあらわれる。終わった所から続けると、もう出ない
+  const mid = new CartRun(t); mid.restore(200, 0, 0, 0, false, []); mid.start(); mid.step(DT, none());
+  assert.ok(mid.chaser && Math.abs(mid.s - mid.chaser.s - 30) < 1);
+  const after = new CartRun(t); after.restore(420, 0, 0, 0, false, []); after.start(); after.step(DT, none());
+  assert.equal(after.chaser, null);
+});
+
+test('こぶで浮いた直後(0.1秒)も、まだ跳べる', () => {
+  const t = new Track(def({ segments: [{ len: 200, slope: -12 }, { len: 24, slope: 7 }, { len: 300, slope: -14 }] }));
+  const fly = (late: number) => {
+    const r = new CartRun(t); r.start(); let liftT = -1, maxH = 0;
+    for (let i = 0; i < 20 / DT && r.phase === 'running' && r.s < 360; i++) {
+      if (!r.air && r.s < 215) r.v = 36;
+      r.step(DT, { ...none(), jump: liftT >= 0 && r.t - liftT >= late && r.t - liftT < late + 0.05 });
+      for (const e of r.drainEvents()) if (e.kind === 'lift') liftT = r.t;
+      maxH = Math.max(maxH, r.height);
+    }
+    return { maxH, jumps: r.jumps };
+  };
+  const none_ = fly(99), quick = fly(0.05), slow = fly(0.2);
+  assert.equal(quick.jumps, 1); assert.ok(quick.maxH > none_.maxH + 2, `浮いた直後のジャンプ ${quick.maxH.toFixed(1)}m / 浮くだけ ${none_.maxH.toFixed(1)}m`);
+  assert.equal(slow.jumps, 0, 'おそいと、空中では跳べない');
+});
+
+test('夕焼け: 区間の dusk が、なめらかに変わる', () => {
+  const t = trackOf(L10);
+  assert.ok(t.duskAt(30) < 0.05 && t.duskAt(2100) > 0.95);
+  assert.ok(t.duskAt(1000) > t.duskAt(500) && t.duskAt(1700) > t.duskAt(1000));
+  assert.equal(trackOf(L1).duskAt(1000), 0, 'ほかの面は昼のまま');
+});
+
+// ---- 8-9 鹿の全力疾走 ----
+const withoutSenbei = (lv: typeof L9, keep: (s: number) => boolean = () => false) => ({ ...lv, track: { ...lv.track, obstacles: lv.track.obstacles.filter(o => o.kind !== 'senbei' || keep(o.s)) } });
+test('8-9: 上り坂では、ダッシュも鹿せんべいも使わないと、大岩に追いつかれる。大岩は2回', () => {
+  assert.equal(trackOf(L9).chases.length, 2);
+  const noDash = driveLevel(L9, { dash: false });
+  assert.equal(noDash.reason, 'caught'); assert.ok(noDash.s < 450, `せんべい坂で s=${noDash.s.toFixed(0)}`);
+  const noSenbei = driveLevel(withoutSenbei(L9));
+  assert.equal(noSenbei.reason, 'caught', 'せんべいが無いと、ダッシュだけでは にげきれない');
+  const r = driveLevel(L9);
+  assert.ok(r.senbei >= 12, `せんべい ${r.senbei} 枚`);
+});
+
+test('8-9: 二段ジャンプは、間の鹿せんべいを食べないと、2つ目に届かない(ダッシュは待ち時間で使えない)', () => {
+  const r = driveLevel(withoutSenbei(L9, s => s !== 1785), { from: 1380 });
+  assert.equal(r.reason, 'fall'); assert.ok(r.s > 1810 && r.s < 1860, `2つ目の切れ目で s=${r.s.toFixed(0)}`);
+  assert.equal(driveLevel(L9, { from: 1380 }).phase, 'cleared');
+});
+
+test('8-9: プレミアムは、せんべいを続けて食べて全速になり、こぶのてっぺん(浮いた直後まで)でジャンプしたときだけ', () => {
+  const tryIt = (at: number, lv = L9) => driveLevel(lv, { from: 1380, until: 1700, extra: (run, inp) => { if (at && run.s > at && run.s < at + 0.6) inp.jump = true; } });
+  for (const at of [1563, 1566, 1569]) { const r = tryIt(at); assert.equal(r.premium, true, `ジャンプ@${at}`); assert.equal(r.phase, 'running'); }
+  assert.equal(tryIt(0).premium, false, 'こぶで浮くだけでは、高さが足りない');
+  assert.equal(tryIt(1558).premium, false, '早すぎる');
+  assert.equal(tryIt(1572).premium, false, 'おそい');
+  assert.equal(tryIt(1566, withoutSenbei(L9)).premium, false, 'せんべいを食べないと、速さが足りない');
+});
+
+// ---- 8-10 奈良山脈 大滑降 ----
+test('8-10: なだれは、ダッシュで にげないと追いつく。トンネルに入ると、ふりきれる。下るにつれて夕焼け', () => {
+  const t = trackOf(L10);
+  assert.equal(t.vMax, 36);
+  assert.deepEqual(t.chases.map(c => [c.kind, c.to]), [['avalanche', 614]]);
+  assert.deepEqual(t.tunnels(), [[614, 794]]);
+  const noDash = driveLevel(L10, { dash: false });
+  assert.equal(noDash.reason, 'caught'); assert.equal(noDash.caughtBy, 'avalanche'); assert.ok(noDash.s > 400 && noDash.s < 614, `雪の大カーブのあたりで s=${noDash.s.toFixed(0)}`);
+  let ended = -1;
+  const r = driveLevel(L10, { extra: run => { for (const e of run.drainEvents()) if (e.kind === 'chaseEnd') ended = run.s; } });
+  assert.ok(ended > 614 && ended < 640, `トンネルの中で ふりきる s=${ended.toFixed(0)}`);
+  assert.equal(r.phase, 'cleared');
+});
+
+test('8-10: 最後の大渓谷(64m)は、台の上でジャンプしないと届かない', () => {
+  const noBoost = driveLevel(L10, { rampJump: false });
+  assert.equal(noBoost.reason, 'fall'); assert.ok(noBoost.s > 1980 && noBoost.s < 2080, `大渓谷で s=${noBoost.s.toFixed(0)}`);
+});
+
+test('8-10: プレミアムは、天空の大鉄橋のジャンプ台を、ダッシュの速さで「乗るだけ」で とびこえたときだけ(台の上でジャンプすると、上を通りすぎる)', () => {
+  const tryIt = (policy: Policy) => driveLevel(L10, { until: 1100, ...policy });
+  const ride = tryIt({ rampJump: false });
+  assert.equal(ride.premium, true); assert.equal(ride.phase, 'running');
+  assert.equal(tryIt({}).premium, false, '台の上でジャンプすると、上を通りすぎる');
+  const slow = driveLevel(L10, { from: 810, until: 1100, rampJump: false, dash: false });
+  assert.equal(slow.reason, 'fall', 'ダッシュしないで乗るだけだと、届かない');
 });

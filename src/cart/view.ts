@@ -12,6 +12,8 @@ const RAIL = 0.62; // レールの、まん中からの距離
 const RAIL_TOP = 0.16; // 線路の基準の高さから、レールの上面まで
 const DEER_AHEAD = 3.6; // 鹿は、トロッコのこれだけ前を走る
 const SKY_TOP = 0x3f86d8, SKY_HORIZON = 0xd9e8f1;
+// 夕焼け(区間の dusk が 1 のときの色)
+const DUSK_TOP = 0x2f3a7a, DUSK_HORIZON = 0xffa35c, DUSK_FOG = 0xeaa27c, DUSK_SUN = 0xff9a50, DUSK_HEMI = 0xffb48c, DUSK_FAR = 0x7a5684, DUSK_CLOUD = 0xffb08a;
 
 type Frame = { o: THREE.Vector3; t: THREE.Vector3; r: THREE.Vector3; u: THREE.Vector3; curv: number };
 const newFrame = (): Frame => ({ o: new THREE.Vector3(), t: new THREE.Vector3(), r: new THREE.Vector3(), u: new THREE.Vector3(), curv: 0 });
@@ -141,9 +143,22 @@ export class CartView {
   private disposables: { dispose(): void }[] = [];
   /** 区間ごとにまとめた木・岩(遠い区間は描かない) */
   private chunks: { mesh: THREE.InstancedMesh; from: number; to: number }[] = [];
+  /** 鹿せんべい(くるくる回る)。食べたら消す */
+  private senbeiObj: { id: number; spin: THREE.Object3D }[] = [];
+  /** 後ろから追ってくる大岩・なだれ */
+  private boulder: THREE.Mesh | null = null; private boulderRoll = 0;
+  private avalanche: THREE.Group | null = null;
+  /** 追ってくるものが近い度合い 0〜1(ゆれ・けむり) */
+  private chaseNear = 0;
+  /** 夕焼け: 空・遠くの山・雲の色を変える */
+  private hasDusk = false;
+  private skyMat!: THREE.ShaderMaterial;
+  private farMats: { mat: THREE.MeshBasicMaterial; base: THREE.Color }[] = [];
+  private cloudMat: THREE.SpriteMaterial | null = null;
 
   constructor(host: HTMLElement, track: Track) {
     this.host = host; this.track = track;
+    this.hasDusk = track.segments.some(g => (g.dusk ?? 0) > 0);
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -237,6 +252,7 @@ export class CartView {
     });
     const sky = new THREE.Mesh(new THREE.SphereGeometry(900, 24, 16), mat);
     sky.frustumCulled = false; sky.renderOrder = -10;
+    this.skyMat = mat;
     this.scene.add(sky);
     this.disposables.push(sky.geometry, mat);
     return sky;
@@ -257,12 +273,14 @@ export class CartView {
       const mat = new THREE.MeshBasicMaterial({ color, fog: false, side: THREE.DoubleSide });
       const m = new THREE.Mesh(geo, mat); m.frustumCulled = false; m.renderOrder = -9;
       this.far.add(m); this.disposables.push(geo, mat);
+      this.farMats.push({ mat, base: new THREE.Color(color) });
     };
     ring(860, 40, 150, 0xa9c3d6, 1.3);
     ring(700, 10, 120, 0x8fb0c4, 4.1);
     ring(560, -20, 95, 0x6f96a6, 7.7);
     const cloud = softDot(), cmat = new THREE.SpriteMaterial({ map: cloud, color: 0xffffff, fog: false, transparent: true, opacity: 0.5, depthWrite: false });
     this.disposables.push(cloud, cmat);
+    this.cloudMat = cmat;
     for (let i = 0; i < 16; i++) {
       const a = rnd() * Math.PI * 2, r = 420 + rnd() * 300;
       for (let k = 0; k < 4; k++) {
@@ -782,6 +800,18 @@ export class CartView {
     });
     const rampMat = new THREE.MeshStandardMaterial({ map: rampTex, roughness: 0.8 }), rampGeo = new THREE.BoxGeometry(2.5, 0.16, 3.6);
     this.disposables.push(rampTex, rampMat, rampGeo);
+    // 鹿せんべい: こんがり焼けた丸いせんべい。遠くからも見えるよう、まわりがほんのり光る
+    const senbeiTex = canvasTex(128, 128, c => {
+      c.fillStyle = '#e2b26a'; c.fillRect(0, 0, 128, 128);
+      const r2 = mulberry(77);
+      for (let i = 0; i < 70; i++) { c.fillStyle = r2() < 0.5 ? 'rgba(160,96,40,0.55)' : 'rgba(245,214,150,0.6)'; c.beginPath(); c.arc(r2() * 128, r2() * 128, 2 + r2() * 5, 0, 7); c.fill(); }
+      c.strokeStyle = 'rgba(120,70,30,0.7)'; c.lineWidth = 5; c.beginPath(); c.arc(64, 64, 26, 0, 7); c.stroke();
+      c.fillStyle = 'rgba(120,70,30,0.7)'; c.font = 'bold 34px sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText('鹿', 64, 66);
+    });
+    const senbeiMat = new THREE.MeshStandardMaterial({ map: senbeiTex, roughness: 0.85 }), senbeiEdge = new THREE.MeshStandardMaterial({ color: 0xc58a45, roughness: 0.9 });
+    const senbeiGeo = new THREE.CylinderGeometry(0.62, 0.62, 0.1, 28), glowTex = softDot();
+    const glowMat = new THREE.SpriteMaterial({ map: glowTex, color: 0xffcf7a, transparent: true, opacity: 0.6, depthWrite: false, blending: THREE.AdditiveBlending });
+    this.disposables.push(senbeiTex, senbeiMat, senbeiEdge, senbeiGeo, glowTex, glowMat);
     for (const o of this.track.obstacles) {
       const f = this.frame(o.s, this.f), g = new THREE.Group();
       g.position.copy(f.o);
@@ -803,6 +833,17 @@ export class CartView {
           post.scale.set(0.45, 0.22, 0.45); post.position.set(x, 0.45, 0.25); post.castShadow = true;
           g.add(post);
         }
+      } else if (o.kind === 'senbei') {
+        // 線路の上(横のものは、傾けると届く所)に浮かぶ。表をこちらへ向けて、くるくる回る
+        const spin = new THREE.Group();
+        spin.position.set((o.side ?? 0) * 1.4, 1.3, 0);
+        const disc = new THREE.Mesh(senbeiGeo, [senbeiEdge, senbeiMat, senbeiMat]);
+        disc.rotation.x = Math.PI / 2; disc.castShadow = true;
+        spin.add(disc);
+        const glow = new THREE.Sprite(glowMat);
+        glow.scale.setScalar(2.8); spin.add(glow);
+        g.add(spin);
+        this.senbeiObj.push({ id: o.id, spin });
       } else if (o.kind === 'log') {
         const m = new THREE.Mesh(logGeo, [barkMat, cutMat, cutMat]);
         m.rotation.set(0, 0.12, Math.PI / 2); m.position.set(0, 0.5, 0); m.castShadow = true;
@@ -826,6 +867,27 @@ export class CartView {
       }
       this.scene.add(g);
       this.obstacleObj.set(o.id, g);
+    }
+    // 後ろから追ってくるもの
+    const kinds = new Set(this.track.chases.map(c => c.kind));
+    if (kinds.has('boulder')) {
+      const geo = lumpy(new THREE.IcosahedronGeometry(1, 2), 0.22, rnd), mat = new THREE.MeshStandardMaterial({ color: 0x7a7266, roughness: 0.95, flatShading: true });
+      this.boulder = new THREE.Mesh(geo, mat);
+      this.boulder.scale.setScalar(2.6); this.boulder.castShadow = true; this.boulder.visible = false;
+      this.scene.add(this.boulder); this.disposables.push(geo, mat);
+    }
+    if (kinds.has('avalanche')) {
+      // なだれ: 線路の幅いっぱいの、雪けむりの壁
+      const dot = softDot(), mat = new THREE.SpriteMaterial({ map: dot, color: 0xf4f8ff, transparent: true, opacity: 0.95, depthWrite: false });
+      this.avalanche = new THREE.Group(); this.avalanche.visible = false;
+      const r3 = mulberry(5150);
+      for (let i = 0; i < 26; i++) {
+        const sp = new THREE.Sprite(mat), size = 5 + r3() * 7;
+        sp.position.set((r3() - 0.5) * 22, 1 + r3() * 8, (r3() - 0.5) * 4);
+        sp.scale.setScalar(size); sp.userData = { y: sp.position.y, ph: r3() * 6.28, size };
+        this.avalanche.add(sp);
+      }
+      this.scene.add(this.avalanche); this.disposables.push(dot, mat);
     }
   }
 
@@ -1069,11 +1131,12 @@ export class CartView {
     }
     this.disposables.push(sGeo, sMat, lGeo, lMat, dot, kGeo, kMat);
   }
-  private puff(at: THREE.Vector3, n: number, spread: number): void {
+  private puff(at: THREE.Vector3, n: number, spread: number, color = 0xcbbfa6): void {
     for (const p of this.puffs) {
       if (n <= 0) break;
       if (p.life > 0) continue;
       p.life = 1; p.sp.visible = true;
+      (p.sp.material as THREE.SpriteMaterial).color.setHex(color);
       p.sp.position.copy(at).add(this.v1.set((Math.random() - 0.5) * spread, 0.2 + Math.random() * 0.3, (Math.random() - 0.5) * spread));
       p.v.set((Math.random() - 0.5) * 2, 0.8 + Math.random(), (Math.random() - 0.5) * 2);
       n--;
@@ -1088,6 +1151,41 @@ export class CartView {
       const i = this.sparkData.indexOf(d), p = this.sparks.geometry.getAttribute('position') as THREE.BufferAttribute;
       p.setXYZ(i, at.x, at.y, at.z);
       n--;
+    }
+  }
+
+  /** 後ろから追ってくる大岩・なだれ。近いほど、画面がゆれて、けむりが舞う。 */
+  private updateChaser(run: CartRun, dt: number, f: Frame): void {
+    const ch = run.chaser;
+    // カメラはトロッコの すぐ後ろにあるので、近づいた大岩・なだれの中に入ってしまう。
+    // 走っている間は描かず(音・ゆれ・けむり・距離のメーターで知らせる)、追いつかれたときだけ見せる
+    const d = ch ? run.s - ch.s : 99, show = run.phase === 'failed' || d > 16;
+    if (this.boulder) this.boulder.visible = ch?.kind === 'boulder' && show;
+    if (this.avalanche) this.avalanche.visible = ch?.kind === 'avalanche' && show;
+    if (!ch) { this.chaseNear = Math.max(0, this.chaseNear - dt); return; }
+    const g = this.frame(ch.s, this.f2);
+    this.chaseNear = clamp(1 - (d - 4) / 32, 0, 1);
+    this.m1.makeBasis(g.r, g.u, this.v1.copy(g.t).negate());
+    if (ch.kind === 'boulder' && this.boulder) {
+      // 転がる大岩(半径 2.6m)
+      if (run.phase === 'running') this.boulderRoll += (ch.v * dt) / 2.6;
+      this.boulder.position.copy(g.o).addScaledVector(g.u, 2.4);
+      this.boulder.quaternion.setFromRotationMatrix(this.m1);
+      this.boulder.rotateX(-this.boulderRoll);
+      if (run.phase === 'running' && Math.random() < 0.3) this.puff(this.v3().copy(g.o).addScaledVector(g.t, -2), 1, 3);
+    } else if (this.avalanche) {
+      // なだれ: 雪けむりの壁が、わき上がりながら せまる
+      this.avalanche.position.copy(g.o);
+      this.avalanche.quaternion.setFromRotationMatrix(this.m1);
+      for (const sp of this.avalanche.children) {
+        const u = sp.userData as { y: number; ph: number; size: number };
+        sp.position.y = u.y + Math.sin(this.time * 2.2 + u.ph) * 0.8;
+        sp.scale.setScalar(u.size * (1 + Math.sin(this.time * 1.7 + u.ph) * 0.12));
+      }
+    }
+    // 近いときは、トロッコのまわりに けむり(雪けむり)
+    if (run.phase === 'running' && this.chaseNear > 0.3 && Math.random() < this.chaseNear * 0.35) {
+      this.puff(this.v3().copy(f.o).addScaledVector(f.t, -3).addScaledVector(f.r, (Math.random() - 0.5) * 6), 1, 2, ch.kind === 'avalanche' ? 0xf4f8ff : 0xcbbfa6);
     }
   }
 
@@ -1181,6 +1279,18 @@ export class CartView {
     }
     for (const m of Object.values(this.coinMesh)) m.instanceMatrix.needsUpdate = true;
     for (const [id, obj] of this.obstacleObj) if (run.hitIds.has(id) && obj.visible) { obj.visible = false; this.puff(obj.position, 6, 2); }
+    // 鹿せんべい: くるくる回る。食べたら消えて、かけらが散る
+    for (const sb of this.senbeiObj) {
+      const g = this.obstacleObj.get(sb.id)!;
+      if (run.eaten.has(sb.id)) {
+        if (g.visible) { g.visible = false; this.puff(sb.spin.getWorldPosition(this.v1), 4, 1.2, 0xe2b26a); }
+      } else {
+        if (!g.visible) g.visible = true; // 最初から やりなおしたとき
+        sb.spin.rotation.y = this.time * 2.6 + sb.id;
+        sb.spin.position.y = 1.3 + Math.sin(this.time * 3 + sb.id) * 0.08;
+      }
+    }
+    this.updateChaser(run, dt, f);
     this.updateCollapse(run, dt);
 
     // ---- 効果 ----
@@ -1245,8 +1355,21 @@ export class CartView {
 
     // トンネルの中は暗く、霧も近く。トロッコの明かりをともす
     const dark = this.darkAt(run.s - 6);
-    this.hemi.intensity = 0.85 * (1 - 0.82 * dark);
-    this.sun.intensity = 2.4 * (1 - 0.95 * dark);
+    // 夕焼け: 下るにつれて、空・霧・光が夕方の色になる
+    const dk = this.hasDusk ? tr.duskAt(run.s) : 0;
+    if (this.hasDusk) {
+      const u = this.skyMat.uniforms;
+      (u.top.value as THREE.Color).setHex(SKY_TOP).lerp(this.c1.setHex(DUSK_TOP), dk);
+      (u.horizon.value as THREE.Color).setHex(SKY_HORIZON).lerp(this.c1.setHex(DUSK_HORIZON), dk);
+      (u.sunDir.value as THREE.Vector3).set(-0.45, 0.62 - 0.5 * dk, -0.64).normalize();
+      this.fogDay.setHex(SKY_HORIZON).lerp(this.c1.setHex(DUSK_FOG), dk);
+      for (const m of this.farMats) m.mat.color.copy(m.base).lerp(this.c1.setHex(DUSK_FAR), dk * 0.75);
+      this.cloudMat?.color.setHex(0xffffff).lerp(this.c1.setHex(DUSK_CLOUD), dk);
+      this.sun.color.setHex(0xfff1d8).lerp(this.c1.setHex(DUSK_SUN), dk);
+      this.hemi.color.setHex(0xd6e9ff).lerp(this.c1.setHex(DUSK_HEMI), dk);
+    }
+    this.hemi.intensity = 0.85 * (1 - 0.82 * dark) * (1 - 0.15 * dk);
+    this.sun.intensity = 2.4 * (1 - 0.95 * dark) * (1 - 0.25 * dk);
     this.scene.environmentIntensity = 0.45 * (1 - 0.65 * dark);
     // 霧: 濃いほど近くしか見えない。空と遠くの山は「もや」で白くかすむ
     const fk = this.track.fogAt(run.s + 6);
@@ -1272,10 +1395,15 @@ export class CartView {
     const wantPos = this.v1.copy(back.o).addScaledVector(back.u, 3.9 + lift).addScaledVector(back.r, -run.lean * 0.5);
     const wantLook = this.v3().copy(ahead.o).addScaledVector(ahead.u, 1.3 + Math.max(0, run.height) * 0.4);
     if (failed && run.reason !== 'broken') wantLook.copy(this.cart.position);
+    // 大岩・なだれに追いつかれたときは、後ろの高い所から見おろす(鹿とSpraは後ろ姿の絵なので、前からは見ない)
+    if (failed && run.reason === 'caught') {
+      const fr = this.frame(run.s - 15, this.f3);
+      wantPos.copy(fr.o).addScaledVector(fr.u, 11).addScaledVector(fr.r, 2.5);
+    }
     if (!this.camReady) { this.camPos.copy(wantPos); this.camLook.copy(wantLook); this.camReady = true; }
     const k = 1 - Math.exp(-dt * (failed ? 3 : 9));
     this.camPos.lerp(wantPos, k); this.camLook.lerp(wantLook, 1 - Math.exp(-dt * 7));
-    const sh = this.shake + (run.dashT > 0 ? 0.06 : 0) + speed * 0.018 + run.tilt * 0.08;
+    const sh = this.shake + (run.dashT > 0 ? 0.06 : 0) + speed * 0.018 + run.tilt * 0.08 + this.chaseNear * 0.14;
     this.camera.position.copy(this.camPos).add(this.v1.set((Math.random() - 0.5) * sh, (Math.random() - 0.5) * sh, (Math.random() - 0.5) * sh).multiplyScalar(0.5));
     this.camera.up.set(0, 1, 0);
     this.camera.lookAt(this.camLook);
@@ -1287,7 +1415,7 @@ export class CartView {
     this.sky.position.copy(this.camera.position);
     this.far.position.set(this.camera.position.x, this.camera.position.y - 55, this.camera.position.z);
     this.sun.target.position.copy(pos);
-    this.sun.position.copy(pos).add(this.v1.set(-34, 62, -30));
+    this.sun.position.copy(pos).add(this.v1.set(-34, 62 - 30 * dk, -30));
 
     this.renderer.render(this.scene, this.camera);
 

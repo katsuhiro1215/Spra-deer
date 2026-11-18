@@ -58,6 +58,13 @@ export function CartShell() {
             <small>km/h</small>
             <span data-ks="seg" />
           </div>
+          <div className="ct-chase" data-ks="chase" hidden>
+            <b data-ks="chase-name">大岩</b>
+            <span className="ct-chase-bar">
+              <i data-ks="chase-bar" />
+            </span>
+            <small data-ks="chase-m" />
+          </div>
           <div className="ct-alert" data-ks="alert" />
           <div className="ks-toast ct-toast" data-ks="toast" />
         </div>

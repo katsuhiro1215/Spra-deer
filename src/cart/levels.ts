@@ -604,11 +604,183 @@ const LEVEL_8_8: CartLevel = {
   },
 };
 
-export const CART_LEVELS: CartLevel[] = [LEVEL_8_1, LEVEL_8_2, LEVEL_8_3, LEVEL_8_4, LEVEL_8_5, LEVEL_8_6, LEVEL_8_7, LEVEL_8_8];
+/**
+ * 8-9 鹿の全力疾走(約1900m)。テーマは「後ろから大岩！ 鹿せんべいで、全力で にげる」。
+ * 8-4 と反対に、上り坂が主役。上り坂ではトロッコがおそくなり、後ろから転がってくる大岩が追いついてくる。
+ * 鹿せんべい坂(駅を出てすぐ大岩。せんべいを食べて全力疾走) → にげろ！(下り) → 大岩の谷(大岩は谷へ落ちる)
+ * → つづら折り(上りのカーブと枝) → 尾根の急降下と急カーブ → ふたたび大岩 → 上りの谷(せんべいで速さをつけて跳ぶ)
+ * → 大岩の落ちる谷 → 鹿の全力疾走(せんべいを続けて食べる) → 鹿のこぶ → 全力の大ジャンプ(28m)
+ * プレミアム: 鹿のこぶの向こうの空。せんべいを続けて食べて全速になり、こぶのてっぺんでジャンプしたときだけ届く。
+ */
+const LEVEL_8_9: CartLevel = {
+  id: '8-9', title: '鹿の全力疾走', summary: '後ろから 大岩！ せんべいで 全力疾走',
+  intro: 'ゴゴゴ… 何の音？ 鹿が 耳を ぴんと 立てた！',
+  goalName: '鹿の里の駅',
+  notes: [
+    { s: 85, text: '鹿せんべいを 食べると、鹿が 全力で 走る！ 横のは 体を かたむけて 取ろう' },
+    { s: 545, text: 'つづら折りの 上り坂。枝に 気をつけて' },
+    { s: 940, text: 'また 大岩だ！ 上りの 切れ目は、せんべいで 速さを つけて とびこえろ' },
+    { s: 1385, text: '鹿の 全力疾走！ せんべいを 続けて 食べよう' },
+    { s: 1540, text: 'こぶの てっぺんで ジャンプすると、遠くまで とべるよ' },
+  ],
+  track: {
+    // 区間: せんべい坂 90-290 / にげろ 315-415 / 大岩の谷 415-505 / つづら折り 555-695 / 急降下 695-825 / 急カーブ 825-895
+    //       / 大岩の上り坂 1005-1145 / 上りの谷 1145-1215 / 大岩の落ちる谷 1285-1365 / 全力疾走 1395-1555 / こぶ 1555-1577
+    //       / こぶの向こう 1577-1657 / 大ジャンプ 1697-1797 / ゴール 1897
+    segments: [
+      { len: 60, slope: 0, terrain: 'forest', name: '谷の駅' },
+      { len: 30, slope: 2, terrain: 'forest' },
+      { len: 200, slope: 6, terrain: 'hillR', name: '鹿せんべい坂' },
+      { len: 25, slope: 1, terrain: 'ridge', name: '峠' },
+      { len: 100, slope: -8, terrain: 'ridge', name: 'にげろ！' },
+      { len: 90, slope: -1, terrain: 'canyon', name: '大岩の谷' },
+      { len: 50, slope: -2, terrain: 'forest' },
+      { len: 70, slope: 3, turn: 60, terrain: 'cut', name: 'つづら折り' },
+      { len: 70, slope: 3, turn: -60, terrain: 'cut' },
+      { len: 130, slope: -9, terrain: 'hillL', name: '尾根の急降下' },
+      { len: 70, slope: -2, turn: -95, terrain: 'cut', name: '尾根の急カーブ' },
+      { len: 50, slope: -1, terrain: 'forest' },
+      { len: 60, slope: -2, terrain: 'forest', name: 'ふたたび 大岩' },
+      { len: 140, slope: 6, terrain: 'hillL', name: '大岩の上り坂' },
+      { len: 70, slope: 3, terrain: 'canyon', name: '上りの谷' },
+      { len: 70, slope: -7, terrain: 'ridge' },
+      { len: 80, slope: -1, terrain: 'canyon', name: '大岩の落ちる谷' },
+      { len: 30, slope: -2, terrain: 'forest' },
+      { len: 160, slope: -1.5, terrain: 'ridge', name: '鹿の全力疾走' },
+      { len: 22, slope: 8, terrain: 'ridge', name: '鹿のこぶ' },
+      { len: 80, slope: -14, terrain: 'ridge', name: 'こぶの向こう' },
+      { len: 40, slope: -2, terrain: 'ridge' },
+      { len: 180, slope: -1, terrain: 'canyon', name: '全力の 二段ジャンプ' },
+      { len: 100, slope: -2, terrain: 'forest', name: '鹿の里の駅へ' },
+    ],
+    gaps: [{ from: 450, to: 460 }, { from: 1180, to: 1189 }, { from: 1315, to: 1325 }, { from: 1727, to: 1759 }, { from: 1810, to: 1842 }],
+    chases: [
+      { from: 70, to: 450, v: 19, behind: 60, kind: 'boulder' },
+      { from: 955, to: 1315, v: 20, behind: 45, kind: 'boulder' },
+    ],
+    obstacles: [
+      { s: 95, kind: 'senbei' }, { s: 165, kind: 'senbei', side: -1 }, { s: 235, kind: 'senbei', side: 1 },
+      { s: 370, kind: 'rock' },
+      { s: 590, kind: 'branch', side: -1 }, { s: 660, kind: 'branch', side: 1 },
+      { s: 760, kind: 'rock' },
+      { s: 985, kind: 'rock' },
+      { s: 1035, kind: 'senbei', side: -1 }, { s: 1100, kind: 'senbei' }, { s: 1160, kind: 'senbei' },
+      { s: 1405, kind: 'senbei' }, { s: 1435, kind: 'senbei', side: -1 }, { s: 1465, kind: 'senbei', side: 1 }, { s: 1495, kind: 'senbei', side: -1 }, { s: 1525, kind: 'senbei' },
+      // 二段ジャンプの間のせんべい(1つ目でダッシュを使うと、2つ目までに待ち時間が終わらない)
+      { s: 1700, kind: 'senbei' }, { s: 1785, kind: 'senbei' },
+      { s: 1930, kind: 'log' },
+    ],
+    coins: [
+      ...line(20, 85, 9), ...line(90, 100, 10), ...line(115, 165, 10), ...line(170, 180, 5, -1), ...line(190, 235, 9), ...line(240, 250, 5, 1), ...line(260, 310, 10),
+      ...line(325, 360, 9), ...arc(364, 376, 3, 2), ...line(385, 410, 9), ...line(420, 442, 8), ...arc(446, 464, 3, 2.4, 'gold'), ...line(470, 500, 10), ...line(510, 550, 10),
+      ...line(562, 580, 9, 1), ...line(595, 620, 9, 1), ...line(635, 652, 9, -1), ...line(665, 690, 9, -1),
+      ...line(705, 750, 11), ...arc(754, 766, 3, 2), ...line(775, 820, 11), ...line(835, 885, 10, -1),
+      ...line(900, 970, 10), ...arc(979, 991, 3, 2), ...line(998, 1020, 8),
+      ...line(1030, 1040, 5, -1), ...line(1048, 1172, 9), ...arc(1176, 1193, 3, 2, 'gold'), ...line(1198, 1210, 6),
+      ...line(1220, 1280, 10), ...line(1290, 1308, 9), ...arc(1311, 1329, 3, 2.4), ...line(1335, 1390, 9),
+      ...line(1410, 1422, 6), ...line(1430, 1440, 5, -1), ...line(1446, 1452, 6), ...line(1460, 1470, 5, 1), ...line(1476, 1482, 6), ...line(1490, 1500, 5, -1), ...line(1505, 1550, 9),
+      ...line(1558, 1570, 6),
+      // プレミアム: こぶの向こうの空(全速で、こぶのてっぺんでジャンプしたときだけ届く)
+      { s: 1614, side: 0, h: 10.6, kind: 'premium' },
+      ...line(1585, 1655, 10), ...line(1662, 1720, 9), ...arc(1724, 1762, 5, 2.6, 'gold'), ...line(1768, 1802, 8), ...arc(1807, 1845, 5, 2.6, 'gold'),
+      ...line(1852, 1920, 10), ...arc(1924, 1936, 3, 2), ...line(1942, 1972, 9),
+    ],
+    checkpoints: [{ s: 530, name: 'つり橋の小屋' }, { s: 920, name: '炭焼き小屋' }],
+  },
+};
+
+/**
+ * 8-10 奈良山脈 大滑降(約2240m)。WORLD 8 の さいご。山頂の雪から、夕日の奈良の駅まで、山脈をまるごと すべりおりる。
+ * なだれの急斜面(なだれが追ってくる) → 雪の大カーブ(雪でブレーキがききにくい) → なだれよけトンネル(逃げこむ)
+ * → 天空の大鉄橋(横風・崩れる橋・ジャンプ台) → 紅葉のスラローム → 大こぶの先の急カーブ → 霧の谷(ずれた線路)
+ * → 最後の大滑降 → 鹿の全力疾走(せんべい) → 奈良の大渓谷(64m。ダッシュ+台の上でジャンプ)
+ * 下るにつれて、空が夕焼けになっていく。
+ * プレミアム: 奈良の大渓谷の向こうの空。せんべいを食べて全速になり、台の上でジャンプしたときだけ届く。
+ */
+const LEVEL_8_10: CartLevel = {
+  id: '8-10', title: '奈良山脈 大滑降', summary: '山頂の雪から、夕日の奈良まで',
+  intro: '奈良山脈の 頂上だ！ ふもとの 奈良の駅まで、一気に すべりおりよう！',
+  goalName: '夕日の奈良の駅',
+  notes: [
+    { s: 430, text: '雪の大カーブ！ 雪で ブレーキが ききにくい。早めに おとそう' },
+    { s: 590, text: 'トンネルへ 逃げこめ！' },
+    { s: 850, text: '古い鉄橋だ… 崩れたら ジャンプ！ 横風にも 気をつけて' },
+    { s: 960, text: 'ジャンプ台！ 台の上で ジャンプ' },
+    { s: 1290, text: 'こぶの先は 急カーブ！ ブレーキ' },
+    { s: 1485, text: '霧の谷！ ずれた線路は、空中で 右へ' },
+    { s: 1785, text: '最後の 全力疾走！ せんべいを 食べて、台の上で ジャンプ！' },
+  ],
+  track: {
+    vMax: 36,
+    // 区間: なだれ 110-614 / 雪のカーブ 454-534 / トンネル 614-794 / 天空の大鉄橋 794-1074 / スラローム 1144-1304 / 大こぶ 1304-1328
+    //       / 夕日の急カーブ 1368-1438 / 霧の谷 1488-1588 / 最後の大滑降 1658-1798 / 全力疾走 1798-1958 / 奈良の大渓谷 1958-2118 / ゴール 2238
+    segments: [
+      { len: 70, slope: -2, terrain: 'ridge', snow: true, dusk: 0, name: '奈良山脈の 頂上駅' },
+      { len: 200, slope: -12, terrain: 'hillL', snow: true, dusk: 0, name: 'なだれの急斜面' },
+      { len: 24, slope: 6, terrain: 'ridge', snow: true, dusk: 0, name: 'なだれの こぶ' },
+      { len: 160, slope: -13, terrain: 'ridge', snow: true, dusk: 0.05, name: 'まっさかさま' },
+      { len: 80, slope: -3, turn: 70, terrain: 'cut', snow: true, dusk: 0.1, name: '雪の大カーブ' },
+      { len: 80, slope: -8, terrain: 'hillR', snow: true, dusk: 0.1 },
+      { len: 150, slope: -4, turn: -40, terrain: 'tunnel', dusk: 0.15, name: 'なだれよけトンネル' },
+      { len: 30, slope: -3, terrain: 'tunnel', dusk: 0.2 },
+      { len: 280, slope: -2, terrain: 'gorge', wind: -10, dusk: 0.3, name: '天空の大鉄橋' },
+      { len: 70, slope: -4, turn: 50, terrain: 'hillR', dusk: 0.4 },
+      { len: 160, slope: -9, terrain: 'forest', dusk: 0.5, name: '紅葉のスラローム' },
+      { len: 24, slope: 6, terrain: 'ridge', dusk: 0.55, name: '大こぶ' },
+      { len: 40, slope: -10, terrain: 'ridge', dusk: 0.55 },
+      { len: 70, slope: -2, turn: -90, terrain: 'cut', dusk: 0.6, name: '夕日の急カーブ' },
+      { len: 50, slope: -2, terrain: 'forest', dusk: 0.62 },
+      { len: 100, slope: -1, terrain: 'canyon', fog: 0.8, dusk: 0.65, name: '霧の谷' },
+      { len: 70, slope: -5, turn: 60, terrain: 'hillL', fog: 0.6, dusk: 0.7 },
+      { len: 140, slope: -10, terrain: 'ridge', dusk: 0.8, name: '最後の大滑降' },
+      { len: 160, slope: -2, terrain: 'ridge', dusk: 0.9, name: '鹿の全力疾走' },
+      { len: 160, slope: -1, terrain: 'gorge', dusk: 1, name: '奈良の大渓谷' },
+      { len: 120, slope: -3, terrain: 'forest', dusk: 1, name: '夕日の奈良の駅へ' },
+    ],
+    gaps: [
+      { from: 880, to: 889, collapse: true }, { from: 995, to: 1031 },
+      { from: 1525, to: 1535, shift: 2.4 },
+      { from: 1980, to: 2044 },
+    ],
+    chases: [{ from: 110, to: 614, v: 33, behind: 40, kind: 'avalanche' }],
+    obstacles: [
+      { s: 160, kind: 'senbei' },
+      { s: 200, kind: 'rock' },
+      { s: 778, kind: 'rock' },
+      { s: 990, kind: 'ramp' },
+      { s: 1180, kind: 'branch', side: 1 }, { s: 1210, kind: 'branch', side: -1 }, { s: 1240, kind: 'branch', side: 1 }, { s: 1270, kind: 'branch', side: -1 },
+      { s: 1810, kind: 'senbei' }, { s: 1840, kind: 'senbei', side: -1 }, { s: 1870, kind: 'senbei', side: 1 }, { s: 1900, kind: 'senbei', side: -1 }, { s: 1930, kind: 'senbei' },
+      { s: 1975, kind: 'ramp' },
+      { s: 2190, kind: 'log' },
+    ],
+    coins: [
+      ...line(20, 65, 9), ...line(80, 190, 12), ...arc(194, 206, 3, 2), ...line(215, 265, 12), ...line(272, 284, 6),
+      ...line(300, 450, 12), ...line(460, 530, 10, 1), ...line(540, 610, 10),
+      ...line(620, 760, 10, -1), ...line(766, 772, 6), ...arc(772, 784, 3, 2), ...line(790, 792, 2),
+      // 天空の大鉄橋: 左へ押す風。風上(右)にコイン
+      ...line(800, 870, 10, 1), ...arc(876, 893, 3, 2, 'gold'), ...line(900, 980, 10, 1),
+      // ジャンプ台の道すじ(風上へ傾けたまま飛ぶので、右がわ)
+      ...air([[1000, 6.0], [1010, 8.0], [1020, 8.8, 'gold'], [1030, 7.9], [1040, 5.6]], 1),
+      // プレミアム: 台の上でジャンプした道すじの、ずっと下。ダッシュの速さで、台に乗るだけで とびこえたときだけ通る
+      { s: 1012, side: 1, h: 4.4, kind: 'premium' },
+      ...line(1040, 1070, 10, 1),
+      ...line(1080, 1140, 10, 1), ...line(1150, 1172, 8),
+      ...line(1176, 1184, 4, -1), ...line(1206, 1214, 4, 1), ...line(1236, 1244, 4, -1), ...line(1266, 1274, 4, 1), ...line(1285, 1300, 8),
+      ...line(1306, 1326, 10), ...line(1332, 1365, 11), ...line(1375, 1435, 10, -1), ...line(1442, 1482, 10),
+      ...line(1492, 1518, 9), ...air([[1529, 2.4], [1535, 2.9], [1541, 2.6]], 1), ...line(1550, 1585, 9),
+      ...line(1595, 1650, 10, 1), ...line(1665, 1795, 13),
+      ...line(1800, 1806, 6), ...line(1835, 1845, 5, -1), ...line(1865, 1875, 5, 1), ...line(1895, 1905, 5, -1), ...line(1915, 1925, 10), ...line(1940, 1970, 10),
+      // 奈良の大渓谷: 台の上でジャンプした道すじ
+      ...air([[1990, 7.0], [2000, 9.0], [2010, 9.6, 'gold'], [2020, 9.0], [2030, 7.0], [2040, 4.6, 'gold']]),
+      ...line(2055, 2115, 10), ...line(2125, 2180, 10), ...arc(2184, 2196, 3, 2), ...line(2205, 2235, 10),
+    ],
+    checkpoints: [{ s: 810, name: 'トンネルの出口' }, { s: 1460, name: '夕日の見はり台' }],
+  },
+};
+
+export const CART_LEVELS: CartLevel[] = [LEVEL_8_1, LEVEL_8_2, LEVEL_8_3, LEVEL_8_4, LEVEL_8_5, LEVEL_8_6, LEVEL_8_7, LEVEL_8_8, LEVEL_8_9, LEVEL_8_10];
 export const cartById = (id: string): CartLevel | undefined => CART_LEVELS.find(l => l.id === id);
 export const trackOf = (level: CartLevel): Track => new Track(level.track);
 
 /** これから作る面(名前だけ。面えらびに「準備中」で出す)。 */
-export const CART_PLANNED: { id: string; title: string }[] = [
-{ id: '8-9', title: '鹿の全力疾走' }, { id: '8-10', title: '奈良山脈 大滑降' },
-];
+export const CART_PLANNED: { id: string; title: string }[] = [];

@@ -11,6 +11,8 @@ export type Terrain = 'forest' | 'hillL' | 'hillR' | 'cut' | 'ridge' | 'canyon' 
 export type Segment = {
   len: number; slope?: number; turn?: number; terrain?: Terrain; name?: string;
   wind?: number; snow?: boolean; fog?: number; cloudSea?: boolean;
+  /** 夕焼けの具合 0〜1(空・霧・光が夕方の色になる) */
+  dusk?: number;
 };
 /**
  * 線路の切れ目(from〜to に線路が無い)。
@@ -20,13 +22,20 @@ export type Segment = {
 export type Gap = { from: number; to: number; shift?: number; drop?: number; collapse?: boolean };
 /**
  * rock=落石・log=倒木(跳んで越える)、branch=横から張り出した枝(side の反対へ体を傾けてよける)、
- * ramp=ジャンプ台(乗ると高く飛ぶ。台の上でジャンプすると、もっと高く遠くへ。ぶつかることはない)
+ * ramp=ジャンプ台(乗ると高く飛ぶ。台の上でジャンプすると、もっと高く遠くへ。ぶつかることはない)、
+ * senbei=鹿せんべい(通ると鹿が食べて、すぐ全力で走る。side があれば、その向きへ体を傾けて取る)
  */
-export type ObstacleKind = 'rock' | 'log' | 'branch' | 'ramp';
+export type ObstacleKind = 'rock' | 'log' | 'branch' | 'ramp' | 'senbei';
 export type Obstacle = { id: number; s: number; kind: ObstacleKind; side?: -1 | 1 };
 /** コイン。side=-1 左 / 0 まん中 / 1 右(横は体を傾けて取る)、h=線路からの高さ。kind 無しはシルバー。 */
 export type Coin = { id: number; s: number; side: -1 | 0 | 1; h: number; kind?: 'gold' | 'premium' };
 export type Checkpoint = { s: number; name: string };
+/**
+ * 後ろから追ってくるもの(boulder=転がる大岩、avalanche=なだれ)。
+ * トロッコが from を通ると、behind メートル後ろにあらわれ、v(m/s)で追ってくる(坂でも速さは変わらない)。
+ * to(谷のふち・トンネルの入口)まで来るか、トロッコが to をこえて着地すると、ふりきれる(大岩は谷へ落ち、なだれは止まる)。
+ */
+export type Chase = { from: number; to: number; v: number; behind: number; kind: 'boulder' | 'avalanche' };
 export type TrackDef = {
   segments: Segment[];
   gaps: Gap[];
@@ -37,6 +46,8 @@ export type TrackDef = {
   vMax?: number;
   /** 灯籠の門(線路の両がわに立つ、光る灯籠。霧の中でも見える目印) */
   lanternGates?: number[];
+  /** 後ろから追ってくるもの(s の順) */
+  chases?: Chase[];
 };
 
 const DEG = Math.PI / 180;
@@ -83,11 +94,12 @@ export class Track {
   checkpoints: Checkpoint[];
   vMax?: number;
   lanternGates: number[];
+  chases: Chase[];
   segments: (Segment & { from: number; to: number })[] = [];
   private px: Float64Array; private py: Float64Array; private pz: Float64Array;
   private hd: Float64Array; private pt: Float64Array; private cv: Float64Array;
   private tl: Float64Array; private tr: Float64Array; private tc: Float64Array; private td: Float64Array;
-  private wd: Float64Array; private sn: Float64Array; private tn: Float64Array; private fg: Float64Array;
+  private wd: Float64Array; private sn: Float64Array; private tn: Float64Array; private fg: Float64Array; private dk: Float64Array;
 
   constructor(def: TrackDef) {
     let at = 0;
@@ -97,7 +109,7 @@ export class Track {
     const n = this.total + 1;
     const pitch = new Float64Array(n), curv = new Float64Array(n);
     const tl = new Float64Array(n), tr = new Float64Array(n), tc = new Float64Array(n), td = new Float64Array(n);
-    const wd = new Float64Array(n), sn = new Float64Array(n), tn = new Float64Array(n), fg = new Float64Array(n);
+    const wd = new Float64Array(n), sn = new Float64Array(n), tn = new Float64Array(n), fg = new Float64Array(n), dk = new Float64Array(n);
     for (let i = 0; i < n; i++) {
       const g = this.segments.find(x => i < x.to);
       // ゴールのあとは、平らな森の中をまっすぐ
@@ -106,12 +118,13 @@ export class Track {
       curv[i] = g ? ((g.turn ?? 0) * DEG) / g.len : 0;
       tl[i] = t.l; tr[i] = t.r; tc[i] = t.cap; td[i] = t.depth;
       wd[i] = g?.wind ?? 0; sn[i] = g?.snow ? 1 : 0; tn[i] = g?.terrain === 'tunnel' ? 1 : 0; fg[i] = g?.fog ?? 0;
+      dk[i] = g?.dusk ?? this.segments[this.segments.length - 1].dusk ?? 0;
     }
     this.pt = smooth(pitch, 9); this.cv = smooth(curv, 7);
     this.tl = smooth(tl, 16); this.tr = smooth(tr, 16); this.tc = smooth(tc, 16);
     // 深い谷は、ふちを少し広めになじませる(橋の手前で、がけが急に落ちないように)
     this.td = smooth(td, 9);
-    this.wd = smooth(wd, 12); this.sn = smooth(sn, 30); this.tn = tn; this.fg = smooth(fg, 25);
+    this.wd = smooth(wd, 12); this.sn = smooth(sn, 30); this.tn = tn; this.fg = smooth(fg, 25); this.dk = smooth(dk, 60);
     // ずれた・沈んだ切れ目: 切れ目の中(線路の無い所)で、横と下へ少しずつ動かす
     const lat = new Float64Array(n), sink = new Float64Array(n);
     for (const g of def.gaps) {
@@ -132,6 +145,7 @@ export class Track {
     this.checkpoints = (def.checkpoints ?? []).map(c => ({ ...c }));
     this.vMax = def.vMax;
     this.lanternGates = def.lanternGates ?? [];
+    this.chases = (def.chases ?? []).map(c => ({ ...c })).sort((a, b) => a.from - b.from);
   }
 
   private lerp(a: Float64Array, s: number): number {
@@ -155,6 +169,8 @@ export class Track {
   snowAt(s: number): number { return this.lerp(this.sn, s); }
   /** 霧の濃さ 0〜1 */
   fogAt(s: number): number { return this.lerp(this.fg, s); }
+  /** 夕焼けの具合 0〜1 */
+  duskAt(s: number): number { return this.lerp(this.dk, s); }
   /** 霧の中の急カーブ(灯籠と鈴で知らせる)。[区間の始まり, 終わり, 曲がる向き(+1 右)] */
   fogCurves(): [number, number, number][] {
     return this.segments.filter(g => Math.abs(g.turn ?? 0) >= 40 && this.fogAt((g.from + g.to) / 2) > 0.3).map(g => [g.from, g.to, Math.sign(g.turn!)]);

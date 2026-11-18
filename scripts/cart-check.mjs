@@ -11,6 +11,8 @@ import { homedir } from 'node:os';
 const output = 'test-results';
 await mkdir(output, { recursive: true });
 const base = (process.argv[2] ?? 'http://127.0.0.1:5180').replace(/\/$/, '');
+// CART_ONLY=8-9,8-10 のように指定すると、その面だけを走らせる(1〜3 と小さい画面の確認は省く)
+const only = process.env.CART_ONLY?.split(',');
 const cached = `${homedir()}/.cache/ms-playwright/chromium-1248/chrome-linux-arm64/chrome`;
 const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || (existsSync(cached) ? cached : undefined);
 const browser = await chromium.launch({ executablePath, headless: true, args: ['--no-sandbox', '--enable-unsafe-swiftshader'] });
@@ -44,8 +46,13 @@ const installBot = () => {
       const branch = track.obstacles.find(o => o.kind === 'branch' && o.s > s && o.s - s < Math.max(14, v * 0.7));
       const w = track.windAt(s + v * 0.3);
       if (Math.abs(w) > 0.5) { const need = v * v * track.at(s + v * 0.3).curv - w; input.right = need > 0; input.left = need < 0; }
+      // 横の鹿せんべいは、その向きへ傾けて取る(枝が先)
+      const sb = track.obstacles.find(o => o.kind === 'senbei' && o.side && o.s > s && o.s - s < Math.max(8, v * 0.5));
+      if (sb) { input.right = sb.side === 1; input.left = sb.side === -1; }
       if (branch) { input.left = branch.side === 1; input.right = branch.side === -1; }
       if (!run.air && run.dashCool <= 0 && v < 12 && track.at(s).pitch > 0.05) input.dash = true;
+      // 大岩・なだれが近いときは、ダッシュで にげる
+      if (run.chaser && !run.air && run.dashCool <= 0 && s - run.chaser.s < 40) input.dash = true;
       if (run.air) {
         const sg = track.shiftGapNear(s);
         if (sg) { input.right = sg.shift > 0; input.left = sg.shift < 0; }
@@ -74,13 +81,14 @@ try {
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1, hasTouch: true });
   let page = await context.newPage(); watch(page);
 
+  if (!only) {
   // 1) ホームから WORLD 8 へ
   await page.goto(`${base}/`);
   await page.waitForFunction(() => window.__DEER__?.mode === 'title');
   await page.locator('[data-action="home"]').click();
   await page.locator('[data-action="world"][data-stage="8"]').click();
   await page.screenshot({ path: `${output}/cart-01-select.png` });
-  assert.equal(await page.locator('.level-card').count(), 10, 'WORLD 8 は10枠(8-1 と、準備中の9面)');
+  assert.equal(await page.locator('.level-card').count(), 10, 'WORLD 8 は10面');
   await page.locator('[data-level="8-1"]').click();
   await page.waitForURL(/\/cart\/\?level=8-1/);
   await page.waitForFunction(() => !!window.__cart);
@@ -135,10 +143,11 @@ try {
   });
   console.log(`重さ(いちばん重い所 s=${perf.at}): 描画命令 ${perf.calls} / 三角形 ${perf.triangles}`);
   assert.ok(perf.triangles < 260000, '三角形が多すぎる');
+  }
 
   // 5) 8-2・8-3 も、自動操作でゴールまで走れる(8-2 は 8-1 の「次の面へ」から)
-  for (const [id, shots] of [['8-2', [[250, 's-curve'], [590, 'hairpin'], [890, 'branch-curve'], [1250, 'three-curves']]], ['8-3', [[475, 'double-gap'], [725, 'uphill-gap'], [1145, 'rock-gap'], [1565, 'big-gap']]], ['8-4', [[150, 'steep'], [290, 'hump'], [520, 'fast-s'], [800, 'hump-curve'], [1190, 'long-jump'], [1330, 'slalom'], [1565, 'big-hump'], [1700, 'brake-zone']]], ['8-5', [[250, 'rattle-bridge'], [494, 'shifted'], [796, 'sunken'], [990, 'collapse'], [1220, 'shift-sunk'], [1530, 'collapse-2']]], ['8-6', [[150, 'climb'], [320, 'tunnel'], [495, 'tunnel-gap'], [760, 'snow'], [1100, 'sky-bridge'], [1400, 'dark-curve'], [1750, 'wind-bridge']]], ['8-7', [[232, 'ramp'], [440, 'islands'], [575, 'forest-ramp'], [820, 'big-ramp'], [1200, 'steps'], [1445, 'zigzag'], [1665, 'sky']]], ['8-8', [[250, 'fog-curve'], [485, 'lantern-gate'], [780, 'cloud-sea'], [1060, 'fog-sharp'], [1205, 'fog-bridge'], [1430, 'fog-shift']]]]) {
-    if (id === '8-2') {
+  for (const [id, shots] of [['8-2', [[250, 's-curve'], [590, 'hairpin'], [890, 'branch-curve'], [1250, 'three-curves']]], ['8-3', [[475, 'double-gap'], [725, 'uphill-gap'], [1145, 'rock-gap'], [1565, 'big-gap']]], ['8-4', [[150, 'steep'], [290, 'hump'], [520, 'fast-s'], [800, 'hump-curve'], [1190, 'long-jump'], [1330, 'slalom'], [1565, 'big-hump'], [1700, 'brake-zone']]], ['8-5', [[250, 'rattle-bridge'], [494, 'shifted'], [796, 'sunken'], [990, 'collapse'], [1220, 'shift-sunk'], [1530, 'collapse-2']]], ['8-6', [[150, 'climb'], [320, 'tunnel'], [495, 'tunnel-gap'], [760, 'snow'], [1100, 'sky-bridge'], [1400, 'dark-curve'], [1750, 'wind-bridge']]], ['8-7', [[232, 'ramp'], [440, 'islands'], [575, 'forest-ramp'], [820, 'big-ramp'], [1200, 'steps'], [1445, 'zigzag'], [1665, 'sky']]], ['8-8', [[250, 'fog-curve'], [485, 'lantern-gate'], [780, 'cloud-sea'], [1060, 'fog-sharp'], [1205, 'fog-bridge'], [1430, 'fog-shift']]], ['8-9', [[150, 'senbei-hill'], [455, 'boulder-gap'], [1100, 'boulder-2'], [1185, 'uphill-gap'], [1470, 'sprint'], [1570, 'hump'], [1735, 'double-jump']]], ['8-10', [[180, 'avalanche'], [480, 'snow-curve'], [640, 'tunnel'], [885, 'collapse'], [992, 'ramp'], [1250, 'slalom'], [1530, 'fog-shift'], [1880, 'sprint'], [1990, 'finale']]]].filter(([id]) => !only || only.includes(id))) {
+    if (id === '8-2' && !only) {
       // もう一度 8-1 をクリアして、結果の「次の面へ」から入る
       await page.goto(`${base}/cart/?level=8-1`); await page.waitForFunction(() => !!window.__cart);
       await page.locator('[data-ks="go"]').click(); await page.evaluate(installBot);
@@ -179,6 +188,7 @@ try {
 
   // 4) 小さい画面
   await context.close();
+  if (!only) {
   const small = await browser.newContext({ viewport: { width: 360, height: 640 }, hasTouch: true });
   const sp = await small.newPage(); watch(sp);
   await sp.goto(`${base}/cart/?level=8-1`);
@@ -197,6 +207,7 @@ try {
   await sp.screenshot({ path: `${output}/cart-05-small.png` });
   console.log('小さい画面(360×640)でも、カードとボタンが収まる');
   await small.close();
+  }
 
   assert.deepEqual(errors, [], 'ブラウザのエラー');
   console.log('WORLD 8 のブラウザ確認: すべて通過');

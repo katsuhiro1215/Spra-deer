@@ -38,6 +38,57 @@
   color: #ffd23a;
 }
 
+/* 後ろから追ってくる大岩・なだれとの距離(近いほど、バーがのびて赤くなる) */
+.ct-chase {
+  position: absolute;
+  right: 14px;
+  top: 104px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(40, 32, 26, 0.72);
+  border: 2px solid rgba(255, 255, 255, 0.85);
+  font-weight: 900;
+  font-size: 14px;
+}
+.ct-chase[hidden] {
+  display: none;
+}
+.ct-chase-bar {
+  position: relative;
+  width: 64px;
+  height: 9px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.25);
+  overflow: hidden;
+}
+.ct-chase-bar i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  background: #ffb02e;
+  border-radius: 999px;
+}
+.ct-chase small {
+  min-width: 3ch;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.ct-chase.close {
+  background: rgba(216, 52, 44, 0.92);
+  animation: ct-pulse-chase 0.35s ease-in-out infinite alternate;
+}
+.ct-chase.close .ct-chase-bar i {
+  background: #fff;
+}
+@keyframes ct-pulse-chase {
+  to {
+    transform: scale(1.07);
+  }
+}
+
 /* 今やること(ブレーキ！・ジャンプ！など) */
 .ct-alert {
   position: absolute;

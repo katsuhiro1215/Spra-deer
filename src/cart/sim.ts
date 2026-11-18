@@ -1,11 +1,13 @@
 // WORLD 8「鹿と暴走トロッコ」: 走りのルール(描画なし。テストからも使う)
 // 鹿とトロッコは、ひとつの走るかたまりとして扱う(位置・速さ・ジャンプは共通)。
-import type { Track } from './track.ts';
+import type { Chase, Track } from './track.ts';
 
 export type Input = { left: boolean; right: boolean; jump: boolean; brake: boolean; dash: boolean };
-export type CartEventKind = 'coin' | 'gold' | 'premium' | 'jump' | 'lift' | 'ramp' | 'land' | 'hit' | 'drop' | 'derail' | 'dash' | 'tilt' | 'clear' | 'fail';
+export type CartEventKind = 'coin' | 'gold' | 'premium' | 'jump' | 'lift' | 'ramp' | 'land' | 'hit' | 'drop' | 'derail' | 'dash' | 'tilt' | 'senbei' | 'chase' | 'chaseEnd' | 'caught' | 'clear' | 'fail';
 export type CartEvent = { kind: CartEventKind; id?: number };
-export type FailReason = '' | 'fall' | 'derail' | 'miss' | 'broken';
+export type FailReason = '' | 'fall' | 'derail' | 'miss' | 'broken' | 'caught';
+/** 追ってきている大岩・なだれ(s は線路の上の位置) */
+export type Chaser = { s: number; v: number; to: number; kind: Chase['kind'] };
 
 /** 調整する数値。速さは m/s(画面の km/h は 3.6 倍)。 */
 export const BAL = {
@@ -29,6 +31,8 @@ export const BAL = {
   snowSlip: 0.5, // 雪の上で、ブレーキがきかなくなる割合
   rampV: 12, rampBoost: 4, rampWindow: 0.15, // ジャンプ台: 上向きの速さ、台の上でジャンプしたときの上乗せ、台を離れてからジャンプがきく時間
   airSteer: 3.5, airSteerFree: 0.5, // 空中で体を傾けると、横へ動ける速さ(m/s)。ずれた線路へ向かう側だけ大きく動け、ほかは 0.5m まで
+  senbeiDash: 1.6, senbeiReach: 1.8, // 鹿せんべい: 食べると、この秒数だけ全力で走る(ダッシュの待ち時間も0に)。この高さまでなら、跳んでいても食べられる
+  catchDist: 4, // 大岩・なだれが、これより近づくと追いつかれる(m)
 } as const;
 
 /** ジャンプ台から平らな所へ飛んだときの、とぶ距離(boost=台の上でジャンプした) */
@@ -66,7 +70,12 @@ export class CartRun {
   lifts = 0;
   /** ジャンプ台で飛んだ回数と、そのうち台の上でジャンプした回数 */
   ramps = 0; rampBoosts = 0;
-  private rampT = 99; private rampBoosted = false;
+  /** 食べた鹿せんべい(数と id) */
+  senbei = 0; eaten = new Set<number>();
+  /** 今 追ってきているもの(いなければ null)と、追いつかれたもの */
+  chaser: Chaser | null = null; caughtBy: Chase['kind'] | '' = '';
+  private nextChase = 0;
+  private rampT = 99; private rampBoosted = false; private liftJump = false;
   /** この面の、ふつうの最高速と、ダッシュ中の最高速 */
   vMax: number; vDash: number;
   private events: CartEvent[] = [];
@@ -93,6 +102,9 @@ export class CartRun {
     this.v = Math.max(BAL.vStart, 12);
     this.nextCoin = this.track.coins.findIndex(c => c.s > s); if (this.nextCoin < 0) this.nextCoin = this.track.coins.length;
     this.nextObstacle = this.track.obstacles.findIndex(o => o.s > s); if (this.nextObstacle < 0) this.nextObstacle = this.track.obstacles.length;
+    // 追ってくるもの: もう終わった所は出さない(途中から続けたときは、すぐ後ろにあらわれる)
+    this.chaser = null;
+    this.nextChase = this.track.chases.findIndex(c => c.to > s); if (this.nextChase < 0) this.nextChase = this.track.chases.length;
     this.place();
   }
 
@@ -106,7 +118,7 @@ export class CartRun {
   }
   private takeOff(vy: number): void {
     const p = this.track.at(this.s), flat = Math.cos(p.pitch);
-    this.air = true; this.airT = 0; this.edgeT = 0; this.rampT = 99;
+    this.air = true; this.airT = 0; this.edgeT = 0; this.rampT = 99; this.liftJump = false;
     this.vx = Math.sin(p.heading) * flat * this.v;
     this.vz = -Math.cos(p.heading) * flat * this.v;
     this.vy = Math.sin(p.pitch) * this.v + vy;
@@ -148,6 +160,11 @@ export class CartRun {
       if (!this.rampBoosted && this.rampT < BAL.rampWindow && this.jumpBuf > 0) {
         this.jumpBuf = 0; this.rampBoosted = true; this.rampBoosts++; this.vy += BAL.rampBoost; this.events.push({ kind: 'jump' });
       }
+      // こぶで浮いた直後も、少しの間はまだ跳べる(切れ目のふちと同じ)
+      if (this.liftJump && this.jumpBuf > 0 && this.airT < BAL.coyote) {
+        this.liftJump = false; this.jumpBuf = 0; this.jumps++; this.vy += BAL.jumpV; this.events.push({ kind: 'jump' });
+      }
+      if (this.airT >= BAL.coyote) this.liftJump = false;
       this.vy -= BAL.airG * dt;
       this.px += this.vx * dt; this.py += this.vy * dt; this.pz += this.vz * dt;
       // 体を傾けると、横へ少し動ける
@@ -211,7 +228,7 @@ export class CartRun {
       // こぶ(峠): 速すぎると、下へ折れる線路についていけず、車体が浮いて飛ぶ
       const bend = -tr.pitchRate(this.s);
       if (bend > 0 && this.v * this.v * bend > BAL.g * Math.cos(q.pitch) && !tr.inGap(this.s) && this.jumpBuf <= 0) {
-        this.lifts++; this.takeOff(0); this.events.push({ kind: 'lift' });
+        this.lifts++; this.takeOff(0); this.liftJump = true; this.events.push({ kind: 'lift' });
       } else if (tr.inGap(this.s)) {
         // 線路の切れ目: 少しの間は、まだ跳べる。跳ばなければ、そのまま飛び出して落ちる
         this.edgeT += dt;
@@ -227,6 +244,21 @@ export class CartRun {
     }
     this.maxV = Math.max(this.maxV, this.v);
 
+    // 後ろから追ってくるもの: from を通るとあらわれ、同じ速さで追ってくる。to まで来ると落ちる(止まる)
+    const cs = tr.chases;
+    if (!this.chaser && this.nextChase < cs.length && this.s >= cs[this.nextChase].from) {
+      const c = cs[this.nextChase++];
+      this.chaser = { s: this.s - c.behind, v: c.v, to: c.to, kind: c.kind };
+      this.events.push({ kind: 'chase' });
+    }
+    if (this.chaser) {
+      const c = this.chaser;
+      c.s += c.v * dt;
+      // to(谷のふち・トンネルの入口)をこえて着地したら、ふりきった(大岩は谷へ落ち、なだれは入口で止まる)
+      if (c.s >= c.to || (this.s > c.to + 12 && !this.air)) { this.chaser = null; this.events.push({ kind: 'chaseEnd' }); }
+      else if (c.s >= this.s - BAL.catchDist && !this.doomed) { this.caughtBy = c.kind; this.fail('caught', 'caught'); return; }
+    }
+
     // 障害物(通りすぎた瞬間に判定)
     while (this.nextObstacle < tr.obstacles.length && tr.obstacles[this.nextObstacle].s <= this.s) {
       const o = tr.obstacles[this.nextObstacle++];
@@ -238,6 +270,15 @@ export class CartRun {
         this.ramps++; this.takeOff(BAL.rampV + (boost ? BAL.rampBoost : 0));
         this.rampT = 0; this.rampBoosted = boost;
         this.events.push({ kind: 'ramp' });
+        continue;
+      }
+      if (o.kind === 'senbei') {
+        // 鹿せんべい: 低い所を通れば、鹿が食べて すぐ全力で走る(横にあるものは、体を傾けて取る)
+        if (o.s <= prevS || this.doomed || this.height > BAL.senbeiReach) continue;
+        if (o.side && this.lean * o.side <= BAL.leanDodge) continue;
+        this.senbei++; this.eaten.add(o.id);
+        this.dashT = Math.max(this.dashT, BAL.senbeiDash); this.dashCool = 0;
+        this.events.push({ kind: 'senbei', id: o.id });
         continue;
       }
       if (o.s <= prevS || this.safeT > 0 || this.doomed) continue;
