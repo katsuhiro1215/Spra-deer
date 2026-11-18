@@ -1,5 +1,5 @@
-// WORLD 2「鹿せんべい大作戦」の面のデータ(設計書 30章)。せんべい屋台で、焼いて・渡す。
-// 面は、このデータを足せば作れる(焼ける速さ・鹿の来る時刻・注文の数・待てる時間)。
+// WORLD 2「鹿せんべい大作戦」の面のデータ(設計書 30章)。せんべい屋台で、焼いて・渡す(bake)/積んで・とどける(tower)。
+// 面は、このデータを足せば作れる(焼ける速さ・鹿の来る時刻・注文の数・待てる時間・ゆれる速さ)。
 
 export type DeerKind = 'fawn' | 'doe' | 'stag';
 
@@ -16,6 +16,7 @@ export type PremiumRule = { kind: 'streak'; n: number } | { kind: 'earlyShoo' };
 export type Cook = { ok: number; perfect: [number, number]; smoke: number; burn: number };
 
 export type BakeLevel = {
+  mode?: 'bake';
   id: string;
   title: string;
   summary: string;
@@ -37,6 +38,32 @@ export type BakeLevel = {
   /** その面ならではの一言(時刻) */
   notes?: { t: number; text: string }[];
 };
+
+/** 積む面(せんべいタワー)の、鹿の注文: 何段のタワーがほしいか */
+export type TowerOrder = { kind: DeerKind; want: number };
+
+export type TowerLevel = {
+  mode: 'tower';
+  id: string;
+  title: string;
+  summary: string;
+  intro: string;
+  /** 制限時間(秒) */
+  time: number;
+  /** とどけるタワーの数(そろった時点でクリア) */
+  goal: number;
+  /** 鹿の注文(この順に1頭ずつ来る) */
+  orders: TowerOrder[];
+  /** 鹿が待てる秒数 */
+  patience: number;
+  /** 左右にゆれる、せんべいの速さ(m/秒)と、1段ごとの速くなり方 */
+  swing: { speed: number; accel: number };
+  /** プレミアムコイン: n 段以上のタワーをとどける */
+  premiumHeight: number;
+  notes?: { t: number; text: string }[];
+};
+
+export type W2Level = BakeLevel | TowerLevel;
 
 /** 鹿の種類ごとの名前 */
 export const DEER_NAME: Record<DeerKind, string> = { fawn: '子鹿', doe: 'めす鹿', stag: '大きな鹿' };
@@ -84,5 +111,24 @@ export const LEVEL_2_2: BakeLevel = {
   ],
 };
 
-export const BAKE_LEVELS: BakeLevel[] = [LEVEL_2_1, LEVEL_2_2];
-export const bakeById = (id: string): BakeLevel | undefined => BAKE_LEVELS.find(l => l.id === id);
+export const LEVEL_2_3: TowerLevel = {
+  mode: 'tower',
+  id: '2-3', title: 'せんべいタワー', summary: 'せんべいを 高く積んで、とどける',
+  intro: 'ゆれる せんべいを、タップで 落として 積もう！',
+  time: 100, goal: 5,
+  // 注文は だんだん高く。最後の大きな鹿は8段
+  orders: [
+    { kind: 'fawn', want: 3 }, { kind: 'doe', want: 4 }, { kind: 'fawn', want: 5 }, { kind: 'doe', want: 6 }, { kind: 'stag', want: 8 },
+    { kind: 'doe', want: 6 }, { kind: 'stag', want: 8 }, { kind: 'fawn', want: 5 },
+  ],
+  patience: 30,
+  swing: { speed: 0.85, accel: 0.07 },
+  premiumHeight: 12,
+  notes: [
+    { t: 3, text: '注文の 高さで「おとどけ」！ 高く積むほど ごほうび アップ' },
+  ],
+};
+
+export const BAKE_LEVELS: W2Level[] = [LEVEL_2_1, LEVEL_2_2, LEVEL_2_3];
+export const bakeById = (id: string): W2Level | undefined => BAKE_LEVELS.find(l => l.id === id);
+export const isTower = (l: W2Level): l is TowerLevel => l.mode === 'tower';

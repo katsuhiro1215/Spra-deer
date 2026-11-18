@@ -12,11 +12,12 @@ export function BakeShell() {
     let stop: (() => void) | undefined;
     let cancelled = false;
     // three.js はブラウザ側でだけ読み込む。面は /bake/?level=2-1 のように指定する(無ければ2-1)
-    Promise.all([import('../../bake/game.ts'), import('../../bake/levels.ts')]).then(([game, levels]) => {
+    // 焼く面(game.ts)と積む面(towerGame.ts)は、面のデータの mode で分ける
+    Promise.all([import('../../bake/game.ts'), import('../../bake/towerGame.ts'), import('../../bake/levels.ts')]).then(([game, tower, levels]) => {
       if (cancelled || !ref.current) return;
       const id = new URLSearchParams(window.location.search).get('level') ?? '2-1';
       const level = levels.bakeById(id) ?? levels.BAKE_LEVELS[0];
-      stop = game.startBake(ref.current, level);
+      stop = levels.isTower(level) ? tower.startTower(ref.current, level) : game.startBake(ref.current, level);
     });
     return () => {
       cancelled = true;
@@ -63,9 +64,26 @@ export function BakeShell() {
             </div>
           </div>
           <div className="bk-streak" data-ks="streak" hidden />
+          {/* 積む面だけ: 高さと、ぐらぐら度 */}
+          <div className="bk-tower-info">
+            <span>
+              高さ <b data-ks="t-height">0</b>段
+            </span>
+            <span className="bk-stab" data-ks="t-stab">
+              ぐらぐら
+              <i className="bk-stab-bar">
+                <i data-ks="t-stab-bar" />
+              </i>
+            </span>
+          </div>
           <div className="bk-alert" data-ks="alert" />
           <div className="ks-toast bk-toast" data-ks="toast" />
         </div>
+
+        <button type="button" className="bk-deliver" data-ks="deliver" disabled>
+          <b>おとどけ！</b>
+          <small />
+        </button>
 
         <div className="bk-spra">
           <img data-ks="spra" src="/assets/bake/spra_idle.png" alt="Spra" />
@@ -113,8 +131,8 @@ export function BakeShell() {
             <p className="ks-stars" data-ks="r-stars" />
             <p className="ks-reward" data-ks="r-reward" />
             <dl className="ks-stats">
-              <div><dt>まんぞくした鹿</dt><dd data-ks="r-served" /></div>
-              <div><dt>極上せんべい</dt><dd data-ks="r-gokujo" /></div>
+              <div><dt data-ks="r-l1">まんぞくした鹿</dt><dd data-ks="r-served" /></div>
+              <div><dt data-ks="r-l2">極上せんべい</dt><dd data-ks="r-gokujo" /></div>
               <div><dt>コイン</dt><dd data-ks="r-coins" /></div>
               <div><dt>きろく</dt><dd data-ks="r-time" /></div>
               <div><dt>ベスト</dt><dd data-ks="r-best" /></div>

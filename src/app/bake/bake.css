@@ -409,3 +409,128 @@
   color: #fff;
   animation: bk-pulse 0.2s ease-in-out infinite alternate;
 }
+
+/* ---- 積む面(せんべいタワー)だけの部品。焼く面では出さない ---- */
+.bk-tower-info,
+.bk-deliver {
+  display: none;
+}
+.bk-mode-tower .bk-tower-info {
+  position: absolute;
+  left: 14px;
+  top: calc(max(12px, env(safe-area-inset-top)) + 92px);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: rgba(70, 40, 20, 0.62);
+  font-weight: 800;
+  font-size: 14px;
+}
+.bk-tower-info b {
+  font-size: 22px;
+  font-variant-numeric: tabular-nums;
+}
+.bk-stab {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+}
+.bk-stab-bar {
+  position: relative;
+  display: block;
+  width: 64px;
+  height: 9px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.25);
+  overflow: hidden;
+}
+.bk-stab-bar i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  border-radius: 999px;
+  background: #5fc46a;
+  transition: width 0.15s;
+}
+.bk-stab[data-tone=yellow] .bk-stab-bar i {
+  background: #ffc12e;
+}
+.bk-stab[data-tone=red] .bk-stab-bar i {
+  background: #ff4a3a;
+}
+.bk-stab[data-tone=red] {
+  animation: bk-shake 0.2s linear infinite;
+}
+/* おとどけボタン(右下)。注文の高さまで積むと押せる */
+.bk-mode-tower .bk-deliver {
+  position: absolute;
+  right: 12px;
+  bottom: max(14px, env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 150px;
+  padding: 12px 18px 10px;
+  border: 0;
+  border-radius: 22px;
+  background: linear-gradient(180deg, #5fc46a, #2f9d4a);
+  box-shadow: 0 6px 0 #1f7634;
+  color: #fff;
+  font: inherit;
+  cursor: pointer;
+}
+.bk-deliver b {
+  font-size: 24px;
+  font-weight: 900;
+}
+.bk-deliver small {
+  font-size: 13px;
+  font-weight: 800;
+  min-height: 1em;
+}
+.bk-deliver:disabled {
+  background: linear-gradient(180deg, #b9ad9c, #9a8e7e);
+  box-shadow: 0 6px 0 #7a6e60;
+  opacity: 0.85;
+}
+.bk-deliver.extra {
+  background: linear-gradient(180deg, #ffd84a, #f0a21a);
+  box-shadow: 0 6px 0 #b9730e;
+  color: #5a3200;
+  animation: bk-pulse 0.5s ease-in-out infinite alternate;
+}
+.bk-deliver:active:not(:disabled) {
+  transform: translateY(3px);
+  box-shadow: 0 3px 0 #1f7634;
+}
+/* 注文の高さの札(線の右はし) */
+.bk-goal-tag {
+  position: absolute;
+  left: 0;
+  top: 0;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: #e04a3a;
+  color: #fff;
+  font-weight: 900;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.bk-goal-tag[hidden] {
+  display: none;
+}
+.bk-goal-tag[data-tone=ok] {
+  background: #3fbf4a;
+}
+/* 積む面では、一言を「高さ・ぐらぐら」の下に出す */
+.bk-mode-tower .bk-toast {
+  top: calc(max(12px, env(safe-area-inset-top)) + 134px);
+}
+/* 積む面の注意の帯は、上のほう(一言の下)に固定する(下はボタンとSpra) */
+.bk-mode-tower .bk-alert {
+  top: calc(max(12px, env(safe-area-inset-top)) + 200px);
+}

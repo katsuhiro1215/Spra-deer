@@ -3,16 +3,16 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { BAL, type BakeEvent, type BakeRun, type Deer, type Plate } from './sim.ts';
-import type { BakeLevel, DeerKind } from './levels.ts';
+import type { BakeLevel, DeerKind, W2Level } from './levels.ts';
 
 const ASSET = '/assets';
-const COUNTER_TOP = 0.92;
+export const COUNTER_TOP = 0.92;
 const GRIDDLE_TOP = 0.98;
 const PLATE_GAP = 0.92;
 const PLATE_Z = 0.28;
 const SENBEI_R = 0.31;
 const TRAY_Z = -0.6;
-const SPOT_Z = -1.78;
+export const SPOT_Z = -1.78;
 const SPOT_X = [-1.25, 0, 1.25];
 const DEER_H: Record<DeerKind, number> = { fawn: 1.3, doe: 1.45, stag: 1.6 };
 const START_Z = -5.6;
@@ -101,48 +101,51 @@ function ringMaterial(lv: BakeLevel): THREE.ShaderMaterial {
 }
 
 type Particle = { s: THREE.Sprite; v: THREE.Vector3; life: number; max: number; grow: number; spin: number; gravity: number; base: number };
-type Flyer = { obj: THREE.Object3D; from: THREE.Vector3; to: THREE.Vector3; t: number; dur: number; h: number; spin: number; done?: () => void };
+type Flyer = { obj: THREE.Object3D; from: THREE.Vector3; to: THREE.Vector3; t: number; dur: number; h: number; spin: number; spinZ?: number; done?: () => void };
 type DeerSprite = { s: THREE.Sprite; shadow: THREE.Mesh; lastPhase: string; dir: 'l' | 'r'; leaveFrom: THREE.Vector3 | null };
 
 export class BakeView {
-  private host: HTMLElement;
-  private level: BakeLevel;
-  private renderer: THREE.WebGLRenderer;
-  private scene = new THREE.Scene();
+  protected host: HTMLElement;
+  protected level: BakeLevel;
+  protected renderer: THREE.WebGLRenderer;
+  protected scene = new THREE.Scene();
   camera = new THREE.PerspectiveCamera(50, 9 / 16, 0.1, 120);
-  private ro: ResizeObserver;
-  private disposables: { dispose(): void }[] = [];
-  private time = 0;
-  private shake = 0;
-  private plateX: number[];
-  private senbei: THREE.Mesh[] = [];
-  private senbeiMats: THREE.MeshStandardMaterial[][] = [];
-  private rings: THREE.ShaderMaterial[] = [];
-  private plateGlow: THREE.Mesh[] = [];
-  private trayItems: THREE.Mesh[] = [];
-  private senbeiGeo = new THREE.CylinderGeometry(SENBEI_R, SENBEI_R * 0.98, 0.05, 48);
-  private surfTex: THREE.Texture;
-  private trayMat: { normal: THREE.MeshStandardMaterial; gokujo: THREE.MeshStandardMaterial };
-  private side1Color: THREE.Color[] = [];
-  private particles: Particle[] = [];
-  private pmat: Record<'soft' | 'star' | 'heart' | 'crumb', THREE.SpriteMaterial>;
-  private flyers: Flyer[] = [];
-  private deerTex: Record<string, THREE.Texture> = {};
-  private deerSprites = new Map<number, DeerSprite>();
-  private bgDeer: { s: THREE.Sprite; ph: number; x: number }[] = [];
+  protected ro: ResizeObserver;
+  protected disposables: { dispose(): void }[] = [];
+  protected time = 0;
+  protected shake = 0;
+  protected plateX: number[];
+  protected senbei: THREE.Mesh[] = [];
+  protected senbeiMats: THREE.MeshStandardMaterial[][] = [];
+  protected rings: THREE.ShaderMaterial[] = [];
+  protected plateGlow: THREE.Mesh[] = [];
+  protected trayItems: THREE.Mesh[] = [];
+  protected senbeiGeo = new THREE.CylinderGeometry(SENBEI_R, SENBEI_R * 0.98, 0.05, 48);
+  protected surfTex: THREE.Texture;
+  protected trayMat: { normal: THREE.MeshStandardMaterial; gokujo: THREE.MeshStandardMaterial };
+  protected side1Color: THREE.Color[] = [];
+  protected particles: Particle[] = [];
+  protected pmat: Record<'soft' | 'star' | 'heart' | 'crumb', THREE.SpriteMaterial>;
+  protected flyers: Flyer[] = [];
+  protected deerTex: Record<string, THREE.Texture> = {};
+  protected deerSprites = new Map<number, DeerSprite>();
+  protected bgDeer: { s: THREE.Sprite; ph: number; x: number }[] = [];
   /** くいしんぼう鹿(1頭ずつ)。絵は左向き・右向きの2つ */
-  private sneak!: THREE.Sprite;
-  private sneakShadow!: THREE.Mesh;
-  private sneakTex: { l: THREE.Texture; r: THREE.Texture } | null = null;
+  protected sneak!: THREE.Sprite;
+  protected sneakShadow!: THREE.Mesh;
+  protected sneakTex: { l: THREE.Texture; r: THREE.Texture } | null = null;
   /** いまの位置(タップの当たりと、ふきだしに使う)。いないときは null */
   sneakAt: THREE.Vector3 | null = null;
-  private sneakFrom = new THREE.Vector3();
-  private blinkMat = new THREE.MeshStandardMaterial({ color: '#e2b467', roughness: 0.78, emissive: new THREE.Color('#ff2a1a'), emissiveIntensity: 0 });
-  private tmpV = new THREE.Vector3();
+  protected sneakFrom = new THREE.Vector3();
+  protected blinkMat = new THREE.MeshStandardMaterial({ color: '#e2b467', roughness: 0.78, emissive: new THREE.Color('#ff2a1a'), emissiveIntensity: 0 });
+  protected tmpV = new THREE.Vector3();
 
-  constructor(host: HTMLElement, level: BakeLevel) {
-    this.host = host; this.level = level;
-    this.plateX = Array.from({ length: level.plates }, (_, i) => (i - (level.plates - 1) / 2) * PLATE_GAP);
+  /** 積む面(せんべいタワー)では、鉄板と台を作らない(公園・屋台・鹿・演出は共通。TowerView が引きつぐ) */
+  protected tower: boolean;
+  constructor(host: HTMLElement, w2level: W2Level) {
+    const level = w2level as BakeLevel; // 焼く面だけの値(plates など)は、tower では使わない
+    this.host = host; this.level = level; this.tower = w2level.mode === 'tower';
+    this.plateX = this.tower ? [] : Array.from({ length: level.plates }, (_, i) => (i - (level.plates - 1) / 2) * PLATE_GAP);
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -178,8 +181,7 @@ export class BakeView {
 
     this.buildPark();
     this.buildStall();
-    this.buildGriddle();
-    this.buildTray();
+    if (!this.tower) { this.buildGriddle(); this.buildTray(); }
     this.loadDeer();
 
     this.ro = new ResizeObserver(() => this.resize());
@@ -188,7 +190,7 @@ export class BakeView {
   }
 
   // ---- 作る ----
-  private makeSurface(): THREE.Texture {
+  protected makeSurface(): THREE.Texture {
     // せんべいの表面: 細かい粒と、ふちが少し濃い。色は材質の色でつける(白っぽい明暗だけ描く)
     const rnd = mulberry(7);
     return canvasTex(256, 256, g => {
@@ -200,7 +202,7 @@ export class BakeView {
     });
   }
 
-  private makeParticleMats() {
+  protected makeParticleMats() {
     const soft = canvasTex(64, 64, g => {
       const grd = g.createRadialGradient(32, 32, 0, 32, 32, 32);
       grd.addColorStop(0, 'rgba(255,255,255,1)'); grd.addColorStop(0.5, 'rgba(255,255,255,0.45)'); grd.addColorStop(1, 'rgba(255,255,255,0)');
@@ -222,7 +224,7 @@ export class BakeView {
     return { soft: m(soft), star: m(star, THREE.AdditiveBlending), heart: m(heart), crumb: m(crumb) };
   }
 
-  private buildPark(): void {
+  protected buildPark(): void {
     const rnd = mulberry(21);
     // 地面: 屋台のまわりは土、その先は芝
     const grass = grainTex('#8fc266', [['#7db257', 900, 3], ['#a6d47b', 700, 2], ['#6aa047', 300, 2]], 3);
@@ -294,7 +296,7 @@ export class BakeView {
     }
   }
 
-  private buildStall(): void {
+  protected buildStall(): void {
     // 木のカウンター(屋台の台)
     const wood = grainTex('#b07a45', [['#9a6638', 500, 2], ['#c48c55', 400, 2]], 9);
     const woodMat = new THREE.MeshStandardMaterial({ map: wood, roughness: 0.75 });
@@ -326,7 +328,7 @@ export class BakeView {
     // 帯をまいた、せんべいの束(本物の鹿せんべいは10枚ずつ、紙の帯でまとめて売られている)
     const bandTex = canvasTex(256, 32, g => { g.fillStyle = '#fffdf6'; g.fillRect(0, 0, 256, 32); g.fillStyle = '#3d8a3a'; for (let x = 0; x < 256; x += 48) { g.fillRect(x, 0, 18, 32); } });
     this.disposables.push(bandTex);
-    for (const [x, z, n] of [[1.25, -0.62, 10], [-1.25, -0.6, 7]] as [number, number, number][]) {
+    for (const [x, z, n] of [[1.35, -0.62, 10], [-1.35, -0.6, 7]] as [number, number, number][]) {
       const g = new THREE.Group();
       for (let k = 0; k < n; k++) {
         const s = new THREE.Mesh(this.senbeiGeo, this.trayMat.normal);
@@ -340,7 +342,7 @@ export class BakeView {
     }
   }
 
-  private buildGriddle(): void {
+  protected buildGriddle(): void {
     const n = this.level.plates, w = n * PLATE_GAP + 0.32;
     const iron = new THREE.MeshStandardMaterial({ color: '#2b2a2c', roughness: 0.55, metalness: 0.6 });
     const slab = new THREE.Mesh(new THREE.BoxGeometry(w, 0.1, 1.06), iron);
@@ -376,7 +378,7 @@ export class BakeView {
     });
   }
 
-  private buildTray(): void {
+  protected buildTray(): void {
     const tray = new THREE.Mesh(new THREE.BoxGeometry(1.62, 0.05, 0.46), new THREE.MeshStandardMaterial({ color: '#d7b07a', roughness: 0.6 }));
     tray.position.set(0, COUNTER_TOP + 0.07, TRAY_Z); tray.castShadow = true; tray.receiveShadow = true;
     this.scene.add(tray);
@@ -389,13 +391,13 @@ export class BakeView {
       this.trayItems.push(s);
     }
   }
-  private traySlot(k: number): THREE.Vector3 { return new THREE.Vector3(-0.62 + k * 0.248, COUNTER_TOP + 0.115 + (k % 2) * 0.012, TRAY_Z + (k % 2 ? 0.04 : -0.04)); }
+  protected traySlot(k: number): THREE.Vector3 { return new THREE.Vector3(-0.62 + k * 0.248, COUNTER_TOP + 0.115 + (k % 2) * 0.012, TRAY_Z + (k % 2 ? 0.04 : -0.04)); }
 
-  private loadDeer(): void {
+  protected loadDeer(): void {
     for (const kind of ['fawn', 'doe', 'stag'] as const) for (const d of ['l', 'r']) for (let i = 0; i < 4; i++) this.deerTex[`${kind}_${d}_${i}`] = loadTex(`${ASSET}/deer-walk/${kind}_${d}_${i}.png`);
     for (const k of ['stag_front', 'stag_wink']) this.deerTex[k] = loadTex(`${ASSET}/bake/${k}.png`);
     this.disposables.push(...Object.values(this.deerTex));
-    if (this.level.sneaks?.length) {
+    if (!this.tower && this.level.sneaks?.length) {
       // いたずら顔の絵は、左を向いている。左から来るときは左右を反転する
       const l = loadTex(`${ASSET}/bake/stag_sneak.png`), r = l.clone();
       r.repeat.x = -1; r.offset.x = 1; r.needsUpdate = true;
@@ -443,7 +445,7 @@ export class BakeView {
     return null;
   }
 
-  private resize(): void {
+  protected resize(): void {
     const w = this.host.clientWidth || 360, h = this.host.clientHeight || 640;
     this.renderer.setSize(w, h, false);
     const aspect = w / h;
@@ -463,7 +465,7 @@ export class BakeView {
   }
 
   // ---- 演出 ----
-  private emit(mat: keyof BakeView['pmat'], at: THREE.Vector3, o: { n?: number; spread?: number; v?: THREE.Vector3; vr?: number; size?: number; life?: number; grow?: number; gravity?: number; color?: string; opacity?: number }): void {
+  protected emit(mat: keyof BakeView['pmat'], at: THREE.Vector3, o: { n?: number; spread?: number; v?: THREE.Vector3; vr?: number; size?: number; life?: number; grow?: number; gravity?: number; color?: string; opacity?: number }): void {
     const n = o.n ?? 1;
     for (let k = 0; k < n; k++) {
       if (this.particles.length > 220) return;
@@ -482,12 +484,12 @@ export class BakeView {
       this.particles.push({ s, v, life: 0, max: (o.life ?? 1) * (0.7 + Math.random() * 0.6), grow: o.grow ?? 0, spin: (Math.random() - 0.5) * 4, gravity: o.gravity ?? 0, base: m.opacity });
     }
   }
-  private fly(obj: THREE.Object3D, from: THREE.Vector3, to: THREE.Vector3, dur: number, h: number, spin: number, done?: () => void) {
+  protected fly(obj: THREE.Object3D, from: THREE.Vector3, to: THREE.Vector3, dur: number, h: number, spin: number, done?: () => void, spinZ = 0) {
     obj.position.copy(from);
     this.scene.add(obj);
-    this.flyers.push({ obj, from: from.clone(), to: to.clone(), t: 0, dur, h, spin, done });
+    this.flyers.push({ obj, from: from.clone(), to: to.clone(), t: 0, dur, h, spin, spinZ, done });
   }
-  private flyingSenbei(gokujo: boolean, scale = 1): THREE.Mesh {
+  protected flyingSenbei(gokujo: boolean, scale = 1): THREE.Mesh {
     const m = new THREE.Mesh(this.senbeiGeo, gokujo ? this.trayMat.gokujo : this.trayMat.normal);
     m.scale.setScalar(scale); m.castShadow = true;
     return m;
@@ -584,8 +586,14 @@ export class BakeView {
       this.emit('star', this.traySlot(k).add(new THREE.Vector3(0, 0.08, 0)), { n: 1, spread: 0.2, size: 0.12, life: 0.6, vr: 0.3 });
     }
     // 鹿
-    this.paintDeer(run, dt);
+    this.paintDeer(run.deer, dt);
     this.paintSneak(run);
+    for (const r of this.rings) r.uniforms.uTime.value = this.time;
+    this.finishFrame(dt);
+  }
+
+  /** 毎フレームの共通部分: 背景の鹿・飛んでいるもの・粒・カメラのゆれ・描く(TowerView も使う) */
+  protected finishFrame(dt: number): void {
     for (const b of this.bgDeer) b.s.position.y = Math.max(0, Math.sin(this.time * 1.3 + b.ph)) * 0.015;
     // 飛んでいるせんべい
     this.flyers = this.flyers.filter(f => {
@@ -594,6 +602,7 @@ export class BakeView {
       f.obj.position.lerpVectors(f.from, f.to, k);
       f.obj.position.y += Math.sin(Math.PI * k) * f.h;
       f.obj.rotation.x = f.spin * k;
+      if (f.spinZ) f.obj.rotation.z = f.spinZ * k;
       if (k >= 1) { this.scene.remove(f.obj); f.done?.(); return false; }
       return true;
     });
@@ -613,12 +622,11 @@ export class BakeView {
     this.shake = Math.max(0, this.shake - dt * 1.5);
     const sx = (Math.random() - 0.5) * this.shake * 0.06, sy = (Math.random() - 0.5) * this.shake * 0.06;
     this.camera.position.x += sx; this.camera.position.y += sy;
-    for (const r of this.rings) r.uniforms.uTime.value = this.time;
     this.renderer.render(this.scene, this.camera);
     this.camera.position.x -= sx; this.camera.position.y -= sy;
   }
 
-  private paintPlate(p: Plate, i: number, run: BakeRun, dt: number): void {
+  protected paintPlate(p: Plate, i: number, run: BakeRun, dt: number): void {
     const lv = this.level, s = this.senbei[i], mats = this.senbeiMats[i], ring = this.rings[i], c = this.plateCenter(i);
     const glow = this.plateGlow[i].material as THREE.MeshBasicMaterial;
     glow.opacity = p.state === 'empty' && run.phase === 'running' ? 0.1 + 0.08 * Math.sin(this.time * 4 + i) : 0;
@@ -683,9 +691,9 @@ export class BakeView {
     }
   }
 
-  private paintDeer(run: BakeRun, dt: number): void {
+  protected paintDeer(list: Deer[], dt: number): void {
     const alive = new Set<number>();
-    for (const d of run.deer) {
+    for (const d of list) {
       alive.add(d.id);
       let ds = this.deerSprites.get(d.id);
       if (!ds) {
@@ -707,7 +715,7 @@ export class BakeView {
     }
   }
 
-  private placeDeer(d: Deer, ds: DeerSprite, dt: number): void {
+  protected placeDeer(d: Deer, ds: DeerSprite, dt: number): void {
     const spot = this.spotPos(d.spot), start = new THREE.Vector3(d.from * 4.8, 0, START_Z), h = DEER_H[d.kind];
     const s = ds.s, mat = s.material;
     let pos = spot.clone(), frame = `${d.kind}_${ds.dir}_0`, sx = 1, sy = 1;
@@ -765,7 +773,7 @@ export class BakeView {
     ds.shadow.position.set(pos.x, 0.01, pos.z);
   }
 
-  private paintSneak(run: BakeRun): void {
+  protected paintSneak(run: BakeRun): void {
     const sn = run.sneak, s = this.sneak;
     if (!sn || !this.sneakTex) { s.visible = this.sneakShadow.visible = false; this.sneakAt = null; return; }
     const side = sn.side, start = new THREE.Vector3(side * 4.4, 0, -2.4), stand = new THREE.Vector3(side * SNEAK_X, 0, SNEAK_Z);
