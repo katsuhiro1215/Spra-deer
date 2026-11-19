@@ -269,3 +269,87 @@ test("風: ふいている間は、Spra のねらいと うんこが 横へ流�
   assert.equal(small.x, sx, "やむと 流れない");
   assert.equal(r.targetX, tx);
 });
+
+test("なかま: たるの中の なかまが 出てくる。+ゲートは Spra、x2 は いまの顔ぶれが ふえる。へるときは あとから入った なかまから", () => {
+  const r = start(quiet({ barrels: [{ s: 1.0, x: 0, hp: 1, n: 2, friend: "ruru" }], gates: [{ s: 3, left: "x2", right: "+1" }] }));
+  wait(r, 0.3);
+  assert.deepEqual(r.crew, ["ruru", "ruru"]);
+  assert.ok(r.drainEvents().some(e => e.kind === "barrel" && e.who === "ruru"));
+  r.steer(-1); wait(r, 2);
+  assert.equal(r.team, 6);
+  assert.deepEqual(r.crew, ["ruru", "ruru", "ruru", "ruru", "ruru"], "x2 で Ruru が ふえる");
+  const r2 = start(quiet({ gates: [{ s: 1, left: "+2", right: "+2" }] }));
+  r2.team = 3; r2.crew = ["kuru", "momo"];
+  wait(r2, 1);
+  assert.deepEqual(r2.crew, ["kuru", "momo", "spra", "spra"], "+ は Spra");
+});
+
+test("Ruru: べちゃべちゃ・硬い うんこを 2倍の力で掃く", () => {
+  const go = (crew: ("spra" | "ruru")[]) => {
+    const r = start();
+    r.team = 2; r.crew = crew; r.x = -1; r.steer(-1);
+    const sl = r.members()[1];
+    const p = put(r, sl.a + 0.5, sl.x, "large"); p.wet = true; p.hp = p.maxHp = 13;
+    r.cooldown = 0; r.step(1 / 120);
+    return p.hp;
+  };
+  // 先頭の ほうきの分は 同じ。Ruru の分だけ 2倍になる
+  assert.equal(go(["spra"]) - go(["ruru"]), WBAL.brooms[0].power * (WBAL.ruruPower - 1));
+});
+
+test("Kuru: 走ってくる鹿を とめる(だれも とばされない)。雷でも とばされない", () => {
+  const r = start(quiet({ chargers: [{ s: 6, x: 0 }] }));
+  r.team = 4; r.crew = ["kuru", "kuru", "kuru"];
+  r.steer(0);
+  const sl = r.members().slice(1);
+  r.level.chargers![0].x = sl[0].x;
+  wait(r, 4);
+  const ev = r.drainEvents();
+  assert.ok(ev.some(e => e.kind === "block" && e.who === "kuru"), "Kuru が とめた");
+  assert.equal(r.team, 4);
+  const b = start(quiet({ bolts: { from: 0, every: 999 } }));
+  b.team = 5; b.crew = ["kuru", "kuru", "kuru", "kuru"]; b.cooldown = 99;
+  wait(b, 0.05);
+  const bolt = b.bolts[0]; bolt.x = b.x; bolt.s = b.d + 0.3;
+  wait(b, 2.5);
+  assert.equal(b.team, 5, "雷でも とばされない");
+});
+
+test("Piko: いると 風で 流されにくい。ほうきの 届きが 長い", () => {
+  const drift = (crew: ("spra" | "piko")[]) => {
+    const r = start(quiet({ wind: { from: 0, every: 999, dur: 2, force: 1 } }));
+    r.team = 2; r.crew = crew; r.cooldown = 99;
+    wait(r, 1);
+    return Math.abs(r.targetX);
+  };
+  assert.ok(drift(["piko"]) < drift(["spra"]) * 0.5);
+  const r = start();
+  r.team = 2; r.crew = ["piko"];
+  const sl = r.members()[1];
+  const far = put(r, sl.a + WBAL.brooms[0].reach * WBAL.helperReach + 0.2, sl.x);
+  assert.ok(r.inReach(far), "Spra なら 届かない所まで 届く");
+});
+
+test("Momo: Momo が掃くと お花が 早く咲き、お花の へらす よごれも 多い", () => {
+  const flowersAfter = (crew: ("spra" | "momo")[]) => {
+    const r = start();
+    r.team = 2; r.crew = crew; r.dirt = 10;
+    const sl = r.members()[1];
+    for (let i = 0; i < 4; i++) { r.cooldown = 0; put(r, sl.a + 0.4, sl.x); r.step(1 / 120); }
+    return { n: r.flowers.length, dirt: r.dirt };
+  };
+  assert.equal(flowersAfter(["spra"]).n, 0);
+  const m = flowersAfter(["momo"]);
+  assert.equal(m.n, 1, "4こで 咲く");
+  assert.equal(m.dirt, 10 - WBAL.flowerHeal * WBAL.momoHeal);
+});
+
+test("Lumi: いると 雷・火の粉の 予告が 長い", () => {
+  const warn = (crew: ("spra" | "lumi")[]) => {
+    const r = start(quiet({ bolts: { from: 0, every: 999 } }));
+    r.team = 2; r.crew = crew;
+    wait(r, 1 / 120);
+    return -r.bolts[0].t;
+  };
+  assert.ok(warn(["lumi"]) - warn(["spra"]) > WBAL.lumiWarn - 0.05);
+});

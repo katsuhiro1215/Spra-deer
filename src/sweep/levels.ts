@@ -6,6 +6,17 @@ import type { DeerKind } from '../bake/levels.ts';
 export type { DeerKind };
 export type PoopKind = 'small' | 'medium' | 'large';
 
+/** なかまの種類(Spra Bloom の得意分野に合わせる: 土=Spra・光=Lumi・花=Momo・風=Piko・水=Ruru・木の実=Kuru) */
+export type FriendId = 'spra' | 'lumi' | 'momo' | 'kuru' | 'piko' | 'ruru';
+export const FRIENDS: Record<FriendId, { name: string; power: string; join: string }> = {
+  spra: { name: 'Spra', power: 'ふつうの ほうき', join: 'なかまの Spra' },
+  lumi: { name: 'Lumi', power: '光で てらす', join: 'Lumi が なかまに！ 光で てらして、夜も 遠くまで 見える。雷の 予告も 早く 分かる' },
+  momo: { name: 'Momo', power: 'お花が 早く 咲く', join: 'Momo が なかまに！ Momo が 掃くと、お花が 早く 咲くよ' },
+  kuru: { name: 'Kuru', power: '固い からで とばされない', join: 'Kuru が なかまに！ 固い からで、鹿にも 雷にも とばされない' },
+  piko: { name: 'Piko', power: '風に つよい', join: 'Piko が なかまに！ 風に 流されにくく、ほうきの 風が 遠くまで とどく' },
+  ruru: { name: 'Ruru', power: '水で ふやかす', join: 'Ruru が なかまに！ べちゃべちゃも 硬い うんこも、すぐ 掃ける' },
+};
+
 /** 場所(景色・道・道ばたの物がかわる) */
 export type SweepPlace = 'park' | 'kofukuji' | 'kasuga' | 'wakakusa' | 'todaiji' | 'naramachi' | 'ukimido' | 'nigatsudo';
 
@@ -48,8 +59,8 @@ export type SweepLevel = {
   buddha?: { from: number; warn: number; glow: number; cycle: number; extraDeer: number; swarm?: number; hard: number };
   /** ゲート(参道を横ぎる門)。左右どちらかを通る。'+3'・'-4'・'x2' のように書く(数は、Spra のチームの人数) */
   gates?: { s: number; left: string; right: string }[];
-  /** おてつだいの たる: 掃いて開けると、仲間が出てくる(hp = 掃く回数、n = 出てくる人数) */
-  barrels?: { s: number; x: number; hp: number; n: number }[];
+  /** おてつだいの たる: 掃いて開けると、仲間が出てくる(hp = 掃く回数、n = 出てくる人数、friend = 中にいる なかま。ふたから 顔が見える) */
+  barrels?: { s: number; x: number; hp: number; n: number; friend?: FriendId }[];
   /** 向こうから走ってくる鹿(道のり s のあたりで出会う)。ぶつかった仲間は、はじき飛ばされる */
   chargers?: { s: number; x: number }[];
   /** プレミアムコイン: よごれ この%以下で ゴール */
@@ -89,7 +100,7 @@ export const LEVEL_3_2: SweepLevel = {
   dropEvery: [2.2, 1.5],
   mix: [[0, 0.8, 0.2, 0], [0.2, 0.55, 0.37, 0.08], [0.5, 0.45, 0.4, 0.15]],
   gates: [{ s: 14, left: '+2', right: '+1' }, { s: 42, left: '-2', right: '+3' }, { s: 76, left: 'x2', right: '-3' }, { s: 110, left: '+3', right: '-2' }, { s: 138, left: '-4', right: 'x2' }],
-  barrels: [{ s: 28, x: 1.2, hp: 10, n: 2 }, { s: 92, x: -1.2, hp: 18, n: 3 }],
+  barrels: [{ s: 28, x: 1.2, hp: 10, n: 2, friend: 'kuru' }, { s: 92, x: -1.2, hp: 18, n: 3 }],
   chargers: [{ s: 34, x: 0 }, { s: 58, x: -1 }, { s: 66, x: 1.1 }, { s: 88, x: 0.3 }, { s: 104, x: -1.3 }, { s: 124, x: 1 }, { s: 128, x: -0.5 }, { s: 148, x: 0.6 }],
   premiumUnder: 12,
   notes: [
@@ -107,7 +118,7 @@ export const LEVEL_3_3: SweepLevel = {
   mix: [[0, 0.7, 0.3, 0], [0.25, 0.5, 0.4, 0.1], [0.55, 0.4, 0.42, 0.18]],
   rain: [[0.12, 0.8]],
   gates: [{ s: 12, left: '+2', right: '+3' }, { s: 44, left: 'x2', right: '-2' }, { s: 82, left: '-3', right: '+4' }, { s: 120, left: 'x2', right: '+3' }],
-  barrels: [{ s: 30, x: 0, hp: 12, n: 3 }, { s: 64, x: -1.3, hp: 18, n: 3 }, { s: 100, x: 1.3, hp: 22, n: 4 }],
+  barrels: [{ s: 30, x: 0, hp: 12, n: 3, friend: 'ruru' }, { s: 64, x: -1.3, hp: 18, n: 3, friend: 'kuru' }, { s: 100, x: 1.3, hp: 22, n: 4 }],
   chargers: [{ s: 54, x: 0.8 }, { s: 92, x: -0.8 }, { s: 136, x: 0 }, { s: 150, x: 1.2 }],
   premiumUnder: 12,
   notes: [
@@ -127,7 +138,7 @@ export const LEVEL_3_4: SweepLevel = {
   rain: [[0.55, 0.8]],
   bolts: { from: 0.1, every: 3.4 },
   gates: [{ s: 12, left: '+3', right: '+2' }, { s: 48, left: '-3', right: 'x2' }, { s: 90, left: '+4', right: '-2' }, { s: 130, left: 'x2', right: '-4' }],
-  barrels: [{ s: 32, x: 1.2, hp: 12, n: 3 }, { s: 72, x: -1.2, hp: 18, n: 4 }, { s: 110, x: 0, hp: 24, n: 4 }],
+  barrels: [{ s: 32, x: 1.2, hp: 12, n: 2, friend: 'kuru' }, { s: 32, x: -1.2, hp: 12, n: 4 }, { s: 72, x: -1.2, hp: 18, n: 3, friend: 'ruru' }, { s: 110, x: 0, hp: 24, n: 4 }],
   chargers: [{ s: 60, x: -0.6 }, { s: 98, x: 1 }, { s: 120, x: -1.2 }, { s: 146, x: 0.4 }, { s: 158, x: -0.4 }],
   premiumUnder: 12,
   notes: [
@@ -146,7 +157,7 @@ export const LEVEL_3_5: SweepLevel = {
   mix: [[0, 0.8, 0.2, 0], [0.25, 0.55, 0.35, 0.1], [0.55, 0.45, 0.4, 0.15]],
   herds: [{ s: 28, n: 4 }, { s: 58, n: 5 }, { s: 92, n: 5 }, { s: 124, n: 6 }, { s: 150, n: 6 }],
   gates: [{ s: 12, left: '+2', right: '+3' }, { s: 44, left: 'x2', right: '-2' }, { s: 76, left: '+3', right: '-3' }, { s: 110, left: '-3', right: 'x2' }, { s: 138, left: '+3', right: '+1' }],
-  barrels: [{ s: 20, x: -1.2, hp: 10, n: 2 }, { s: 68, x: 1.2, hp: 16, n: 3 }, { s: 102, x: 0, hp: 22, n: 4 }],
+  barrels: [{ s: 20, x: -1.2, hp: 10, n: 2, friend: 'momo' }, { s: 68, x: 1.2, hp: 16, n: 2, friend: 'kuru' }, { s: 68, x: -1.2, hp: 16, n: 3, friend: 'momo' }, { s: 102, x: 0, hp: 22, n: 4 }],
   chargers: [{ s: 84, x: 0.6 }, { s: 116, x: -1 }, { s: 160, x: 0.2 }],
   premiumUnder: 12,
   notes: [
@@ -165,7 +176,7 @@ export const LEVEL_3_6: SweepLevel = {
   mix: [[0, 0.75, 0.25, 0], [0.25, 0.5, 0.38, 0.12], [0.55, 0.42, 0.4, 0.18]],
   herds: [{ s: 66, n: 5 }, { s: 132, n: 5 }],
   gates: [{ s: 12, left: '+3', right: '+2' }, { s: 46, left: '-2', right: 'x2' }, { s: 84, left: 'x2', right: '-3' }, { s: 118, left: '+4', right: '-4' }],
-  barrels: [{ s: 28, x: 1.2, hp: 12, n: 3 }, { s: 74, x: -1.2, hp: 18, n: 3 }, { s: 104, x: 0, hp: 22, n: 4 }],
+  barrels: [{ s: 28, x: 1.2, hp: 12, n: 3, friend: 'lumi' }, { s: 74, x: -1.2, hp: 18, n: 3, friend: 'kuru' }, { s: 74, x: 1.2, hp: 18, n: 4 }, { s: 104, x: 0, hp: 22, n: 4, friend: 'momo' }],
   chargers: [{ s: 38, x: -0.6 }, { s: 58, x: 1 }, { s: 96, x: -1.2 }, { s: 126, x: 0.4 }, { s: 146, x: -0.4 }, { s: 158, x: 1.1 }],
   premiumUnder: 12,
   notes: [
@@ -185,7 +196,7 @@ export const LEVEL_3_7: SweepLevel = {
   stalls: [{ s: 30, side: 1, n: 3 }, { s: 52, side: -1, n: 4 }, { s: 74, side: 1, n: 5 }, { s: 98, side: -1, n: 5 }, { s: 122, side: 1, n: 6 }, { s: 146, side: -1, n: 6 }],
   herds: [{ s: 86, n: 5 }, { s: 158, n: 6 }],
   gates: [{ s: 12, left: '+2', right: '+3' }, { s: 40, left: 'x2', right: '-2' }, { s: 64, left: '+3', right: '-3' }, { s: 110, left: 'x2', right: '-4' }, { s: 134, left: '+3', right: '-2' }],
-  barrels: [{ s: 20, x: 0, hp: 10, n: 3 }, { s: 58, x: 1.2, hp: 16, n: 3 }, { s: 104, x: -1.2, hp: 22, n: 4 }],
+  barrels: [{ s: 20, x: 0, hp: 10, n: 3, friend: 'momo' }, { s: 58, x: 1.2, hp: 16, n: 3, friend: 'kuru' }, { s: 58, x: -1.2, hp: 16, n: 2, friend: 'momo' }, { s: 104, x: -1.2, hp: 22, n: 4 }],
   chargers: [{ s: 70, x: -0.8 }, { s: 88, x: 0.1 }, { s: 116, x: 0.8 }, { s: 140, x: 0 }],
   premiumUnder: 12,
   notes: [
@@ -207,7 +218,7 @@ export const LEVEL_3_8: SweepLevel = {
   wind: { from: 0.08, every: 7, dur: 2.4, force: 1.0 },
   bolts: { from: 0.4, every: 5.4 },
   gates: [{ s: 12, left: '+3', right: '+2' }, { s: 46, left: 'x2', right: '-3' }, { s: 82, left: '-3', right: '+4' }, { s: 118, left: 'x2', right: '-4' }, { s: 146, left: '+2', right: '-2' }],
-  barrels: [{ s: 28, x: -1.2, hp: 12, n: 3 }, { s: 64, x: 1.2, hp: 18, n: 4 }, { s: 100, x: 0, hp: 22, n: 4 }],
+  barrels: [{ s: 28, x: -1.2, hp: 12, n: 3, friend: 'piko' }, { s: 64, x: 1.2, hp: 18, n: 4, friend: 'ruru' }, { s: 100, x: -1.2, hp: 22, n: 3, friend: 'kuru' }, { s: 100, x: 1.2, hp: 22, n: 3, friend: 'piko' }],
   chargers: [{ s: 56, x: 0.4 }, { s: 108, x: -0.8 }, { s: 136, x: 1 }, { s: 162, x: -0.2 }],
   premiumUnder: 12,
   notes: [
@@ -228,7 +239,7 @@ export const LEVEL_3_9: SweepLevel = {
   wind: { from: 0.45, every: 8, dur: 2.2, force: 1.1 },
   herds: [{ s: 40, n: 5 }, { s: 100, n: 6 }, { s: 150, n: 6 }],
   gates: [{ s: 12, left: '+3', right: '+2' }, { s: 48, left: '-3', right: 'x2' }, { s: 86, left: 'x2', right: '-4' }, { s: 122, left: '+4', right: '-3' }, { s: 158, left: '-4', right: '+2' }],
-  barrels: [{ s: 26, x: 1.2, hp: 12, n: 3 }, { s: 70, x: -1.2, hp: 18, n: 4 }, { s: 110, x: 0, hp: 24, n: 4 }],
+  barrels: [{ s: 26, x: 1.2, hp: 12, n: 3, friend: 'lumi' }, { s: 70, x: -1.2, hp: 18, n: 4, friend: 'piko' }, { s: 70, x: 1.2, hp: 18, n: 4, friend: 'kuru' }, { s: 110, x: 0, hp: 24, n: 4 }],
   chargers: [{ s: 62, x: -0.6 }, { s: 94, x: 1 }, { s: 132, x: -1.2 }, { s: 166, x: 0.4 }],
   premiumUnder: 12,
   notes: [
@@ -252,7 +263,7 @@ export const LEVEL_3_10: SweepLevel = {
   rain: [[0.78, 1]],
   herds: [{ s: 34, n: 5 }, { s: 90, n: 6 }, { s: 150, n: 6 }],
   gates: [{ s: 12, left: '+3', right: '+2' }, { s: 44, left: 'x2', right: '-2' }, { s: 78, left: '-3', right: '+4' }, { s: 112, left: 'x2', right: '-4' }, { s: 146, left: '+3', right: '-3' }],
-  barrels: [{ s: 24, x: -1.2, hp: 12, n: 3 }, { s: 60, x: 1.2, hp: 18, n: 4 }, { s: 98, x: 0, hp: 24, n: 4 }, { s: 130, x: -1.2, hp: 24, n: 4 }],
+  barrels: [{ s: 24, x: -1.2, hp: 12, n: 3, friend: 'ruru' }, { s: 60, x: 1.2, hp: 18, n: 4, friend: 'kuru' }, { s: 98, x: -1.2, hp: 24, n: 4, friend: 'ruru' }, { s: 98, x: 1.2, hp: 24, n: 4, friend: 'momo' }, { s: 130, x: 0, hp: 24, n: 4 }],
   chargers: [{ s: 52, x: 0.6 }, { s: 104, x: -1 }, { s: 140, x: 0.8 }, { s: 172, x: -0.4 }],
   premiumUnder: 12,
   notes: [

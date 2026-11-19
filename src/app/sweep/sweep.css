@@ -466,3 +466,10 @@
   content: attr(data-icon);
   font-size: 17px;
 }
+
+/* たるの札: 中にいる なかまの 色 */
+.sw-barrel-tag[data-friend='lumi'] { background: #f6d23a; color: #4a3800; }
+.sw-barrel-tag[data-friend='momo'] { background: #ff8fb8; color: #fff; }
+.sw-barrel-tag[data-friend='kuru'] { background: #a8703f; color: #fff; }
+.sw-barrel-tag[data-friend='piko'] { background: #ff9a2e; color: #fff; }
+.sw-barrel-tag[data-friend='ruru'] { background: #4aa8f0; color: #fff; }

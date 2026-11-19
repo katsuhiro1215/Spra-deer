@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { WBAL, type Bolt, type Poop, type SweepDeer, type SweepEvent, type SweepRun } from './sim.ts';
-import type { DeerKind, PoopKind, SweepLevel } from './levels.ts';
+import type { DeerKind, FriendId, PoopKind, SweepLevel } from './levels.ts';
 
 const ASSET = '/assets';
 const DEER_H: Record<DeerKind, number> = { fawn: 1.3, doe: 1.45, stag: 1.6 };
@@ -48,7 +48,9 @@ function loadTex(url: string): THREE.Texture {
 type Particle = { s: THREE.Sprite; v: THREE.Vector3; life: number; max: number; grow: number; spin: number; gravity: number; base: number };
 type DeerSprite = { s: THREE.Sprite; shadow: THREE.Mesh };
 type PoopMesh = { g: THREE.Group; pop: number; wobble: number };
-type Helper = { s: THREE.Sprite; broom: THREE.Group; zone: THREE.Mesh; shadow: THREE.Mesh; pop: number };
+type Helper = { s: THREE.Sprite; broom: THREE.Group; zone: THREE.Mesh; shadow: THREE.Mesh; pop: number; glow: THREE.Sprite };
+/** なかま(Spra 以外)の 歩く後ろ姿(4コマ。scripts/build-friend-art.py) */
+const FRIEND_IDS: Exclude<FriendId, 'spra'>[] = ['lumi', 'momo', 'kuru', 'piko', 'ruru'];
 type GateObj = { g: THREE.Group; s: number; panels: THREE.Mesh[]; i: number };
 type Tumbler = { s: THREE.Sprite; v: THREE.Vector3; spin: number; life: number };
 
@@ -88,6 +90,8 @@ export class SweepView {
   private spra: THREE.Sprite;
   private spraTex: { l: THREE.Texture[]; r: THREE.Texture[] };
   private spraDir: 'l' | 'r' = 'l';
+  private friendTex = {} as Record<Exclude<FriendId, 'spra'>, { l: THREE.Texture[]; r: THREE.Texture[] }>;
+  private glowTex!: THREE.Texture;
   private spraLastX = 0;
   private broom: THREE.Group;
   private swing = 1;
@@ -193,6 +197,19 @@ export class SweepView {
     const ur = ul.map(t => { const c = t.clone(); c.repeat.x = -1; c.offset.x = 1; c.needsUpdate = true; return c; });
     this.spraTex = { l: ul, r: ur };
     this.disposables.push(...ul, ...ur);
+    for (const id of FRIEND_IDS) {
+      const l = [0, 1, 2, 3].map(i => loadTex(`${ASSET}/sweep/friends/${id}_${i}.png`));
+      const r = l.map(t => { const c = t.clone(); c.repeat.x = -1; c.offset.x = 1; c.needsUpdate = true; return c; });
+      this.friendTex[id] = { l, r };
+      this.disposables.push(...l, ...r);
+    }
+    // Lumi の まわりの光
+    this.glowTex = canvasTex(64, 64, g => {
+      const grd = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+      grd.addColorStop(0, 'rgba(255,244,190,0.9)'); grd.addColorStop(0.45, 'rgba(255,226,120,0.35)'); grd.addColorStop(1, 'rgba(255,210,80,0)');
+      g.fillStyle = grd; g.fillRect(0, 0, 64, 64);
+    });
+    this.disposables.push(this.glowTex);
     this.spra = new THREE.Sprite(new THREE.SpriteMaterial({ map: ul[0], transparent: true, alphaTest: 0.1 }));
     this.spra.center.set(0.5, 0.02);
     this.spra.renderOrder = 3;
@@ -507,8 +524,10 @@ export class SweepView {
       zone.rotation.x = -Math.PI / 2; zone.renderOrder = 1; zone.visible = false;
       const shadow = new THREE.Mesh(new THREE.CircleGeometry(0.24, 16), new THREE.MeshBasicMaterial({ color: '#000000', transparent: true, opacity: 0.18, depthWrite: false }));
       shadow.rotation.x = -Math.PI / 2; shadow.visible = false;
-      this.scene.add(s, broom, zone, shadow);
-      this.helpers.push({ s, broom, zone, shadow, pop: 1 });
+      const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.glowTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+      glow.visible = false; glow.renderOrder = 2;
+      this.scene.add(s, broom, zone, shadow, glow);
+      this.helpers.push({ s, broom, zone, shadow, pop: 1, glow });
     }
   }
   /** ゲート: 参道を横ぎる門。左右に数字の板(+ は青、× は金、− は赤) */
@@ -703,9 +722,10 @@ export class SweepView {
         // はじき飛ばされた なかま(先頭にぶつかったときは、まわりの なかま)
         if (!p) break;
         for (let k = 0; k < (e.n ?? 1); k++) {
-          const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.spraTex.l[0], transparent: true, alphaTest: 0.1 }));
+          const tx = this.texOf(e.who ?? 'spra', 'l', 0);
+          const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tx, transparent: true, alphaTest: 0.1 }));
           s.center.set(0.5, 0.5);
-          const img = this.spraTex.l[0].image as { width?: number; height?: number } | undefined;
+          const img = tx.image as { width?: number; height?: number } | undefined;
           const aspect = img?.width && img.height ? img.width / img.height : 0.6;
           s.scale.set(SPRA_H * HELPER * aspect, SPRA_H * HELPER, 1);
           s.position.copy(p).setY(0.5).add(new THREE.Vector3(k * 0.3, 0, 0));
@@ -717,6 +737,11 @@ export class SweepView {
         this.shake = Math.max(this.shake, e.hard ? 0.6 : 0.3);
         break;
       }
+      case 'block':
+        // Kuru が 鹿を とめた: かたい音の 星
+        if (p) this.emit('star', p.setY(0.6), { n: 16, spread: 0.5, vr: 2.6, size: 0.2, life: 0.6, gravity: 2, color: '#e0b070' });
+        this.shake = Math.max(this.shake, 0.3);
+        break;
       case 'bolt':
         if (!p) break;
         this.emit('star', p.clone().setY(0.3), { n: 26, spread: 1.4, vr: 4, size: 0.22, life: 0.6, gravity: 3, color: this.level.bolts?.fire ? '#ff9a2a' : '#fff6a0' });
@@ -791,7 +816,8 @@ export class SweepView {
       if (Math.random() < dt * 20) this.emit('soft', new THREE.Vector3(run.x, 0.2, -st.reach * 0.45), { n: 1, spread: st.width * 0.7, v: new THREE.Vector3(0, 1.4, 0), vr: 1.2, size: 0.3, life: 0.5, grow: 1, opacity: 0.4 });
     }
 
-    this.paintHelpers(run, dt, frame, sw);
+    this.paintHelpers(run, dt, frame, sw, moving || Math.abs(vx) > 1e-4);
+    this.paintLight(run, dt);
     this.paintGates(run, dt);
     this.paintBarrels(run, dt);
     this.paintChargers(run);
@@ -860,7 +886,7 @@ export class SweepView {
   }
   private placeBolt(b: Bolt, o: { ring: THREE.Mesh; beam: THREE.Mesh; scorch: THREE.Mesh }, run: SweepRun): void {
     const p = this.at(run, b.s, b.x);
-    const warn = b.t < 0, prog = warn ? 1 + b.t / WBAL.boltWarn : 0;
+    const warn = b.t < 0, prog = warn ? clamp(1 + b.t / WBAL.boltWarn, 0, 1) : 0;
     o.ring.visible = warn;
     o.ring.position.copy(p).setY(0.03);
     // 予告: 輪が ちかちか、だんだん速く
@@ -874,17 +900,33 @@ export class SweepView {
     (o.scorch.material as THREE.MeshBasicMaterial).opacity = warn ? 0 : 0.5 * Math.max(0, 1 - b.t / 1.2);
   }
 
-  private paintHelpers(run: SweepRun, dt: number, frame: number, sw: number): void {
+  /** なかまの絵(Spra は 3コマ、ほかの なかまは 4コマ) */
+  private texOf(kind: FriendId, dir: 'l' | 'r', frame: number): THREE.Texture {
+    const set = kind === 'spra' ? this.spraTex : this.friendTex[kind];
+    return set[dir][frame % set[dir].length];
+  }
+  /** 夜: Lumi がいると、灯りが ひろく、霧が 遠くなる(遠くまで 見える) */
+  private lumiK = 0;
+  private paintLight(run: SweepRun, dt: number): void {
+    if (!this.lamp) return;
+    this.lumiK += ((run.has('lumi') ? 1 : 0) - this.lumiK) * Math.min(1, dt * 2);
+    const k = this.lumiK, fog = this.scene.fog as THREE.Fog;
+    this.lamp.distance = 9 + 7 * k;
+    this.lamp.intensity = 9 + 6 * k;
+    fog.near = 7 + 6 * k; fog.far = 30 + 14 * k;
+  }
+  private paintHelpers(run: SweepRun, dt: number, frame: number, sw: number, walking: boolean): void {
     const ms = run.members(), st = run.stats;
     if (run.team > this.shownTeam) for (let i = this.shownTeam - 1; i < run.team - 1; i++) if (this.helpers[i]) this.helpers[i].pop = 0;
     this.shownTeam = run.team;
     this.helpers.forEach((h, i) => {
       const m = ms[i + 1], on = !!m;
       h.s.visible = h.broom.visible = h.shadow.visible = h.zone.visible = on;
+      h.glow.visible = on && m.kind === 'lumi';
       if (!m) return;
       h.pop = Math.min(1, h.pop + dt / 0.35);
       const k = ease(h.pop), bounce = 1 + Math.sin(Math.min(1, h.pop) * Math.PI) * 0.35;
-      const tex = this.spraTex[this.spraDir][(frame + i) % 3], mat = h.s.material;
+      const tex = this.texOf(m.kind, this.spraDir, m.kind === 'spra' ? frame + i : walking ? Math.floor(this.time * 8) + i : 0), mat = h.s.material;
       if (mat.map !== tex) { mat.map = tex; mat.needsUpdate = true; }
       const img = tex.image as { width?: number; height?: number } | undefined;
       const aspect = img?.width && img.height ? img.width / img.height : 0.6, hh = SPRA_H * HELPER * k * bounce;
@@ -892,10 +934,11 @@ export class SweepView {
       const z = -m.a + 0.25, bob = run.pace > 0.5 ? Math.abs(Math.sin(this.time * 9 + i)) * 0.03 : 0;
       h.s.position.set(m.x, bob + (1 - k) * 0.6, z);
       h.shadow.position.set(m.x, 0.012, z);
+      if (h.glow.visible) { h.glow.position.set(m.x, 0.4, z + 0.05); h.glow.scale.setScalar((this.lamp ? 2.2 : 1.3) * (0.92 + 0.08 * Math.sin(this.time * 5 + i))); }
       h.broom.position.set(m.x + 0.22, 0, z - 0.3);
       h.broom.rotation.y = -0.6 + sw * 1.4 * (i % 2 ? 1 : 0.85);
       h.broom.visible = st.level < 4;
-      const reach = st.reach * WBAL.helperReach;
+      const reach = st.reach * WBAL.helperReach * (m.kind === 'piko' ? WBAL.pikoReach : 1);
       h.zone.position.set(m.x, 0.021, -m.a - reach / 2);
       h.zone.scale.set(WBAL.helperWidth, reach, 1);
     });
@@ -936,8 +979,11 @@ export class SweepView {
         g.add(body);
         for (const y of [0.14, 0.58]) { const r = new THREE.Mesh(new THREE.TorusGeometry(0.345, 0.025, 6, 24), band); r.rotation.x = Math.PI / 2; r.position.y = y; g.add(r); }
         // ふたの上に、なかまの Spra の顔(中にいる)
-        const peek = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.spraTex.l[1], transparent: true, alphaTest: 0.1 }));
-        peek.center.set(0.5, 0); peek.scale.set(0.3, 0.5, 1); peek.position.y = 0.6;
+        // ふたの上に、中にいる なかまの 頭が のぞく(だれが出てくるか 分かる)
+        const ptex = this.texOf(b.friend, 'l', 1), pimg = ptex.image as { width?: number; height?: number } | undefined;
+        const peek = new THREE.Sprite(new THREE.SpriteMaterial({ map: ptex, transparent: true, alphaTest: 0.1 }));
+        const ph = b.friend === 'spra' ? 0.5 : 0.62;
+        peek.center.set(0.5, 0); peek.scale.set(ph * (pimg?.width && pimg.height ? pimg.width / pimg.height : 0.6), ph, 1); peek.position.y = 0.6;
         g.add(peek);
         this.scene.add(g);
         o = { g, shake: 0 };

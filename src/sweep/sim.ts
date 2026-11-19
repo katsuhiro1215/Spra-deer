@@ -6,7 +6,7 @@
 // 仲間の Spra(チーム): ゲート(+3・×2 など)を通る・おてつだいの たるを掃いて開けると ふえる。赤いゲート・走ってくる鹿で へる。
 // 仲間も みんな前でほうきを振る(範囲が重なると、たくさん掃ける)。先頭の Spra は いなくならない。
 // しかけ(面ごと): 雨・雷(お松明の火の粉も同じしくみ)・走ってくる鹿・鹿の群れ(横ぎって 一列に落とす)・せんべい売り場(鹿が集まる)・風(横へ流される)・大仏さまの目(ボス)。
-import type { DeerKind, PoopKind, SweepLevel } from './levels.ts';
+import type { DeerKind, FriendId, PoopKind, SweepLevel } from './levels.ts';
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
@@ -85,6 +85,14 @@ export const WBAL = {
   stallBig: 0.15,
   /** 風: うんこが流される速さ(Spra の何倍。小さいほど よく流れる) */
   windPoop: { small: 0.7, medium: 0.45, large: 0.2 } as Record<PoopKind, number>,
+  /** なかまの能力: Ruru が べちゃべちゃ・硬い うんこを掃く力(何倍)・Piko のほうきの届き(何倍)・Piko がいると 風で流される割合・
+   *  Momo が掃くと お花の数え(何こぶん)・Momo がいると お花が減らす よごれ(何倍)・Lumi がいると 雷・火の粉の予告が のびる(秒) */
+  ruruPower: 2,
+  pikoReach: 1.35,
+  pikoWind: 0.35,
+  momoCount: 1.5,
+  momoHeal: 1.5,
+  lumiWarn: 0.7,
 };
 
 /** 仲間の並ぶ所(先頭からの 横 dx・前 da)。先頭のまわりの、前と横から うまっていく */
@@ -102,9 +110,10 @@ export const SLOTS: { dx: number; da: number }[] = (() => {
   return out.sort((a, b) => a.score - b.score).slice(0, WBAL.teamMax - 1).map(({ dx, da }) => ({ dx, da }));
 })();
 
-export type Barrel = { id: number; s: number; x: number; hp: number; maxHp: number; n: number };
+export type Barrel = { id: number; s: number; x: number; hp: number; maxHp: number; n: number; friend: FriendId };
 export type Charger = { id: number; s: number; x: number; hits: number; hitLeader: boolean; cool: number };
-export type Member = { x: number; a: number; leader: boolean };
+/** チームの ひとり(i = なかまの番号。先頭は -1) */
+export type Member = { x: number; a: number; leader: boolean; kind: FriendId; i: number };
 /** ゲートの数字('+3'・'-4'・'x2')を、通ったあとの人数にする */
 export function applyGate(team: number, g: string, max: number = WBAL.teamMax): number {
   const n = Number(g.slice(1));
@@ -134,7 +143,9 @@ export type SweepDeer = {
 };
 export type Flower = { id: number; s: number; x: number; hue: number; t: number };
 export type SweepEvent = {
-  kind: 'drop' | 'sweep' | 'hit' | 'clean' | 'miss' | 'level' | 'flower' | 'warn' | 'glow' | 'clear' | 'fail' | 'combo' | 'gate' | 'barrelHit' | 'barrel' | 'charge' | 'bump' | 'rain' | 'rainEnd' | 'boltWarn' | 'bolt' | 'swarm' | 'herd' | 'stall' | 'wind' | 'windEnd';
+  kind: 'drop' | 'sweep' | 'hit' | 'clean' | 'miss' | 'level' | 'flower' | 'warn' | 'glow' | 'clear' | 'fail' | 'combo' | 'gate' | 'barrelHit' | 'barrel' | 'charge' | 'bump' | 'rain' | 'rainEnd' | 'boltWarn' | 'bolt' | 'swarm' | 'herd' | 'stall' | 'wind' | 'windEnd' | 'block';
+  /** だれが(たるから出てきた・はじき飛ばされた・鹿を とめた なかま) */
+  who?: FriendId;
   id?: number; x?: number; s?: number; n?: number; hard?: boolean; poop?: PoopKind;
 };
 
@@ -177,6 +188,10 @@ export class SweepRun {
   buddhaLeft = 0;
   /** チームの人数(先頭の Spra をふくむ) */
   team = 1;
+  /** なかま(先頭のうしろ。入った順)。足りない分は Spra */
+  crew: FriendId[] = [];
+  /** お花までの数え(Momo が掃くと 多く数える) */
+  private flowerPts = 0;
   bestTeam = 1;
   /** 通ったゲートの数(次のゲートの番号) */
   gateIndex = 0;
@@ -211,7 +226,7 @@ export class SweepRun {
     this.level = level;
     this.premiumOn = opts.premium ?? true;
     this.rng = opts.seed === undefined ? Math.random : mulberry(opts.seed);
-    this.barrels = (level.barrels ?? []).map(b => ({ id: this.nextId++, s: b.s, x: b.x, hp: b.hp, maxHp: b.hp, n: b.n }));
+    this.barrels = (level.barrels ?? []).map(b => ({ id: this.nextId++, s: b.s, x: b.x, hp: b.hp, maxHp: b.hp, n: b.n, friend: b.friend ?? 'spra' }));
   }
   start() { if (this.phase === 'ready') this.phase = 'running'; }
   drainEvents(): SweepEvent[] { const e = this.events; this.events = []; return e; }
@@ -225,16 +240,34 @@ export class SweepRun {
   ahead(s: number) { return s - this.d; }
   /** チームのみんなの位置(参道の中に おさまるように、横は つめる)。いちばん目が先頭 */
   members(): Member[] {
-    const out: Member[] = [{ x: this.x, a: 0, leader: true }];
+    const out: Member[] = [{ x: this.x, a: 0, leader: true, kind: 'spra', i: -1 }];
     for (let i = 0; i < this.team - 1; i++) {
       const sl = SLOTS[i];
-      out.push({ x: clamp(this.x + sl.dx, -WBAL.half + 0.25, WBAL.half - 0.25), a: sl.da, leader: false });
+      out.push({ x: clamp(this.x + sl.dx, -WBAL.half + 0.25, WBAL.half - 0.25), a: sl.da, leader: false, kind: this.crew[i] ?? 'spra', i });
     }
     return out;
   }
+  /** チームに その なかまが いるか */
+  has(kind: FriendId): boolean { return this.crew.slice(0, this.team - 1).includes(kind); }
+  /** 人数を かえる: へるときは あとから入った なかまから。ふえるときは add の なかま(無ければ、いまの顔ぶれを くり返す = x2 のゲート) */
+  private setTeam(n: number, add?: FriendId) {
+    const want = clamp(Math.round(n), 1, this.level.teamMax) - 1;
+    this.crew = this.crew.slice(0, Math.min(this.crew.length, this.team - 1));
+    while (this.crew.length < this.team - 1) this.crew.push('spra');
+    while (this.crew.length > want) this.crew.pop();
+    const base = [...this.crew];
+    for (let k = 0; this.crew.length < want; k++) this.crew.push(add ?? (base.length ? base[k % base.length] : 'spra'));
+    this.team = want + 1;
+    this.bestTeam = Math.max(this.bestTeam, this.team);
+  }
+  /** はじき飛ばされた なかまを、チームから外す */
+  private knock(m: Member) {
+    if (m.i >= 0 && m.i < this.crew.length) this.crew.splice(m.i, 1);
+    this.team = Math.max(1, this.team - 1);
+  }
   /** (x, 先 a, 半径 r)のものが、その人のほうきの範囲にあるか */
   private zoneHas(m: Member, x: number, a: number, r: number): boolean {
-    const st = this.stats, w = m.leader ? st.width : WBAL.helperWidth, reach = m.leader ? st.reach : st.reach * WBAL.helperReach;
+    const st = this.stats, w = m.leader ? st.width : WBAL.helperWidth, reach = m.leader ? st.reach : st.reach * WBAL.helperReach * (m.kind === 'piko' ? WBAL.pikoReach : 1);
     const rel = a - m.a;
     return rel >= -0.1 && rel <= reach && Math.abs(x - m.x) <= w / 2 + r;
   }
@@ -301,11 +334,15 @@ export class SweepRun {
   private sweep() {
     const st = this.stats;
     this.events.push({ kind: 'sweep', x: this.x, n: st.level });
-    const power = new Map<Poop, number>(), barrelPow = new Map<Barrel, number>();
+    const power = new Map<Poop, number>(), barrelPow = new Map<Barrel, number>(), byMomo = new Set<Poop>();
     for (const m of this.members()) {
       const cap = m.leader ? st.targets : WBAL.helperTargets;
       const near = this.poops.filter(p => this.zoneHas(m, p.x, this.ahead(p.s), WBAL.poop[p.kind].r)).sort((a, b) => this.ahead(a.s) - this.ahead(b.s)).slice(0, cap);
-      for (const p of near) power.set(p, (power.get(p) ?? 0) + st.power);
+      for (const p of near) {
+        // Ruru は 水で ふやかすので、べちゃべちゃ・硬い うんこに つよい
+        power.set(p, (power.get(p) ?? 0) + st.power * (m.kind === 'ruru' && (p.wet || p.hard) ? WBAL.ruruPower : 1));
+        if (m.kind === 'momo') byMomo.add(p);
+      }
       if (near.length < cap) for (const b of this.barrels) if (this.zoneHas(m, b.x, this.ahead(b.s), 0.35)) barrelPow.set(b, (barrelPow.get(b) ?? 0) + st.power);
     }
     for (const [b, pw] of barrelPow) {
@@ -313,9 +350,8 @@ export class SweepRun {
       if (b.hp > 0) { this.events.push({ kind: 'barrelHit', id: b.id, x: b.x, s: b.s, n: b.hp }); continue; }
       this.barrels.splice(this.barrels.indexOf(b), 1);
       const before = this.team;
-      this.team = Math.min(this.level.teamMax, this.team + b.n);
-      this.bestTeam = Math.max(this.bestTeam, this.team);
-      this.events.push({ kind: 'barrel', id: b.id, x: b.x, s: b.s, n: this.team - before });
+      this.setTeam(this.team + b.n, b.friend);
+      this.events.push({ kind: 'barrel', id: b.id, x: b.x, s: b.s, n: this.team - before, who: b.friend });
     }
     const hits = [...power.keys()];
     let flowers = 0;
@@ -328,7 +364,9 @@ export class SweepRun {
       this.combo++; this.maxCombo = Math.max(this.maxCombo, this.combo); this.comboLeft = WBAL.comboWindow;
       this.events.push({ kind: 'clean', id: p.id, x: p.x, s: p.s, n: score, hard: p.hard, poop: p.kind });
       if (this.combo >= 5 && this.combo % 5 === 0) this.events.push({ kind: 'combo', n: this.combo });
-      if (this.cleaned % WBAL.flowerEvery === 0) flowers++;
+      // お花: Momo が掃いた うんこは 多く数える
+      this.flowerPts += byMomo.has(p) ? WBAL.momoCount : 1;
+      while (this.flowerPts >= WBAL.flowerEvery - 1e-9) { this.flowerPts -= WBAL.flowerEvery; flowers++; }
     }
     this.poops = this.poops.filter(p => p.hp > 0);
     for (let i = 0; i < flowers; i++) this.bloom();
@@ -342,8 +380,8 @@ export class SweepRun {
     const gs = this.level.gates ?? [];
     while (this.gateIndex < gs.length && this.d >= gs[this.gateIndex].s) {
       const g = gs[this.gateIndex++], side = this.x < 0 ? g.left : g.right, before = this.team;
-      this.team = applyGate(this.team, side, this.level.teamMax);
-      this.bestTeam = Math.max(this.bestTeam, this.team);
+      // + は Spra が ふえる。x は いまの顔ぶれが ふえる
+      this.setTeam(applyGate(this.team, side, this.level.teamMax), side[0] === '+' ? 'spra' : undefined);
       this.events.push({ kind: 'gate', x: this.x < 0 ? -1 : 1, s: g.s, n: this.team - before, id: this.gateIndex - 1 });
     }
   }
@@ -367,13 +405,18 @@ export class SweepRun {
           if (c.hitLeader) continue;
           c.hitLeader = true;
           const lost = Math.min(this.team - 1, WBAL.chargeLeaderLoss);
-          this.team -= lost;
+          this.setTeam(this.team - lost);
           this.events.push({ kind: 'bump', id: c.id, x: m.x, s: this.d + m.a, n: lost, hard: true });
+        } else if (m.kind === 'kuru') {
+          // Kuru は 固い からで 鹿を とめる(その鹿は もう だれも とばさない)
+          if (c.hits >= WBAL.chargeMaxHits) continue;
+          c.hits = WBAL.chargeMaxHits; c.hitLeader = true;
+          this.events.push({ kind: 'block', id: c.id, x: m.x, s: this.d + m.a, who: 'kuru' });
         } else {
           if (c.hits >= WBAL.chargeMaxHits) continue;
           c.hits++;
-          this.team = Math.max(1, this.team - 1);
-          this.events.push({ kind: 'bump', id: c.id, x: m.x, s: this.d + m.a, n: 1 });
+          this.knock(m);
+          this.events.push({ kind: 'bump', id: c.id, x: m.x, s: this.d + m.a, n: 1, who: m.kind });
         }
         c.cool = 0.12;
         break;
@@ -398,18 +441,21 @@ export class SweepRun {
     this.nextBolt = bo.every * (0.8 + this.rng() * 0.4);
     // チームの あたり(だれかの少し先)に落ちる。予告の輪を見て、よける
     const ms = this.members(), m = ms[Math.floor(this.rng() * ms.length)];
-    const b: Bolt = { id: this.nextId++, s: this.d + m.a + 1.2 + this.rng() * 1.5, x: clamp(m.x + (this.rng() - 0.5) * 0.8, -WBAL.half + 0.4, WBAL.half - 0.4), t: -WBAL.boltWarn };
+    const b: Bolt = { id: this.nextId++, s: this.d + m.a + 1.2 + this.rng() * 1.5, x: clamp(m.x + (this.rng() - 0.5) * 0.8, -WBAL.half + 0.4, WBAL.half - 0.4), t: -(WBAL.boltWarn + (this.has('lumi') ? WBAL.lumiWarn : 0)) };
     this.bolts.push(b);
     this.events.push({ kind: 'boltWarn', id: b.id, x: b.x, s: b.s });
   }
   /** 雷が落ちた: 輪の中の なかまは はじき飛ばされ、先頭は しびれる。うんこは 飛び散る(小さく分かれる) */
   private strike(b: Bolt) {
-    let lost = 0, leader = false;
+    let leader = false;
+    const hit: Member[] = [];
     for (const m of this.members()) {
       if (Math.hypot(m.x - b.x, this.d + m.a - b.s) > WBAL.boltR) continue;
-      if (m.leader) leader = true; else if (lost < WBAL.boltMaxHits) lost++;
+      // Kuru は 固い からで とばされない
+      if (m.leader) leader = true; else if (m.kind !== 'kuru' && hit.length < WBAL.boltMaxHits) hit.push(m);
     }
-    this.team = Math.max(1, this.team - lost);
+    const lost = hit.length;
+    for (const m of hit.sort((p, q) => q.i - p.i)) this.knock(m);
     if (leader) this.stun = WBAL.boltStun;
     for (const p of [...this.poops]) {
       if (p.kind === 'small' || Math.hypot(p.x - b.x, p.s - b.s) > WBAL.boltR) continue;
@@ -459,7 +505,8 @@ export class SweepRun {
     if (this.windLeft > 0) {
       this.windLeft -= dt;
       const f = w.force * this.wind * dt;
-      this.targetX = clamp(this.targetX + f, -WBAL.reachX, WBAL.reachX);
+      // Piko がいると、チームは 流されにくい(うんこは 流れる)
+      this.targetX = clamp(this.targetX + f * (this.has('piko') ? WBAL.pikoWind : 1), -WBAL.reachX, WBAL.reachX);
       for (const p of this.poops) p.x = clamp(p.x + f * WBAL.windPoop[p.kind], -WBAL.half + 0.2, WBAL.half - 0.2);
       if (this.windLeft <= 0) { this.wind = 0; this.windLeft = 0; this.events.push({ kind: 'windEnd' }); }
       return;
@@ -479,7 +526,7 @@ export class SweepRun {
     const f: Flower = { id: this.nextId++, s: this.d + 4 + this.rng() * 3, x: side * (WBAL.half + 0.3 + this.rng() * 0.6), hue: this.rng(), t: 0 };
     this.flowers.push(f);
     if (this.flowers.length > 80) this.flowers.shift();
-    this.dirt = Math.max(0, this.dirt - WBAL.flowerHeal);
+    this.dirt = Math.max(0, this.dirt - WBAL.flowerHeal * (this.has('momo') ? WBAL.momoHeal : 1));
     this.events.push({ kind: 'flower', id: f.id, x: f.x, s: f.s, n: this.flowers.length });
   }
 

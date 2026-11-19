@@ -2,7 +2,7 @@
 import { Progress } from '../progress.ts';
 import { Wallet, clearRewards, waitText, STAMINA_MAX, STAMINA_FAIL } from '../wallet.ts';
 import { RunnerAudio } from '../runner/audio.ts';
-import { SWEEP_LEVELS, type SweepLevel } from './levels.ts';
+import { FRIENDS, SWEEP_LEVELS, type SweepLevel } from './levels.ts';
 import { SweepRun, WBAL, type SweepEvent } from './sim.ts';
 import { SweepView } from './view.ts';
 
@@ -88,6 +88,8 @@ export function startSweep(root: HTMLElement, level: SweepLevel): () => void {
       case 'barrel': noise(0.25, 0.3, 'bandpass', 700, 0, 1, 2000); [784, 988, 1175, 1568].forEach((f, i) => tone(f, f, 0.12, 'sine', 0.06, 0.05 + i * 0.05)); break;
       case 'charge': tone(900, 600, 0.15, 'square', 0.04); tone(900, 600, 0.15, 'square', 0.04, 0.2); break;
       case 'bump': tone(300, 900, 0.18, 'sine', 0.07); noise(0.1, 0.2, 'lowpass', 800); break;
+      // こつん(Kuru の 固い から)
+      case 'block': tone(1200, 1100, 0.06, 'square', 0.06); tone(700, 660, 0.12, 'triangle', 0.06, 0.04); break;
       case 'warn': [0, 0.4, 0.8].forEach(d => tone(1320, 1240, 0.3, 'sine', 0.05, d)); break;
       case 'glow': tone(110, 80, 1.2, 'sawtooth', 0.05); noise(0.9, 0.12, 'lowpass', 300); break;
       case 'boltWarn': tone(1500, 1400, 0.08, 'square', 0.03); tone(1500, 1400, 0.08, 'square', 0.03, 0.25); break;
@@ -136,7 +138,8 @@ export function startSweep(root: HTMLElement, level: SweepLevel): () => void {
     for (const p of run.poops) {
       const a = run.ahead(p.s);
       // 夜は 近くに来てから 出る
-      if (!running || p.maxHp <= 1 || a > (level.night ? 5.5 : 9) || a < -0.2) continue;
+      // (Lumi がいると、夜でも 遠くまで 見える)
+      if (!running || p.maxHp <= 1 || a > (level.night && !run.has('lumi') ? 5.5 : 9) || a < -0.2) continue;
       seen.add(p.id);
       let el = hpTags.get(p.id);
       if (!el) { el = document.createElement('div'); el.className = 'sw-hp'; elLabels.append(el); hpTags.set(p.id, el); }
@@ -157,8 +160,9 @@ export function startSweep(root: HTMLElement, level: SweepLevel): () => void {
         if (!el) { el = document.createElement('div'); el.className = 'sw-hp sw-barrel-tag'; elLabels.append(el); hpTags.set(key, el); }
         const at = view.toScreen(view.barrelTop(run, b.s, b.x));
         el.style.transform = `translate(${at.x}px, ${at.y}px) translate(-50%, -100%)`;
-        const txt = `なかま+${b.n}　${b.hp}`;
+        const txt = `${b.friend === 'spra' ? 'なかま' : FRIENDS[b.friend].name}+${b.n}　${b.hp}`;
         if (el.textContent !== txt) el.textContent = txt;
+        el.dataset.friend = b.friend;
       }
       for (const c of run.chargers) {
         const a = run.ahead(c.s);
@@ -377,7 +381,16 @@ export function startSweep(root: HTMLElement, level: SweepLevel): () => void {
         if (n < 0) hint('gateBad', '赤い ゲートは 仲間が へる。数字を 見て えらぼう', 2800);
         break;
       }
-      case 'barrel': pop(e.s!, e.x!, 1.2, `なかま +${e.n}！`, 'big'); break;
+      case 'barrel': {
+        const who = e.who ?? 'spra';
+        pop(e.s!, e.x!, 1.2, who === 'spra' ? `なかま +${e.n}！` : `${FRIENDS[who].name} +${e.n}！`, 'big');
+        if (who !== 'spra') hint(`join-${who}`, FRIENDS[who].join, 3600);
+        break;
+      }
+      case 'block':
+        pop(e.s!, e.x!, 1.3, 'Kuru が とめた！', 'big');
+        hint('block', 'Kuru は 固い からで、走ってくる 鹿を とめるよ！', 2600);
+        break;
       case 'charge': hint('charge', '鹿が 走ってくる！ ぶつかった 仲間は はじき飛ばされる。よけて！', 2800); break;
       case 'bump': pop(e.s!, e.x!, 1.2, `−${e.n}`, 'miss'); break;
     }
