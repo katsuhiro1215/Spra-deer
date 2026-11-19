@@ -8,7 +8,7 @@ export function soundOn(): boolean {
   try { return localStorage.getItem(SOUND_KEY) !== 'off'; } catch { return true; }
 }
 
-/** WORLD 3 のBGM(bgm/bgm-prompts.md の DEER-05)。頭から流し、LOOP_START〜LOOP_END をくり返す */
+/** WORLD 4(鹿、走る。)のBGM(bgm/bgm-prompts.md の DEER-05)。頭から流し、LOOP_START〜LOOP_END をくり返す */
 export const RUN_BGM = { url: '/assets/audio/run.mp3', loopStart: 16.02, loopEnd: 141.552, volume: 0.42 };
 
 export type Sfx = 'jump' | 'dash' | 'heal' | 'hit' | 'gold' | 'premium' | 'checkpoint';
@@ -81,7 +81,7 @@ export class RunnerAudio {
     this.playBuffer(`/assets/audio/sfx/${name}.mp3`, SFX_VOLUME[name]);
   }
 
-  /** BGMを頭から流す(もう流れているなら、そのまま)。曲は、ほかのワールドが選べる(既定は WORLD 3 の曲) */
+  /** BGMを頭から流す(もう流れているなら、そのまま)。曲は、ほかのワールドが選べる(既定は 鹿、走る。の曲) */
   startMusic(bgm: typeof RUN_BGM = RUN_BGM): void {
     const ctx = this.ctx;
     const out = this.out;

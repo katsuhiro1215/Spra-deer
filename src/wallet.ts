@@ -10,13 +10,17 @@ export const STAMINA_REGEN_MS = 3 * 60 * 1000;
 /** 回復薬: 体力+10、シルバーコイン300枚 */
 export const POTION = { heal: 10, price: 300 } as const;
 
+import { swapWorld34Key } from './renumber.ts';
+
 export type CoinKind = 'silver' | 'gold' | 'premium';
 export type Coins = Record<CoinKind, number>;
 
 const KEY = 'spra-deer:wallet:v1';
+/** WORLD 3・4 の入れかえ(2026-11-19)のあとの保存か。印が無ければ、面の番号を新しくする */
+const RENUMBERED = 1;
 const count = (n: unknown) => (typeof n === 'number' && Number.isSafeInteger(n) && n >= 0 ? n : 0);
 
-type Saved = { stamina: number; at: number; coins: Coins; premiumTaken: string[]; rewards: string[] };
+type Saved = { stamina: number; at: number; coins: Coins; premiumTaken: string[]; rewards: string[]; renumbered?: number };
 
 function storage(): Storage | null {
   try { return typeof localStorage === 'undefined' ? null : localStorage; } catch { return null; }
@@ -30,7 +34,7 @@ export class Wallet {
   readonly coins: Coins = { silver: 0, gold: 0, premium: 0 };
   /** プレミアムコインを取った面(1つの面に1枚だけ。取ったら次からは出ない) */
   private premiumTaken = new Set<string>();
-  /** 1回だけのごほうびをもらった印(例: 'first:3-1'・'star3:3-1') */
+  /** 1回だけのごほうびをもらった印(例: 'first:4-1'・'star3:4-1') */
   private rewards = new Set<string>();
 
   private now: () => number;
@@ -47,15 +51,17 @@ export class Wallet {
         this.value = Math.min(STAMINA_MAX, count(s.stamina));
         this.at = typeof s.at === 'number' && Number.isFinite(s.at) && s.at <= this.now() ? s.at : this.now();
         if (s.coins && typeof s.coins === 'object') for (const k of ['silver', 'gold', 'premium'] as const) this.coins[k] = count(s.coins[k]);
-        if (Array.isArray(s.premiumTaken)) for (const id of s.premiumTaken) if (typeof id === 'string') this.premiumTaken.add(id);
-        if (Array.isArray(s.rewards)) for (const id of s.rewards) if (typeof id === 'string') this.rewards.add(id);
+        const fix = s.renumbered === RENUMBERED ? (id: string) => id : swapWorld34Key;
+        if (Array.isArray(s.premiumTaken)) for (const id of s.premiumTaken) if (typeof id === 'string') this.premiumTaken.add(fix(id));
+        if (Array.isArray(s.rewards)) for (const id of s.rewards) if (typeof id === 'string') this.rewards.add(fix(id));
+        if (s.renumbered !== RENUMBERED) this.save();
       }
     } catch { this.canSave = false; }
   }
 
   private save(): void {
     if (!this.store) return;
-    const s: Saved = { stamina: this.value, at: this.at, coins: { ...this.coins }, premiumTaken: [...this.premiumTaken], rewards: [...this.rewards] };
+    const s: Saved = { stamina: this.value, at: this.at, coins: { ...this.coins }, premiumTaken: [...this.premiumTaken], rewards: [...this.rewards], renumbered: RENUMBERED };
     try { this.store.setItem(KEY, JSON.stringify(s)); } catch { this.canSave = false; }
   }
 

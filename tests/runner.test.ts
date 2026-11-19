@@ -136,12 +136,12 @@ test('コースは毎回同じ', () => {
   for (const l of RUNNER_LEVELS) assert.deepEqual(courseOf(l), courseOf(l));
 });
 
-test('面の設定が正しい: 番号が重ならず、3-10が最長で最終面', () => {
+test('面の設定が正しい: 番号が重ならず、4-10が最長で最終面', () => {
   const ids = RUNNER_LEVELS.map((l) => l.id);
   assert.equal(new Set(ids).size, ids.length);
-  assert.ok(runnerById('3-10'));
+  assert.ok(runnerById('4-10'));
   const longest = Math.max(...RUNNER_LEVELS.map((l) => l.length));
-  assert.equal(runnerById('3-10')!.length, longest);
+  assert.equal(runnerById('4-10')!.length, longest);
   for (const l of RUNNER_LEVELS) {
     assert.ok(l.rules.speed1 >= l.rules.speed0 && l.rules.steerAccel > 0, l.id);
     assert.ok(l.title && l.summary && l.intro && l.goalName, l.id);
@@ -157,12 +157,12 @@ test('どの面も: 障害物は前から順で、穴は跳べる長さ、コイ
     assert.ok(c.obstacles.filter((o) => o.kind === 'hole').length >= 1, l.id);
     assert.ok(c.obstacles.every((o) => o.s < l.length - 40), `${l.id}: ゴール直前に障害物がある`);
   }
-  assert.ok(courseOf(runnerById('3-5')!).obstacles.some((o) => o.kind === 'puddle'), '雨の面にはみずたまり');
-  assert.ok(courseOf(runnerById('3-6')!).obstacles.some((o) => o.kind === 'ice'), '雪の面にはこおり');
+  assert.ok(courseOf(runnerById('4-5')!).obstacles.some((o) => o.kind === 'puddle'), '雨の面にはみずたまり');
+  assert.ok(courseOf(runnerById('4-6')!).obstacles.some((o) => o.kind === 'ice'), '雪の面にはこおり');
 });
 
 test('動物・モンスターの罠が、面ごとに4つの動きで出る', () => {
-  for (const id of ['3-2', '3-3', '3-5', '3-6']) {
+  for (const id of ['4-2', '4-3', '4-5', '4-6']) {
     const l = runnerById(id)!;
     const crit = courseOf(l).obstacles.filter((o) => o.kind === 'critter');
     const behaviors = new Set(crit.map((o) => o.behavior));
@@ -170,7 +170,7 @@ test('動物・モンスターの罠が、面ごとに4つの動きで出る', (
     assert.ok(crit.every((o) => l.critters!.includes(o.critter!)), `${id}: 設定外のキャラ`);
     assert.ok(crit.length >= 8, `${id}: 動物の罠が少ない ${crit.length}`);
   }
-  assert.ok(!courseOf(runnerById('3-1')!).obstacles.some((o) => o.kind === 'critter'), '3-1は今までどおり');
+  assert.ok(!courseOf(runnerById('4-1')!).obstacles.some((o) => o.kind === 'critter'), '4-1は今までどおり');
 });
 
 const critterCourse = (behavior: 'sleep' | 'hop' | 'charge', effect: 'damage' | 'slip' | 'slow' | 'ice' = 'damage'): Course => ({
@@ -213,7 +213,7 @@ test('跳ねている間は下を通れる(跳ねる動物)', () => {
   assert.ok(ups.some((y) => y > 0.5) && ups.some((y) => y < 0.5), '浮く時間と、地面にいる時間がある');
 });
 
-test('曲がる道: 出だしとゴール前はまっすぐ。3-1は、ずっとまっすぐ', () => {
+test('曲がる道: 出だしとゴール前はまっすぐ。4-1は、ずっとまっすぐ', () => {
   for (const l of RUNNER_LEVELS) {
     const c = courseOf(l);
     assert.ok(Math.abs(roadX(c, 0)) < 1e-9, l.id);
@@ -226,12 +226,12 @@ test('曲がる道: 出だしとゴール前はまっすぐ。3-1は、ずっと
       assert.ok(Math.max(...mid) > 0.1, `${l.id}: カーブが小さすぎる`);
     }
   }
-  assert.ok(!runnerById('3-1')!.curve);
-  assert.ok(runnerById('3-3')!.curve!.amp > runnerById('3-2')!.curve!.amp, '山道のほうが、きついカーブ');
+  assert.ok(!runnerById('4-1')!.curve);
+  assert.ok(runnerById('4-3')!.curve!.amp > runnerById('4-2')!.curve!.amp, '山道のほうが、きついカーブ');
 });
 
 test('カーブでは、外側へ押される(右カーブなら左へ)', () => {
-  const c = courseOf(runnerById('3-3')!);
+  const c = courseOf(runnerById('4-3')!);
   // 曲がりが一番きつい所を探す
   let best = 0;
   for (let s = 200; s < 800; s += 1) if (Math.abs(roadCurv(c, s)) > Math.abs(roadCurv(c, best))) best = s;
@@ -287,11 +287,11 @@ test('ジャンプ台: 飛び出すとダッシュ(しばらく速くなる)', (
 });
 
 test('回復薬: ハートが1つふえる(3つまで)。置いてある面だけ', () => {
-  const rain = courseOf(runnerById('3-5')!);
+  const rain = courseOf(runnerById('4-5')!);
   const potions = rain.coins.filter((c) => c.kind === 'potion');
   assert.equal(potions.length, 2, '薬師寺と唐招提寺に1つずつ');
   for (const p of potions) assert.ok(!rain.obstacles.some((o) => Math.abs(o.s - p.s) < 16 + o.len), '罠のすぐそばには置かない');
-  assert.ok(!courseOf(runnerById('3-1')!).coins.some((c) => c.kind === 'potion'), '3-1には無い');
+  assert.ok(!courseOf(runnerById('4-1')!).coins.some((c) => c.kind === 'potion'), '4-1には無い');
   const r = new Run({ obstacles: [], coins: [{ id: 0, s: 3, x: 0, y: 1.1, kind: 'potion' }], length: COURSE_LENGTH });
   r.start();
   r.lives = 1;
@@ -305,7 +305,7 @@ test('回復薬: ハートが1つふえる(3つまで)。置いてある面だ�
 });
 
 test('大仏の目が光ったあと(wake)は、罠の間隔がつまる', () => {
-  const l = runnerById('3-2')!;
+  const l = runnerById('4-2')!;
   assert.ok(l.wake && l.wake > 0.4 && l.wake < 0.8);
   const c = courseOf(l);
   const gaps = (from: number, to: number) => {
@@ -378,12 +378,12 @@ test('みずたまりはおそくなるだけ、こおりは左右がきかな�
 });
 
 test('雨・雪の面は、左右の動きだしが鈍い', () => {
-  const day = runnerById('3-1')!.rules.steerAccel;
-  assert.ok(runnerById('3-5')!.rules.steerAccel < day);
-  assert.ok(runnerById('3-6')!.rules.steerAccel < runnerById('3-5')!.rules.steerAccel);
+  const day = runnerById('4-1')!.rules.steerAccel;
+  assert.ok(runnerById('4-5')!.rules.steerAccel < day);
+  assert.ok(runnerById('4-6')!.rules.steerAccel < runnerById('4-5')!.rules.steerAccel);
 });
 
-test('坂: 出だしは高さ0、ゴールの100m手前からは平ら。3-1は平らなまま。3-3は登る', () => {
+test('坂: 出だしは高さ0、ゴールの100m手前からは平ら。4-1は平らなまま。4-3は登る', () => {
   for (const l of RUNNER_LEVELS) {
     const c = courseOf(l);
     assert.equal(roadY(c, 0), 0, l.id);
@@ -391,9 +391,9 @@ test('坂: 出だしは高さ0、ゴールの100m手前からは平ら。3-1は�
     // 急すぎない(一番急な所で 15%まで)
     for (let s = 0; s < l.length; s += 2) assert.ok(Math.abs(roadGrade(c, s)) <= 0.15, `${l.id}: s=${s} 傾き ${roadGrade(c, s).toFixed(3)}`);
   }
-  const flat = courseOf(runnerById('3-1')!);
-  assert.ok(!flat.hills && !flat.bumps, '3-1は今までどおり平ら');
-  const up = courseOf(runnerById('3-3')!);
+  const flat = courseOf(runnerById('4-1')!);
+  assert.ok(!flat.hills && !flat.bumps, '4-1は今までどおり平ら');
+  const up = courseOf(runnerById('4-3')!);
   assert.ok(hillY(up, 1000) >= 30, '若草山は30m以上登る');
 });
 
@@ -428,17 +428,17 @@ test('ジャンプ台: 何もしなくても飛び出す。台の先で跳ぶと
 });
 
 test('ジャンプ台のある面では、空中のコインを取れる', () => {
-  const l = runnerById('3-10')!;
+  const l = runnerById('4-10')!;
   const c = courseOf(l);
-  assert.ok((c.bumps?.length ?? 0) >= 1, '3-10にジャンプ台がある');
+  assert.ok((c.bumps?.length ?? 0) >= 1, '4-10にジャンプ台がある');
   const r = play(c, bot);
   const air = c.coins.filter((cn) => cn.y >= 2 && cn.y < 4 && c.bumps!.some((b) => cn.s > b.s && cn.s < b.s + 8));
   const got = air.filter((cn) => r.collected.has(cn.id)).length;
   assert.ok(got >= air.length * 0.5, `空中のコイン ${got}/${air.length}`);
 });
 
-test('3-4: 若草山から下り、街の踏切を通って、平城宮跡へ', () => {
-  const l = runnerById('3-4')!;
+test('4-4: 若草山から下り、街の踏切を通って、平城宮跡へ', () => {
+  const l = runnerById('4-4')!;
   const c = courseOf(l);
   assert.ok(hillY(c, l.length) <= -30, '30m以上下る');
   assert.equal(l.theme.goal, 'heijo');
@@ -472,15 +472,15 @@ test('雷: 光る輪の上にいると当たる。よければ当たらない。
   assert.equal(go(0, false), 2, 'まんなかにいると当たる');
   assert.equal(go(0, true), 2, '跳んでも当たる');
   assert.equal(go(2.6, false), 3, '輪の外なら当たらない');
-  assert.ok(courseOf(runnerById('3-5')!).obstacles.some((o) => o.kind === 'bolt'), '雨の面には雷');
+  assert.ok(courseOf(runnerById('4-5')!).obstacles.some((o) => o.kind === 'bolt'), '雨の面には雷');
 });
 
-test('3-1〜3-10が、順番どおりにそろっている', () => {
-  assert.deepEqual(RUNNER_LEVELS.map((l) => l.id), Array.from({ length: 10 }, (_, i) => `3-${i + 1}`));
+test('4-1〜4-10が、順番どおりにそろっている', () => {
+  assert.deepEqual(RUNNER_LEVELS.map((l) => l.id), Array.from({ length: 10 }, (_, i) => `4-${i + 1}`));
 });
 
-test('3-7: 落ち葉の山があり、法螺貝の合図がある', () => {
-  const l = runnerById('3-7')!;
+test('4-7: 落ち葉の山があり、法螺貝の合図がある', () => {
+  const l = runnerById('4-7')!;
   const c = courseOf(l);
   assert.ok(c.obstacles.some((o) => o.kind === 'leaf'), '落ち葉の山');
   assert.ok(l.horn && c.obstacles.some((o) => o.behavior === 'charge'), '法螺貝と突進');
@@ -492,8 +492,8 @@ test('3-7: 落ち葉の山があり、法螺貝の合図がある', () => {
   assert.ok(r.ice > 0 && r.ice <= 0.8 && r.lives === 3);
 });
 
-test('3-8: つり橋は、まっすぐで、ゆれる。何もしないと落ちる', () => {
-  const l = runnerById('3-8')!;
+test('4-8: つり橋は、まっすぐで、ゆれる。何もしないと落ちる', () => {
+  const l = runnerById('4-8')!;
   const c = courseOf(l);
   const b = c.bridge!;
   assert.ok(b && b.to - b.from > 200, '長いつり橋');
@@ -508,8 +508,8 @@ test('3-8: つり橋は、まっすぐで、ゆれる。何もしないと落ち
   assert.equal(r.x, 0, '落ちたら、まんなかへもどる');
 });
 
-test('3-9: 花見のシートでコインを落とす。金魚は低い所で当たり、跳べばくぐれる', () => {
-  const c = courseOf(runnerById('3-9')!);
+test('4-9: 花見のシートでコインを落とす。金魚は低い所で当たり、跳べばくぐれる', () => {
+  const c = courseOf(runnerById('4-9')!);
   assert.ok(c.obstacles.some((o) => o.kind === 'sheet') && c.obstacles.some((o) => o.kind === 'fish'));
   const r = new Run(one('sheet'));
   r.start();
@@ -524,8 +524,8 @@ test('3-9: 花見のシートでコインを落とす。金魚は低い所で当
   assert.equal(obstacleState(fish, 2.0).y, -9, '水の中にいる時間がある');
 });
 
-test('3-10: 奈良の街→生駒山→大阪の大都会→海。チェックポイントの前後には罠がない', () => {
-  const l = runnerById('3-10')!;
+test('4-10: 奈良の街→生駒山→大阪の大都会→海。チェックポイントの前後には罠がない', () => {
+  const l = runnerById('4-10')!;
   const c = courseOf(l);
   assert.deepEqual(l.scenes!.map((s) => s.setting), ['town', 'mountain', 'city']);
   const top = Math.max(...Array.from({ length: 100 }, (_, i) => hillY(c, (i / 100) * l.length)));

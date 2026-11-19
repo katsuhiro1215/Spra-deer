@@ -1,7 +1,10 @@
 import { ALL_PLAYABLE_SLOTS } from './game/levels.ts';
+import { swapWorld34 } from './renumber.ts';
 
 export type LevelRecord = { best: number | null; attempts: number; clears: number };
-const KEY = 'spra-deer:progress:v2';
+const KEY = 'spra-deer:progress:v3';
+/** WORLD 3・4 の入れかえ(2026-11-19)の前の記録。旧 3-n → 新 4-n、旧 4-1 → 新 3-1 */
+const V2_KEY = 'spra-deer:progress:v2';
 /** 2026-11-15 の WORLD 1 再編の前の記録(v1)。新しい番号 → 古い番号。外した面の記録は引きつがない */
 const OLD_KEY = 'spra-deer:progress:v1';
 const FROM_V1: Record<string, string> = { '1-6': '2-3', '1-7': '1-8', '1-8': '2-4', '1-9': '2-5' };
@@ -19,7 +22,8 @@ export class Progress {
   constructor() {
     try {
       let saved = JSON.parse(localStorage.getItem(KEY) || 'null');
-      if (!saved) {
+      let v2 = saved ? null : JSON.parse(localStorage.getItem(V2_KEY) || 'null');
+      if (!saved && !v2) {
         // 古い記録があれば、新しい番号に置きかえて引きつぐ
         const old = JSON.parse(localStorage.getItem(OLD_KEY) || 'null');
         const ol = old && typeof old === 'object' ? old.levels : null;
@@ -27,9 +31,12 @@ export class Progress {
           const levels: Record<string, unknown> = {};
           for (const [id, r] of Object.entries(ol)) if (!/^[12]-/.test(id) || UNCHANGED_V1.has(id)) levels[id] = r;
           for (const [to, from] of Object.entries(FROM_V1)) if (ol[from]) levels[to] = ol[from];
-          saved = { levels };
-          localStorage.setItem(KEY, JSON.stringify(saved));
+          v2 = { levels };
         }
+      }
+      if (!saved && v2 && typeof v2 === 'object' && v2.levels && typeof v2.levels === 'object') {
+        saved = { levels: Object.fromEntries(Object.entries(v2.levels).map(([id, r]) => [swapWorld34(id), r])) };
+        localStorage.setItem(KEY, JSON.stringify(saved));
       }
       const levels = saved && typeof saved === 'object' ? saved.levels : null;
       if (levels && typeof levels === 'object') {

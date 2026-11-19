@@ -213,7 +213,7 @@ const BAY: Theme = {
 
 export const RUNNER_LEVELS: RunnerLevel[] = [
   {
-    id: '3-1', title: '春日大社へ', summary: '灯籠の参道を、まっすぐ駆ける',
+    id: '4-1', title: '春日大社へ', summary: '灯籠の参道を、まっすぐ駆ける',
     intro: '◀ ▶ で よけて、ジャンプで あなを こえよう！',
     length: 1000, seed: 20261114, difficulty: 0,
     extra: [], rules: { speed0: 13, speed1: 20, steerAccel: 42, steerSpeed: 6.8 },
@@ -221,7 +221,7 @@ export const RUNNER_LEVELS: RunnerLevel[] = [
     lines: ['ちょうど 半分！ コインも いっぱい', 'もうすぐ 春日大社だよ', '赤い社殿が 見えてきた！'],
   },
   {
-    id: '3-2', title: '夜の南大門', summary: '東大寺へ。大仏の目が光ると…',
+    id: '4-2', title: '夜の南大門', summary: '東大寺へ。大仏の目が光ると…',
     intro: '夜の参道。南大門の先に、東大寺が 見えてくる…',
     length: 900, seed: 20261201, difficulty: 0.35,
     extra: ['critterSleep', 'critterCross', 'critterHop', 'critterCharge'], critters: ['kage', 'owl', 'fox', 'pachi'],
@@ -233,7 +233,7 @@ export const RUNNER_LEVELS: RunnerLevel[] = [
     lines: ['南大門が 見えてきた', '大仏殿の 灯りが 見える…', '大仏さまの 前に 来た！'],
   },
   {
-    id: '3-3', title: '若草山のつづら折り', summary: '登りのカーブ。前が見えにくい',
+    id: '4-3', title: '若草山のつづら折り', summary: '登りのカーブ。前が見えにくい',
     intro: '若草山を 登るよ！ 登りは おそく、カーブで 外へ 押される！',
     length: 1000, seed: 20261230, difficulty: 0.55,
     extra: ['critterSleep', 'critterCross', 'critterHop', 'critterCharge'], critters: ['bear', 'tanuki', 'squirrel', 'koron', 'goro', 'toge'],
@@ -249,7 +249,7 @@ export const RUNNER_LEVELS: RunnerLevel[] = [
     lines: ['つづら折りが つづく…', 'もうすぐ 山頂だよ', '山頂が 見えてきた！'],
   },
   {
-    id: '3-4', title: '若草山から平城宮跡へ', summary: '下り坂で加速！ 街の踏切に気をつけて',
+    id: '4-4', title: '若草山から平城宮跡へ', summary: '下り坂で加速！ 街の踏切に気をつけて',
     intro: '下り坂は 速いよ！ 街に入ったら 踏切に 気をつけて！',
     length: 1200, seed: 20261215, difficulty: 0.5,
     extra: ['ramp', 'crossing', 'critterSleep', 'critterCross', 'critterCharge'], critters: ['tanuki', 'fox', 'pachi', 'bubu'],
@@ -269,7 +269,7 @@ export const RUNNER_LEVELS: RunnerLevel[] = [
     lines: ['街に 入ったよ！ 踏切に 注意', '興福寺の 五重塔で ひと休み', '朱雀門が 見えてきた！'],
   },
   {
-    id: '3-5', title: '雨の西の京', summary: '長い田園。薬師寺と唐招提寺で回復',
+    id: '4-5', title: '雨の西の京', summary: '長い田園。薬師寺と唐招提寺で回復',
     intro: '雨で 地面が すべるよ。みずたまりは おそくなる！ 光る輪は 雷！',
     length: 1400, seed: 20261207, difficulty: 0.4,
     extra: ['puddle', 'thunder', 'critterSleep', 'critterCross', 'critterHop', 'critterCharge'], critters: ['puni', 'doro', 'noko', 'turtle', 'bubu'],
@@ -290,7 +290,7 @@ export const RUNNER_LEVELS: RunnerLevel[] = [
     lines: ['薬師寺の 塔が 見えたよ', '唐招提寺で ひと休み', '雨の向こうに 五重塔が…！'],
   },
   {
-    id: '3-6', title: '雪の大神神社', summary: '雪の三輪山へ。こおりの道',
+    id: '4-6', title: '雪の大神神社', summary: '雪の三輪山へ。こおりの道',
     intro: '雪の参道。こおりを ふむと つるつる すべるよ！',
     length: 900, seed: 20261213, difficulty: 0.45,
     extra: ['ice', 'critterSleep', 'critterCross', 'critterHop', 'critterCharge', 'ramp'], critters: ['snowy', 'frosty', 'gingi', 'rabbit', 'candi'],
@@ -303,7 +303,7 @@ export const RUNNER_LEVELS: RunnerLevel[] = [
     lines: ['しんしんと 雪が ふっている', '三輪山が 見えてきた', '雪の大鳥居が 見えた！'],
   },
   {
-    id: '3-7', title: '紅葉の吉野へ', summary: '落ち葉が舞う山道。法螺貝は突進の合図',
+    id: '4-7', title: '紅葉の吉野へ', summary: '落ち葉が舞う山道。法螺貝は突進の合図',
     intro: '落ち葉が 舞って 見えにくい！ 法螺貝が 鳴ったら 突進が 来るよ！',
     length: 1200, seed: 20261222, difficulty: 0.6,
     extra: ['leafPile', 'critterSleep', 'critterCross', 'critterHop', 'critterCharge', 'ramp'], critters: ['toge', 'noko', 'squirrel', 'bear', 'tanuki'],
@@ -321,7 +321,7 @@ export const RUNNER_LEVELS: RunnerLevel[] = [
     lines: ['紅葉が きれい… でも 足元に 注意', '吉野の 山が 近づいてきた', '蔵王堂が 見えてきた！'],
   },
   {
-    id: '3-8', title: '谷瀬のつり橋', summary: 'ゆれる長い橋を渡って、郡山城へ',
+    id: '4-8', title: '谷瀬のつり橋', summary: 'ゆれる長い橋を渡って、郡山城へ',
     intro: 'つり橋は ゆれるよ！ ◀ ▶ で まんなかを たもとう！',
     length: 1300, seed: 20261227, difficulty: 0.6,
     extra: ['critterSleep', 'critterCross', 'critterCharge', 'ramp'], critters: ['fox', 'squirrel', 'rabbit', 'goro'],
@@ -336,7 +336,7 @@ export const RUNNER_LEVELS: RunnerLevel[] = [
     lines: ['もうすぐ 橋を わたりきるよ！', 'お城の 石垣が 見えてきた', '郡山城に とうちゃく まぢか！'],
   },
   {
-    id: '3-9', title: '佐保川の桜並木', summary: '桜吹雪の川ぞいを、奈良公園へ',
+    id: '4-9', title: '佐保川の桜並木', summary: '桜吹雪の川ぞいを、奈良公園へ',
     intro: '桜吹雪！ 花見の シートを ふむと コインを 落とすよ。金魚にも 注意！',
     length: 1300, seed: 20261229, difficulty: 0.65,
     extra: ['hanami', 'goldfish', 'critterSleep', 'critterCross', 'critterHop', 'critterCharge'], critters: ['rabbit', 'puni', 'bubu', 'fox'],
@@ -349,7 +349,7 @@ export const RUNNER_LEVELS: RunnerLevel[] = [
     lines: ['桜の トンネルだ！', '若草山が 見えてきた', '奈良公園に 帰ってきた！'],
   },
   {
-    id: '3-10', title: '大阪湾をめざせ！', summary: '最長の最終面。生駒山をこえ、大都会をぬけて海へ',
+    id: '4-10', title: '大阪湾をめざせ！', summary: '最長の最終面。生駒山をこえ、大都会をぬけて海へ',
     intro: '最後の 長い旅！ 生駒山を こえて 大阪湾へ！ チェックポイントから 続けられるよ',
     length: 2400, seed: 20261220, difficulty: 0.8,
     extra: ['ramp', 'crossing', 'critterSleep', 'critterCross', 'critterHop', 'critterCharge'], critters: ['fox', 'tanuki', 'goro', 'kage', 'bubu', 'pachi'],

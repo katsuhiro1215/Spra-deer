@@ -979,9 +979,9 @@ export const LEVEL_2_5: LevelDefinition = {
   hints: { poop: 'うんこが、上から降ってきた…！\n影が出たら、動いて避けよう。', fall: FALL_HINT, wall: WALL_HINT, caught: STOLEN_HINT },
 };
 
-/** 4-1: はじめての大掃除(仮。作り直し予定)。うんこに触れると、掃ける。通り過ぎて残すと「見逃し」。見逃しが溜まると失敗。 */
-export const LEVEL_4_1: LevelDefinition = {
-  id: '4-1', stage: 4, title: 'はじめての大掃除',
+/** 3-1: はじめての大掃除(仮。作り直し予定)。うんこに触れると、掃ける。通り過ぎて残すと「見逃し」。見逃しが溜まると失敗。 */
+export const LEVEL_3_1: LevelDefinition = {
+  id: '3-1', stage: 3, title: 'はじめての大掃除',
   intro: 'うんこに触れると、掃除できる！',
   start: { x: 360, y: 3400 },
   poops: [{ x: 170, y: 3150 }, { x: 440, y: 3150 }, { x: 280, y: 2980 }, { x: 550, y: 2980 }, { x: 190, y: 2810 }, { x: 500, y: 2810 }, { x: 250, y: 2640 }, { x: 560, y: 2640 }, { x: 170, y: 2470 }, { x: 440, y: 2470 }, { x: 280, y: 2300 }, { x: 550, y: 2300 }, { x: 190, y: 2130 }, { x: 500, y: 2130 }, { x: 250, y: 1960 }, { x: 560, y: 1960 }, { x: 170, y: 1790 }, { x: 440, y: 1790 }, { x: 280, y: 1620 }, { x: 550, y: 1620 }, { x: 190, y: 1450 }, { x: 500, y: 1450 }, { x: 250, y: 1280 }, { x: 560, y: 1280 }, { x: 170, y: 1110 }, { x: 440, y: 1110 }, { x: 280, y: 940 }, { x: 550, y: 940 }],
@@ -1056,22 +1056,23 @@ export const STAGE_1: LevelSlot[] = [
   { id: '1-10', title: LEVEL_1_10.title, summary: 'WORLD 1 の最終関門', level: LEVEL_1_10 },
 ];
 
-/** まだ作っていない3D走りの面(行き先のメモ)。2026-11-15に3-1〜3-10がそろったので、今は空 */
+/** まだ作っていない3D走りの面(行き先のメモ)。2026-11-15に全10面がそろったので(いまは 4-1〜4-10)、今は空 */
 const PLANNED: Record<string, { title: string; summary: string }> = {};
 
 export const STAGES: { stage: number; title: string; slots: LevelSlot[] }[] = [
   { stage: 1, title: '足元にご用心', slots: STAGE_1 },
   // WORLD 2 は、Three.js のせんべい屋台(/bake/)。面は bake/levels.ts(設計書 30章)。旧ステージ2(配達)は WORLD 1 へ入れた
   { stage: 2, title: '鹿せんべい大作戦', slots: BAKE_LEVELS.map(l => ({ id: l.id, title: l.title, summary: l.summary, runnerId: l.id, page: '/bake/' })) },
+  // 奇数のワールドは Spra が主役、偶数は鹿が主役(2026-11-19 Owner決定。WORLD 3 と 4 を入れかえた。src/renumber.ts)
+  // WORLD 3 は掃除(仮の面。遊び方は、これから決める)
+  { stage: 3, title: '奈良公園、大掃除！', slots: [{ id: '3-1', title: LEVEL_3_1.title, summary: 'うんこを掃く(作り直し予定)', level: LEVEL_3_1 }] },
   {
-    // ステージ3は、Three.js の3D走りゲーム(/run/)。作った面は runner/levels.ts、まだの面は行き先だけ書いた「準備中」
-    stage: 3, title: '鹿、走る。', slots: Array.from({ length: 10 }, (_, i) => `3-${i + 1}`).map(id => {
+    // WORLD 4 は、Three.js の3D走りゲーム(/run/)。作った面は runner/levels.ts、まだの面は行き先だけ書いた「準備中」
+    stage: 4, title: '鹿、走る。', slots: Array.from({ length: 10 }, (_, i) => `4-${i + 1}`).map(id => {
       const r = RUNNER_LEVELS.find(x => x.id === id);
       return r ? { id, title: r.title, summary: r.summary, runnerId: id } : { id, ...PLANNED[id] };
     }),
   },
-  // ステージ4は掃除(仮の面。遊び方は、これから決める)
-  { stage: 4, title: '奈良公園大掃除', slots: [{ id: '4-1', title: LEVEL_4_1.title, summary: 'うんこを掃く(作り直し予定)', level: LEVEL_4_1 }] },
   // ステージ5は保留(5-1の定義は残してある)
   { stage: 5, title: '森のなかま救出', slots: [{ id: '5-1', title: LEVEL_5_1.title, summary: '保留中' }] },
   // WORLD 8 は、Three.js の3Dトロッコ(/cart/)。作った面は cart/levels.ts、まだの面は名前だけの「準備中」

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createWorld, step, wallRect, crossX, type World, type Input } from '../src/game/world.ts';
 import { RULES, GOAL, FIELD } from '../src/game/stage.ts';
 import { facingOf } from '../src/game/facing.ts';
-import { LEVEL_1_1, LEVEL_1_2, LEVEL_1_3, LEVEL_1_4, LEVEL_1_5, LEVEL_2_1, LEVEL_2_2, LEVEL_2_3, LEVEL_2_4, LEVEL_2_5, LEVEL_4_1, LEVEL_5_1, PLAYABLE, STAGES, type LevelDefinition } from '../src/game/levels.ts';
+import { LEVEL_1_1, LEVEL_1_2, LEVEL_1_3, LEVEL_1_4, LEVEL_1_5, LEVEL_2_1, LEVEL_2_2, LEVEL_2_3, LEVEL_2_4, LEVEL_2_5, LEVEL_3_1, LEVEL_5_1, PLAYABLE, STAGES, type LevelDefinition } from '../src/game/levels.ts';
 
 // ---- 道具 ----
 const empty: LevelDefinition = {
@@ -425,7 +425,7 @@ test('level data is sound: unique ids, safe start, final chapter, reachable gaps
   assert.equal(STAGES[0].slots.length, 10);
   // WORLD 2 は3Dのせんべい屋台(/bake/。旧ステージ2の配達は WORLD 1 へ)
   assert.ok(STAGES[1].slots.length >= 1 && STAGES[1].slots.every(s => s.page === '/bake/' && s.runnerId === s.id));
-  assert.deepEqual(STAGES.slice(2, 5).map(g => g.slots.length), [10, 1, 1]); // 3=3D走り(作る枠を含む) 4=掃除 5=保留
+  assert.deepEqual(STAGES.slice(2, 5).map(g => g.slots.length), [1, 10, 1]); // 3=掃除 4=3D走り(作る枠を含む) 5=保留(2026-11-19 に 3・4 を入れかえ)
   for (const level of PLAYABLE.filter(l => l.delivery)) {
     for (const t of level.delivery!.thieves) assert.ok(Math.hypot(t.x - level.start.x, t.y - level.start.y) > 350, `${level.id}: ${t.id} too close to start`);
     if (level.delivery!.thieves.length) assert.ok(level.hints.caught, `${level.id}: needs a stolen hint`);

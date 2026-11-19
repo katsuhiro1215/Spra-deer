@@ -7,16 +7,20 @@ import pkg from '../package.json';
 
 export const APP_VERSION = `v${pkg.version}`;
 
-/** ワールド1〜8(設計書 22章)。stage = 面のデータ(game/levels.ts の STAGES)の番号。無いものは準備中 */
+/**
+ * ワールド1〜8(設計書 22章・31章)。stage = 面のデータ(game/levels.ts の STAGES)の番号。無いものは準備中。
+ * 奇数のワールドは Spra が主役、偶数は鹿が主役(2026-11-19 Owner決定。WORLD 3 と 4 を入れかえた)
+ */
 export const WORLDS: { no: number; name: string; play: string; stage?: number; color: string }[] = [
   { no: 1, name: 'Spraの大冒険', play: 'よけて、あつめて、とどける', stage: 1, color: '#5db443' },
-  // 3Dのせんべい屋台(設計書 30章)。旧ステージ2(配達)は WORLD 1 へ入れた(設計書 28章)
-  { no: 2, name: '鹿せんべい大作戦', play: 'せんべいを焼いて、鹿にわたす', stage: 2, color: '#e99a2c' },
-  { no: 3, name: '鹿、走る。', play: '3Dで、奈良から大阪湾へ', stage: 3, color: '#e0533d' },
-  { no: 4, name: '奈良公園、大掃除！', play: 'ほうきで、まとめて片付け', stage: 4, color: '#3aa6c9' },
-  { no: 5, name: '鹿せんべいタワー', play: 'せんべいを、高く積む', color: '#c98a4b' },
-  { no: 6, name: '鹿のおじぎ選手権', play: 'おじぎに合わせて、タップ', color: '#d36aa6' },
-  { no: 7, name: '鹿を誘導せよ！', play: 'せんべいで、鹿を動かす', color: '#7a6ad8' },
+  // 3Dのせんべい屋台(設計書 30章)。旧 WORLD 5(せんべいタワー)を統合。旧ステージ2(配達)は WORLD 1 へ入れた(設計書 28章)
+  { no: 2, name: '鹿せんべい大作戦', play: '焼いて、積んで、投げて くばる', stage: 2, color: '#e99a2c' },
+  { no: 3, name: '奈良公園、大掃除！', play: 'ほうきで、まとめて片付け', stage: 3, color: '#3aa6c9' },
+  { no: 4, name: '鹿、走る。', play: '3Dで、奈良から大阪湾へ', stage: 4, color: '#e0533d' },
+  // 5・7 は、Spra が主役の新しいゲームを考え中
+  { no: 5, name: 'ひみつのワールド', play: 'Spraの 新しい あそび(考え中)', color: '#c98a4b' },
+  { no: 6, name: '鹿ずもう', play: 'いろんな鹿と、押し合い勝負', color: '#d36aa6' },
+  { no: 7, name: 'ひみつのワールド', play: 'Spraの 新しい あそび(考え中)', color: '#7a6ad8' },
   { no: 8, name: '鹿と暴走トロッコ', play: '鹿が引いて、Spraが止める', stage: 8, color: '#6b8f3a' },
 ];
 

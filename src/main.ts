@@ -146,7 +146,7 @@ class Park extends Phaser.Scene {
       if (action === 'sound') { toggleSound(); this.tab('settings'); }
       if (action === 'buy-potion') this.buyPotion();
       if ((action === 'start' || action === 'next') && target && progress.isUnlocked(target.id)) this.tryBegin(target);
-      // 3D走りゲームの面(ステージ3)は、別のページ(/run/)で遊ぶ
+      // 3D走りゲームの面(WORLD 4)は、別のページ(/run/)で遊ぶ
       const runId = button?.dataset.level ?? '';
       if ((action === 'run' || (action === 'next' && !target)) && runId && progress.isUnlocked(runId)) {
         if (wallet.canPlay()) location.href = pageOf(runId); else this.tired('home');
@@ -257,7 +257,7 @@ class Park extends Phaser.Scene {
     // 小さい画面でも結果のカードが収まるよう、行を増やさず、いちばん下の注意書きの場所に出す
     const reward = got ? `<p class="save-note reward-line">+${got.silver} <i class="coin silver"></i>${got.gold ? `　+${got.gold} <i class="coin gold"></i>` : ''}${prem ? '　+1 <i class="coin premium"></i>' : ''}</p>` : `<p class="save-note reward-line lose">体力 −2(のこり ${wallet.stamina})</p>`;
     sound.music(clear ? 'clear' : 'fail');
-    // 次の面は、通常の面と3D走りの面をまとめた順で決める(2-5の次は、3D走りの3-1)
+    // 次の面は、通常の面と3D走りの面をまとめた順で決める(ワールドの最後の次は、次のワールドの最初)
     const order = ALL_PLAYABLE_SLOTS, nextSlot = clear ? order[order.findIndex(x => x.id === level.id) + 1] : undefined;
     const next = nextSlot ? { id: nextSlot.id, runner: nextSlot.runner } : undefined;
     const attempts = progress.get(level.id).attempts;

@@ -141,9 +141,35 @@ test('WORLD 1 の再編(2026-11-15)の前の記録を、新しい番号へ引き
     assert.equal(p.get('1-7').best, 12, '新1-7 = 旧1-8');
     assert.equal(p.get('1-9').best, 14, '新1-9 = 旧2-5');
     assert.equal(p.get('1-8').best, null, '旧2-4の記録は無かった');
-    assert.equal(p.get('3-2').best, 15, 'WORLD 3 はそのまま');
-    assert.ok(store.getItem('spra-deer:progress:v2'), '新しい保存先に書く');
+    assert.equal(p.get('4-2').best, 15, '旧 WORLD 3(鹿、走る。)は WORLD 4 へ');
+    assert.ok(store.getItem('spra-deer:progress:v3'), '新しい保存先に書く');
   } finally {
     g.localStorage = before;
   }
+});
+
+test("WORLD 3・4 の入れかえ(2026-11-19)の前の記録とコインの印を、新しい番号へ引きつぐ", () => {
+  const store = memoryStore();
+  const rec = (best: number) => ({ best, attempts: 1, clears: 1 });
+  store.setItem("spra-deer:progress:v2", JSON.stringify({ levels: { "1-1": rec(9), "3-2": rec(15), "4-1": rec(30) } }));
+  store.setItem("spra-deer:wallet:v1", JSON.stringify({ stamina: 20, at: 0, coins: { silver: 5, gold: 0, premium: 1 }, premiumTaken: ["3-5"], rewards: ["first:3-2", "first:4-1", "first:1-1"] }));
+  const g = globalThis as { localStorage?: Storage };
+  const before = g.localStorage;
+  g.localStorage = store;
+  try {
+    const p = new Progress();
+    assert.equal(p.get("4-2").best, 15, "旧3-2(鹿、走る。)は 4-2");
+    assert.equal(p.get("3-1").best, 30, "旧4-1(大掃除)は 3-1");
+    assert.equal(p.get("1-1").best, 9);
+    assert.ok(store.getItem("spra-deer:progress:v3"));
+  } finally {
+    g.localStorage = before;
+  }
+  const w = new Wallet(() => 1000, store);
+  assert.equal(w.hasPremium("4-5"), true); assert.equal(w.hasPremium("3-5"), false);
+  assert.equal(w.rewardOnce("first:4-2", "gold", 1), false, "旧3-2の はじめてのクリアは もらい済み");
+  assert.equal(w.rewardOnce("first:3-1", "gold", 1), false);
+  // 2回目に開いても、もう一度入れかえない
+  const w2 = new Wallet(() => 1000, store);
+  assert.equal(w2.hasPremium("4-5"), true);
 });

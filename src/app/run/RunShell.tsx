@@ -9,10 +9,10 @@ export function RunShell() {
   useEffect(() => {
     let stop: (() => void) | undefined;
     let cancelled = false;
-    // three.js はブラウザ側でだけ読み込む。面は /run/?level=3-2 のように指定する(無ければ3-1)
+    // three.js はブラウザ側でだけ読み込む。面は /run/?level=4-2 のように指定する(無ければ4-1)。古い番号(3-n)は 4-n へ読みかえる
     Promise.all([import('../../runner/game.ts'), import('../../runner/levels.ts')]).then(([game, levels]) => {
       if (cancelled || !ref.current) return;
-      const id = new URLSearchParams(window.location.search).get('level') ?? '3-1';
+      const id = new URLSearchParams(window.location.search).get('level')?.replace(/^3-/, '4-') ?? '4-1';
       const level = levels.runnerById(id) ?? levels.RUNNER_LEVELS[0];
       stop = game.startRunner(ref.current, level);
     });
@@ -67,7 +67,7 @@ export function RunShell() {
 
         <div className="ks-overlay on" data-ks="start">
           <div className="ks-card">
-            <p className="ks-badge">WORLD 3 鹿、走る。</p>
+            <p className="ks-badge">WORLD 4 鹿、走る。</p>
             <h1 data-ks="s-title" />
             <p className="ks-lead" data-ks="s-lead" />
             <p className="ks-prem-note" data-ks="s-prem" />
@@ -89,7 +89,7 @@ export function RunShell() {
             <button type="button" className="ks-btn" data-ks="go">
               はじめる
             </button>
-            <a className="ks-link" href="/#world-3">
+            <a className="ks-link" href="/#world-4">
               ← 面えらびへ
             </a>
           </div>
@@ -119,7 +119,7 @@ export function RunShell() {
             <button type="button" className="ks-btn ks-btn-sub" data-ks="retry">
               もういちど
             </button>
-            <a className="ks-link" href="/#world-3">
+            <a className="ks-link" href="/#world-4">
               ← 面えらびへ
             </a>
           </div>
