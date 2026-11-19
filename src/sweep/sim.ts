@@ -93,6 +93,10 @@ export const WBAL = {
   momoCount: 1.5,
   momoHeal: 1.5,
   lumiWarn: 0.7,
+  /** みんなの力: 5人の なかまが そろっていると、大仏さまの目が 光っている間、なかまの ほうきの 幅・届き・力が 何倍か */
+  togetherWide: 1.8,
+  togetherReach: 1.4,
+  togetherPower: 2,
 };
 
 /** 仲間の並ぶ所(先頭からの 横 dx・前 da)。先頭のまわりの、前と横から うまっていく */
@@ -143,7 +147,7 @@ export type SweepDeer = {
 };
 export type Flower = { id: number; s: number; x: number; hue: number; t: number };
 export type SweepEvent = {
-  kind: 'drop' | 'sweep' | 'hit' | 'clean' | 'miss' | 'level' | 'flower' | 'warn' | 'glow' | 'clear' | 'fail' | 'combo' | 'gate' | 'barrelHit' | 'barrel' | 'charge' | 'bump' | 'rain' | 'rainEnd' | 'boltWarn' | 'bolt' | 'swarm' | 'herd' | 'stall' | 'wind' | 'windEnd' | 'block';
+  kind: 'drop' | 'sweep' | 'hit' | 'clean' | 'miss' | 'level' | 'flower' | 'warn' | 'glow' | 'clear' | 'fail' | 'combo' | 'gate' | 'barrelHit' | 'barrel' | 'charge' | 'bump' | 'rain' | 'rainEnd' | 'boltWarn' | 'bolt' | 'swarm' | 'herd' | 'stall' | 'wind' | 'windEnd' | 'block' | 'together' | 'finale';
   /** だれが(たるから出てきた・はじき飛ばされた・鹿を とめた なかま) */
   who?: FriendId;
   id?: number; x?: number; s?: number; n?: number; hard?: boolean; poop?: PoopKind;
@@ -247,14 +251,19 @@ export class SweepRun {
     }
     return out;
   }
+  /** 5人の なかま(Lumi・Momo・Kuru・Piko・Ruru)が みんな チームに いるか */
+  get allFive(): boolean { return (['lumi', 'momo', 'kuru', 'piko', 'ruru'] as FriendId[]).every(k => this.has(k)); }
+  /** みんなの力が 出ている(5人そろって、大仏さまの目が 光っている間) */
+  get together(): boolean { return this.buddha === 'glow' && this.allFive; }
+  private wasAllFive = false;
   /** チームに その なかまが いるか */
   has(kind: FriendId): boolean { return this.crew.slice(0, this.team - 1).includes(kind); }
-  /** 人数を かえる: へるときは あとから入った なかまから。ふえるときは add の なかま(無ければ、いまの顔ぶれを くり返す = x2 のゲート) */
+  /** 人数を かえる: へるときは Spra から先に(なかまは 大事)、そのあとは あとから入った子から。ふえるときは add の なかま(無ければ、いまの顔ぶれを くり返す = x2 のゲート) */
   private setTeam(n: number, add?: FriendId) {
     const want = clamp(Math.round(n), 1, this.level.teamMax) - 1;
     this.crew = this.crew.slice(0, Math.min(this.crew.length, this.team - 1));
     while (this.crew.length < this.team - 1) this.crew.push('spra');
-    while (this.crew.length > want) this.crew.pop();
+    while (this.crew.length > want) { const k = this.crew.lastIndexOf('spra'); this.crew.splice(k >= 0 ? k : this.crew.length - 1, 1); }
     const base = [...this.crew];
     for (let k = 0; this.crew.length < want; k++) this.crew.push(add ?? (base.length ? base[k % base.length] : 'spra'));
     this.team = want + 1;
@@ -267,7 +276,9 @@ export class SweepRun {
   }
   /** (x, 先 a, 半径 r)のものが、その人のほうきの範囲にあるか */
   private zoneHas(m: Member, x: number, a: number, r: number): boolean {
-    const st = this.stats, w = m.leader ? st.width : WBAL.helperWidth, reach = m.leader ? st.reach : st.reach * WBAL.helperReach * (m.kind === 'piko' ? WBAL.pikoReach : 1);
+    const st = this.stats, wide = !m.leader && this.together;
+    const w = m.leader ? st.width : WBAL.helperWidth * (wide ? WBAL.togetherWide : 1);
+    const reach = m.leader ? st.reach : st.reach * WBAL.helperReach * (m.kind === 'piko' ? WBAL.pikoReach : 1) * (wide ? WBAL.togetherReach : 1);
     const rel = a - m.a;
     return rel >= -0.1 && rel <= reach && Math.abs(x - m.x) <= w / 2 + r;
   }
@@ -294,6 +305,10 @@ export class SweepRun {
     this.pace = this.level.speed * (busy ? WBAL.slow : 1);
     this.d += this.pace * dt;
     this.stepBuddha();
+    // 5人 そろった(はじめて そろったとき・そろいなおしたとき)
+    const five = this.allFive;
+    if (five && !this.wasAllFive) this.events.push({ kind: 'together' });
+    this.wasAllFive = five;
     this.stepHerds();
     this.stepStalls();
     this.stepDeer(dt);
@@ -335,12 +350,13 @@ export class SweepRun {
     const st = this.stats;
     this.events.push({ kind: 'sweep', x: this.x, n: st.level });
     const power = new Map<Poop, number>(), barrelPow = new Map<Barrel, number>(), byMomo = new Set<Poop>();
+    const boost = this.together ? WBAL.togetherPower : 1;
     for (const m of this.members()) {
       const cap = m.leader ? st.targets : WBAL.helperTargets;
       const near = this.poops.filter(p => this.zoneHas(m, p.x, this.ahead(p.s), WBAL.poop[p.kind].r)).sort((a, b) => this.ahead(a.s) - this.ahead(b.s)).slice(0, cap);
       for (const p of near) {
         // Ruru は 水で ふやかすので、べちゃべちゃ・硬い うんこに つよい
-        power.set(p, (power.get(p) ?? 0) + st.power * (m.kind === 'ruru' && (p.wet || p.hard) ? WBAL.ruruPower : 1));
+        power.set(p, (power.get(p) ?? 0) + st.power * boost * (m.kind === 'ruru' && (p.wet || p.hard) ? WBAL.ruruPower : 1));
         if (m.kind === 'momo') byMomo.add(p);
       }
       if (near.length < cap) for (const b of this.barrels) if (this.zoneHas(m, b.x, this.ahead(b.s), 0.35)) barrelPow.set(b, (barrelPow.get(b) ?? 0) + st.power);
@@ -438,7 +454,7 @@ export class SweepRun {
     if (!bo || k < bo.from) return;
     this.nextBolt -= dt;
     if (this.nextBolt > 0) return;
-    this.nextBolt = bo.every * (0.8 + this.rng() * 0.4);
+    this.nextBolt = (bo.after && k >= bo.after.at ? bo.after.every : bo.every) * (0.8 + this.rng() * 0.4);
     // チームの あたり(だれかの少し先)に落ちる。予告の輪を見て、よける
     const ms = this.members(), m = ms[Math.floor(this.rng() * ms.length)];
     const b: Bolt = { id: this.nextId++, s: this.d + m.a + 1.2 + this.rng() * 1.5, x: clamp(m.x + (this.rng() - 0.5) * 0.8, -WBAL.half + 0.4, WBAL.half - 0.4), t: -(WBAL.boltWarn + (this.has('lumi') ? WBAL.lumiWarn : 0)) };
@@ -530,10 +546,19 @@ export class SweepRun {
     this.events.push({ kind: 'flower', id: f.id, x: f.x, s: f.s, n: this.flowers.length });
   }
 
+  /** 大仏さまの前(さいごの山場)に 入ったか */
+  finale = false;
   private stepBuddha() {
-    const b = this.level.buddha;
-    if (!b || this.progress < b.from) return;
+    const b0 = this.level.buddha;
+    if (!b0 || this.progress < b0.from) return;
     if (this.buddhaAt === null) this.buddhaAt = this.t;
+    // 大仏さまの前: 目が 光る間が みじかくなり、すぐに 予告が はじまる
+    if (b0.near && !this.finale && this.progress >= b0.near.from) {
+      this.finale = true;
+      this.buddhaAt = this.t - WBAL.buddhaFirst;
+      this.events.push({ kind: 'finale' });
+    }
+    const b = this.finale && b0.near ? { ...b0, ...b0.near } : b0;
     const tb = this.t - this.buddhaAt - WBAL.buddhaFirst;
     const before = this.buddha;
     this.buddha = 'sleep'; this.buddhaLeft = 0;
@@ -548,7 +573,8 @@ export class SweepRun {
     const lv = this.level.deer, b = this.level.buddha;
     const n = Math.min(lv.max, lv.start + Math.floor(this.t / lv.addEvery));
     if (!b || this.buddhaAt === null) return n;
-    return n + b.extraDeer + (this.buddha === 'glow' ? b.swarm ?? 0 : 0);
+    const swarm = this.finale && b.near ? b.near.swarm : b.swarm ?? 0;
+    return n + b.extraDeer + (this.buddha === 'glow' ? swarm : 0);
   }
   private stepDeer(dt: number) {
     const lv = this.level, live = this.deer.filter(d => !d.leaving && !d.mode), want = this.wantDeer();

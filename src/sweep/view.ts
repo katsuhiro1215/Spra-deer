@@ -737,6 +737,12 @@ export class SweepView {
         this.shake = Math.max(this.shake, e.hard ? 0.6 : 0.3);
         break;
       }
+      case 'finale':
+        this.shake = Math.max(this.shake, 1);
+        break;
+      case 'together':
+        this.emit('star', new THREE.Vector3(run.x, 1.0, -0.6), { n: 40, spread: 2, vr: 3.4, size: 0.22, life: 1.2, gravity: 2.2, color: '#ffe680' });
+        break;
       case 'block':
         // Kuru が 鹿を とめた: かたい音の 星
         if (p) this.emit('star', p.setY(0.6), { n: 16, spread: 0.5, vr: 2.6, size: 0.2, life: 0.6, gravity: 2, color: '#e0b070' });
@@ -807,6 +813,10 @@ export class SweepView {
     this.zone.position.set(run.x, 0.02, -st.reach / 2);
     this.zone.scale.set(st.width, st.reach, 1);
     this.zoneMat.color.set(['#fff6c8', '#eaffb4', '#c2fff1', '#e2fffa'][st.level - 1]);
+    if (run.together) {
+      this.zoneMat.color.setHSL((this.time * 0.6) % 1, 0.9, 0.7);
+      if (Math.random() < dt * 25) this.emit('star', new THREE.Vector3(run.x + (Math.random() - 0.5) * 3, 0.3, -Math.random() * 2.5), { n: 1, spread: 0.3, v: new THREE.Vector3(0, 1.2, 0), vr: 0.6, size: 0.16, life: 0.7, gravity: 0.5, color: new THREE.Color().setHSL(Math.random(), 0.9, 0.65).getStyle() });
+    }
     this.zoneMat.opacity = 0.18 + (this.swing < 1 ? 0.12 * (1 - this.swing) : 0);
     this.tornado.visible = st.level >= 4;
     if (this.tornado.visible) {
@@ -938,9 +948,12 @@ export class SweepView {
       h.broom.position.set(m.x + 0.22, 0, z - 0.3);
       h.broom.rotation.y = -0.6 + sw * 1.4 * (i % 2 ? 1 : 0.85);
       h.broom.visible = st.level < 4;
-      const reach = st.reach * WBAL.helperReach * (m.kind === 'piko' ? WBAL.pikoReach : 1);
+      const wide = run.together;
+      const reach = st.reach * WBAL.helperReach * (m.kind === 'piko' ? WBAL.pikoReach : 1) * (wide ? WBAL.togetherReach : 1);
       h.zone.position.set(m.x, 0.021, -m.a - reach / 2);
-      h.zone.scale.set(WBAL.helperWidth, reach, 1);
+      h.zone.scale.set(WBAL.helperWidth * (wide ? WBAL.togetherWide : 1), reach, 1);
+      const zm = h.zone.material as THREE.MeshBasicMaterial;
+      if (run.together) { zm.color.setHSL((this.time * 0.6 + i * 0.08) % 1, 0.9, 0.7); zm.opacity = 0.22; } else { zm.color.set('#fff6c8'); zm.opacity = 0.1; }
     });
     // はじき飛ばされた なかま
     this.tumblers = this.tumblers.filter(t => {

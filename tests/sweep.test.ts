@@ -270,7 +270,7 @@ test("風: ふいている間は、Spra のねらいと うんこが 横へ流�
   assert.equal(r.targetX, tx);
 });
 
-test("なかま: たるの中の なかまが 出てくる。+ゲートは Spra、x2 は いまの顔ぶれが ふえる。へるときは あとから入った なかまから", () => {
+test("なかま: たるの中の なかまが 出てくる。+ゲートは Spra、x2 は いまの顔ぶれが ふえる。へるときは Spra から", () => {
   const r = start(quiet({ barrels: [{ s: 1.0, x: 0, hp: 1, n: 2, friend: "ruru" }], gates: [{ s: 3, left: "x2", right: "+1" }] }));
   wait(r, 0.3);
   assert.deepEqual(r.crew, ["ruru", "ruru"]);
@@ -282,6 +282,10 @@ test("なかま: たるの中の なかまが 出てくる。+ゲートは Spra�
   r2.team = 3; r2.crew = ["kuru", "momo"];
   wait(r2, 1);
   assert.deepEqual(r2.crew, ["kuru", "momo", "spra", "spra"], "+ は Spra");
+  const r3 = start(quiet({ gates: [{ s: 1, left: "-3", right: "-3" }] }));
+  r3.team = 6; r3.crew = ["spra", "kuru", "spra", "momo", "spra"];
+  wait(r3, 1);
+  assert.deepEqual(r3.crew, ["kuru", "momo"], "Spra から先に へる");
 });
 
 test("Ruru: べちゃべちゃ・硬い うんこを 2倍の力で掃く", () => {

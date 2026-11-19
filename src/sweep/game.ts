@@ -90,6 +90,8 @@ export function startSweep(root: HTMLElement, level: SweepLevel): () => void {
       case 'bump': tone(300, 900, 0.18, 'sine', 0.07); noise(0.1, 0.2, 'lowpass', 800); break;
       // こつん(Kuru の 固い から)
       case 'block': tone(1200, 1100, 0.06, 'square', 0.06); tone(700, 660, 0.12, 'triangle', 0.06, 0.04); break;
+      case 'finale': tone(98, 73, 1.6, 'sawtooth', 0.06); noise(1.4, 0.2, 'lowpass', 260); break;
+      case 'together': [523, 659, 784, 988, 1175, 1568].forEach((f, i) => tone(f, f, 0.16, 'triangle', 0.06, i * 0.06)); break;
       case 'warn': [0, 0.4, 0.8].forEach(d => tone(1320, 1240, 0.3, 'sine', 0.05, d)); break;
       case 'glow': tone(110, 80, 1.2, 'sawtooth', 0.05); noise(0.9, 0.12, 'lowpass', 300); break;
       case 'boltWarn': tone(1500, 1400, 0.08, 'square', 0.03); tone(1500, 1400, 0.08, 'square', 0.03, 0.25); break;
@@ -179,6 +181,7 @@ export function startSweep(root: HTMLElement, level: SweepLevel): () => void {
   };
   const alertText = (): [string, string] => {
     if (run.phase !== 'running') return ['', ''];
+    if (run.together) return ['みんなの力！ ほうきが ひろがる！', 'gold'];
     if (run.buddha === 'glow') return ['大混乱！ 鹿が どっと出てきた！', 'gold'];
     if (run.buddha === 'warn') return [`目が 光るまで… ${Math.ceil(run.buddhaLeft)}`, 'yellow'];
     if (run.pollution >= 80) return ['よごれが いっぱい！ のがさないで！', 'red'];
@@ -387,6 +390,10 @@ export function startSweep(root: HTMLElement, level: SweepLevel): () => void {
         if (who !== 'spra') hint(`join-${who}`, FRIENDS[who].join, 3600);
         break;
       }
+      case 'finale': toast('大仏さまの 前だ！ 目が 光りっぱなし！ さいごの 大混乱！！', 3200); break;
+      case 'together':
+        toast(level.buddha ? 'なかまが みんな そろった！ 大仏さまの目が 光ったら、みんなの力で ほうきが ひろく 強くなる！' : 'なかまが みんな そろった！', 3400);
+        break;
       case 'block':
         pop(e.s!, e.x!, 1.3, 'Kuru が とめた！', 'big');
         hint('block', 'Kuru は 固い からで、走ってくる 鹿を とめるよ！', 2600);

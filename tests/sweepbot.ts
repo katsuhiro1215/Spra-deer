@@ -58,7 +58,7 @@ export function driveSweep(level: SweepLevel, policy: SweepPolicy = {}, dt = 1 /
             // 上級者のコツ(pile): 先頭の足もとに来る うんこ(固いほど)は、立ち止まって 掃ききれるので 重く見る(うんこの山の前に立つ)
             if (pile && Math.abs(p.x - x) <= WBAL.footX + WBAL.poop[p.kind].r) v += p.hp * 0.25 / (1 + ah);
           }
-          if (barrels) for (const b of run.barrels) { const ah = run.ahead(b.s); if (ah > -0.1 && ah < look + 3 && ms.some(m => Math.abs(b.x - m.x) <= m.w / 2 + 0.35)) v += 4; }
+          if (barrels) for (const b of run.barrels) { const ah = run.ahead(b.s); if (ah > -0.1 && ah < look + 3 && ms.some(m => Math.abs(b.x - m.x) <= m.w / 2 + 0.35)) v += b.friend !== 'spra' && !run.has(b.friend) ? 12 : 4; }
           // 雷の輪からは にげる
           if (dodge) for (const b of run.bolts) if (b.t < 0) v -= ms.filter(m => Math.hypot(m.x - b.x, run.d + m.a - b.s) < WBAL.boltR + 0.2).length * 3;
           if (dodge) for (const c of run.chargers) { const ah = run.ahead(c.s); if (ah > -0.5 && ah < 8) v -= ms.filter(m => Math.abs(c.x - m.x) < WBAL.chargeHitX + 0.1).length * 3; }

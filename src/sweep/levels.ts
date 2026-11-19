@@ -33,7 +33,7 @@ export type SweepLevel = {
   /** 雨の降る間(道のりの進み 0〜1 の、はじめ・おわり)。雨の間は、うんこが べちゃべちゃで固く、ほうきが遅い */
   rain?: [number, number][];
   /** 雷: 道のりの進み from から、every 秒ごとに落ちる(予告の輪のあと)。fire = お松明の火の粉(しくみは同じ。絵と文が かわる) */
-  bolts?: { from: number; every: number; fire?: boolean };
+  bolts?: { from: number; every: number; fire?: boolean; after?: { at: number; every: number } };
   /** 鹿の群れ: 道のり s の所を、n 頭が 一列で横ぎって、1頭ずつ うんこを落とす */
   herds?: { s: number; n: number }[];
   /** せんべい売り場: 道のり s の 左右 side の屋台に、鹿 n 頭が集まって、うんこを どんどん落とす */
@@ -56,7 +56,7 @@ export type SweepLevel = {
   mix: [number, number, number, number][];
   /** 大仏さまの目が光る(道のりの進み from から)。光っている間に落ちたうんこは、硬い */
   /** extraDeer = 大仏さまが近づくと ふえる鹿・swarm = 目が光っている間だけ どっと出てくる鹿(大混乱) */
-  buddha?: { from: number; warn: number; glow: number; cycle: number; extraDeer: number; swarm?: number; hard: number };
+  buddha?: { from: number; warn: number; glow: number; cycle: number; extraDeer: number; swarm?: number; hard: number; near?: { from: number; warn: number; glow: number; cycle: number; swarm: number } };
   /** ゲート(参道を横ぎる門)。左右どちらかを通る。'+3'・'-4'・'x2' のように書く(数は、Spra のチームの人数) */
   gates?: { s: number; left: string; right: string }[];
   /** おてつだいの たる: 掃いて開けると、仲間が出てくる(hp = 掃く回数、n = 出てくる人数、friend = 中にいる なかま。ふたから 顔が見える) */
@@ -138,7 +138,7 @@ export const LEVEL_3_4: SweepLevel = {
   rain: [[0.55, 0.8]],
   bolts: { from: 0.1, every: 3.4 },
   gates: [{ s: 12, left: '+3', right: '+2' }, { s: 48, left: '-3', right: 'x2' }, { s: 90, left: '+4', right: '-2' }, { s: 130, left: 'x2', right: '-4' }],
-  barrels: [{ s: 32, x: 1.2, hp: 12, n: 2, friend: 'kuru' }, { s: 32, x: -1.2, hp: 12, n: 4 }, { s: 72, x: -1.2, hp: 18, n: 3, friend: 'ruru' }, { s: 110, x: 0, hp: 24, n: 4 }],
+  barrels: [{ s: 32, x: 1.2, hp: 12, n: 3, friend: 'kuru' }, { s: 32, x: -1.2, hp: 12, n: 4 }, { s: 72, x: -1.2, hp: 18, n: 3, friend: 'ruru' }, { s: 110, x: 0, hp: 24, n: 4 }],
   chargers: [{ s: 60, x: -0.6 }, { s: 98, x: 1 }, { s: 120, x: -1.2 }, { s: 146, x: 0.4 }, { s: 158, x: -0.4 }],
   premiumUnder: 12,
   notes: [
@@ -248,27 +248,40 @@ export const LEVEL_3_9: SweepLevel = {
   ],
 };
 
-/** 大仏さま(3-10 のボス)の目。光っている間は、鹿が どっと出てきて 大混乱 */
-export const BUDDHA_BOSS = { from: 0.35, warn: 2, glow: 4, cycle: 11, extraDeer: 2, swarm: 10, hard: 0.55 };
+/** 大仏さま(3-10 のボス)の目。光っている間は、鹿が どっと出てきて 大混乱。
+ *  near = 大仏さまの前(道のりの進み from から): 目が 光る間が みじかくなり、出てくる鹿も ふえる(さいごの山場) */
+export const BUDDHA_BOSS = { from: 0.3, warn: 2, glow: 4, cycle: 11, extraDeer: 2, swarm: 10, hard: 0.55, near: { from: 0.8, warn: 1.5, glow: 5, cycle: 7, swarm: 26 } };
 
 export const LEVEL_3_10: SweepLevel = {
-  id: '3-10', title: '大仏殿の 大掃除', summary: '大仏さまの 目が 光ると、鹿が どっと出てくる！ 最後の 大掃除',
-  intro: 'いよいよ 大仏殿！ 大仏さまの 目に 気をつけて！',
-  place: 'todaiji', goal: { name: '大仏殿の 大仏さま', img: `${LANDMARK}/todaiji-hall.webp`, w: 18, h: 11 }, teamMax: 12,
-  length: 190, speed: 2.4, limit: 72,
+  id: '3-10', title: '大仏殿の 大掃除', summary: 'なかまを みんな 集めて、しかけ ぜんぶの 大仏殿へ！ 最後の 大掃除',
+  intro: 'さいごの 大掃除！ まずは たるを 開けて、なかまを みんな 集めよう！',
+  place: 'todaiji', goal: { name: '大仏殿の 大仏さま', img: `${LANDMARK}/todaiji-hall.webp`, w: 18, h: 11 }, teamMax: 14,
+  length: 260, speed: 2.4, limit: 72,
   deer: { start: 4, addEvery: 6, max: 8, kinds: ['stag', 'doe', 'fawn'] },
-  dropEvery: [2.2, 1.5],
-  mix: [[0, 0.7, 0.3, 0], [0.25, 0.48, 0.38, 0.14], [0.55, 0.4, 0.4, 0.2]],
+  dropEvery: [2.2, 1.4],
+  mix: [[0, 0.75, 0.25, 0], [0.25, 0.48, 0.38, 0.14], [0.55, 0.4, 0.4, 0.2], [0.8, 0.35, 0.4, 0.25]],
+  // しかけを 順に 重ねる: なかま集め → 群れ・せんべい売り場・走ってくる鹿 → 大仏さまの目(0.3〜) → 雨と雷 → 風 →
+  // 大仏さまの前(0.8〜): 目が 光りっぱなし・雨・雷が はやく・風・群れ・走ってくる鹿 ぜんぶ
   buddha: BUDDHA_BOSS,
-  rain: [[0.78, 1]],
-  herds: [{ s: 34, n: 5 }, { s: 90, n: 6 }, { s: 150, n: 6 }],
-  gates: [{ s: 12, left: '+3', right: '+2' }, { s: 44, left: 'x2', right: '-2' }, { s: 78, left: '-3', right: '+4' }, { s: 112, left: 'x2', right: '-4' }, { s: 146, left: '+3', right: '-3' }],
-  barrels: [{ s: 24, x: -1.2, hp: 12, n: 3, friend: 'ruru' }, { s: 60, x: 1.2, hp: 18, n: 4, friend: 'kuru' }, { s: 98, x: -1.2, hp: 24, n: 4, friend: 'ruru' }, { s: 98, x: 1.2, hp: 24, n: 4, friend: 'momo' }, { s: 130, x: 0, hp: 24, n: 4 }],
-  chargers: [{ s: 52, x: 0.6 }, { s: 104, x: -1 }, { s: 140, x: 0.8 }, { s: 172, x: -0.4 }],
+  herds: [{ s: 64, n: 5 }, { s: 140, n: 6 }, { s: 178, n: 6 }, { s: 216, n: 7 }, { s: 244, n: 7 }],
+  stalls: [{ s: 86, side: 1, n: 4 }, { s: 108, side: -1, n: 5 }, { s: 230, side: 1, n: 5 }],
+  rain: [[0.45, 0.62], [0.8, 1]],
+  bolts: { from: 0.45, every: 5, after: { at: 0.8, every: 3.6 } },
+  wind: { from: 0.62, every: 7, dur: 2.2, force: 1.0 },
+  gates: [{ s: 8, left: '+1', right: '+2' }, { s: 58, left: 'x2', right: '-2' }, { s: 100, left: '-3', right: '+3' }, { s: 150, left: 'x2', right: '-4' }, { s: 196, left: '+4', right: 'x2' }, { s: 236, left: '-4', right: '+2' }],
+  // はじめに 5人の たる(Kuru → Ruru → Momo → Lumi → Piko)。みんな そろうと「みんなの力」
+  barrels: [
+    { s: 16, x: 0.9, hp: 6, n: 2, friend: 'kuru' }, { s: 24, x: -0.9, hp: 6, n: 2, friend: 'ruru' }, { s: 32, x: 0.9, hp: 6, n: 2, friend: 'momo' },
+    { s: 40, x: -0.9, hp: 6, n: 2, friend: 'lumi' }, { s: 48, x: 0.9, hp: 6, n: 2, friend: 'piko' },
+    { s: 124, x: 0, hp: 22, n: 4 }, { s: 186, x: -1.2, hp: 22, n: 3, friend: 'kuru' }, { s: 186, x: 1.2, hp: 22, n: 3, friend: 'ruru' },
+  ],
+  chargers: [{ s: 74, x: 0.6 }, { s: 118, x: -1 }, { s: 162, x: 0.8 }, { s: 206, x: -0.4 }, { s: 222, x: 1 }, { s: 250, x: -0.8 }],
   premiumUnder: 12,
   notes: [
+    { at: 0.03, text: 'たるの 中に なかまが いるよ！ 5人 みんな 集めると「みんなの力」！' },
     { at: 0.3, text: '大仏さまが 見えてきた… 目が 光ると、鹿が どっと 出てくるよ！' },
-    { at: 0.79, text: 'さいごに 雨まで！ 大仏さまは もうすぐ！' },
+    { at: 0.46, text: '雨と 雷まで！ Ruru・Kuru・Lumi の 出番だ！' },
+    { at: 0.63, text: '風も ふいてきた！ Piko が いれば ふんばれる！' },
   ],
 };
 
