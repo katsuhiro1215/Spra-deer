@@ -3,6 +3,7 @@ import type { ArenaDefinition, HungryDefinition, LineDefinition, NightDefinition
 import { RUNNER_LEVELS } from '../runner/levels.ts';
 import { CART_LEVELS, CART_PLANNED } from '../cart/levels.ts';
 import { BAKE_LEVELS } from '../bake/levels.ts';
+import { SWEEP_LEVELS } from '../sweep/levels.ts';
 import type { ChaserDefinition, CoinDefinition, CrosserDefinition, CrossDefinition, DeliveryDefinition, HedgeDefinition, PondDefinition, RescueDefinition, StoneDefinition, SweepDefinition, GoalDefinition, Point, RainDefinition, SliderDefinition, TrapDefinition, WallDefinition } from './stage.ts';
 
 /** 画面上の位置（Y）がこの値より下にいる間、text を案内として表示する。上から順に判定する。 */
@@ -979,7 +980,7 @@ export const LEVEL_2_5: LevelDefinition = {
   hints: { poop: 'うんこが、上から降ってきた…！\n影が出たら、動いて避けよう。', fall: FALL_HINT, wall: WALL_HINT, caught: STOLEN_HINT },
 };
 
-/** 3-1: はじめての大掃除(仮。作り直し予定)。うんこに触れると、掃ける。通り過ぎて残すと「見逃し」。見逃しが溜まると失敗。 */
+/** 旧 3-1(2Dの仮の面。2026-11-19 に 3Dの /sweep/ に作り直したので、面えらびには出さない。テストのために残す)。うんこに触れると、掃ける。通り過ぎて残すと「見逃し」。見逃しが溜まると失敗。 */
 export const LEVEL_3_1: LevelDefinition = {
   id: '3-1', stage: 3, title: 'はじめての大掃除',
   intro: 'うんこに触れると、掃除できる！',
@@ -1064,8 +1065,8 @@ export const STAGES: { stage: number; title: string; slots: LevelSlot[] }[] = [
   // WORLD 2 は、Three.js のせんべい屋台(/bake/)。面は bake/levels.ts(設計書 30章)。旧ステージ2(配達)は WORLD 1 へ入れた
   { stage: 2, title: '鹿せんべい大作戦', slots: BAKE_LEVELS.map(l => ({ id: l.id, title: l.title, summary: l.summary, runnerId: l.id, page: '/bake/' })) },
   // 奇数のワールドは Spra が主役、偶数は鹿が主役(2026-11-19 Owner決定。WORLD 3 と 4 を入れかえた。src/renumber.ts)
-  // WORLD 3 は掃除(仮の面。遊び方は、これから決める)
-  { stage: 3, title: '奈良公園、大掃除！', slots: [{ id: '3-1', title: LEVEL_3_1.title, summary: 'うんこを掃く(作り直し予定)', level: LEVEL_3_1 }] },
+  // WORLD 3 は、Three.js の3D掃除(/sweep/)。面は sweep/levels.ts(設計書 32章)
+  { stage: 3, title: '奈良公園、大掃除！', slots: SWEEP_LEVELS.map(l => ({ id: l.id, title: l.title, summary: l.summary, runnerId: l.id, page: '/sweep/' })) },
   {
     // WORLD 4 は、Three.js の3D走りゲーム(/run/)。作った面は runner/levels.ts、まだの面は行き先だけ書いた「準備中」
     stage: 4, title: '鹿、走る。', slots: Array.from({ length: 10 }, (_, i) => `4-${i + 1}`).map(id => {
