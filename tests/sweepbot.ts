@@ -20,10 +20,12 @@ export type SweepPolicy = {
   dodge?: boolean;
   /** たるを ねらうか */
   barrels?: boolean;
+  /** 上級者のコツ: うんこの山の前に 先頭が立って、立ち止まって掃く */
+  pile?: boolean;
 };
 
 export function driveSweep(level: SweepLevel, policy: SweepPolicy = {}, dt = 1 / 60): SweepRun {
-  const { look = 4, every = 0.35, err = 0, seed = 1, idle = false, gateMiss = 0, dodge = true, barrels = true } = policy;
+  const { look = 4, every = 0.35, err = 0, seed = 1, idle = false, gateMiss = 0, dodge = true, barrels = true, pile = false } = policy;
   let a = (seed * 7919) >>> 0;
   const rnd = () => { a = (a + 0x6d2b79f5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
   const run = new SweepRun(level, { seed });
@@ -53,6 +55,8 @@ export function driveSweep(level: SweepLevel, policy: SweepPolicy = {}, dt = 1 /
             const ah = run.ahead(p.s);
             if (ah < -0.1 || ah > look) continue;
             if (ms.some(m => Math.abs(p.x - m.x) <= m.w / 2 + WBAL.poop[p.kind].r)) v += (p.hp / p.maxHp) * WBAL.poop[p.kind].pollution / (1 + ah);
+            // 上級者のコツ(pile): 先頭の足もとに来る うんこ(固いほど)は、立ち止まって 掃ききれるので 重く見る(うんこの山の前に立つ)
+            if (pile && Math.abs(p.x - x) <= WBAL.footX + WBAL.poop[p.kind].r) v += p.hp * 0.25 / (1 + ah);
           }
           if (barrels) for (const b of run.barrels) { const ah = run.ahead(b.s); if (ah > -0.1 && ah < look + 3 && ms.some(m => Math.abs(b.x - m.x) <= m.w / 2 + 0.35)) v += 4; }
           // 雷の輪からは にげる

@@ -29,7 +29,11 @@ export function startSweep(root: HTMLElement, level: SweepLevel): () => void {
   q('s-lead').textContent = `${level.summary}。${level.goal.name}まで ${level.length}m、うんこを 掃除しながら 歩こう！`;
   // 道のりの右はしの絵は、その面のゴール(名所の絵か、鳥居)
   const roadIcon = root.querySelector<HTMLElement>('.sw-buddha-icon');
-  if (roadIcon) { if (level.goal.img) roadIcon.style.backgroundImage = `url(${level.goal.img})`; else roadIcon.classList.add('torii'); }
+  if (roadIcon) {
+    if (level.goal.img) roadIcon.style.backgroundImage = `url(${level.goal.img})`;
+    else { roadIcon.classList.add('torii'); if (level.goal.model) roadIcon.dataset.icon = '🏮'; }
+  }
+  const fire = !!level.bolts?.fire;
   q('s-prem').textContent = premiumTaken ? '◆ この面の プレミアムコインは 取ったよ' : `◆ よごれ ${level.premiumUnder}%以下で ゴールすると…？`;
 
   // ---- 音 ----
@@ -90,6 +94,11 @@ export function startSweep(root: HTMLElement, level: SweepLevel): () => void {
       // ゴロゴロ…ドーン
       case 'bolt': noise(1.4, 0.5, 'lowpass', 900, 0, 0.7, 120); noise(0.15, 0.4, 'highpass', 2000); break;
       case 'rain': noise(1.2, 0.08, 'bandpass', 3000, 0, 0.5); break;
+      // 群れの足音(どどど)と、鹿の声
+      case 'herd': [0, 0.12, 0.24, 0.36, 0.48].forEach(d => noise(0.08, 0.18, 'lowpass', 300, d)); tone(1400, 900, 0.25, 'sine', 0.04, 0.2); break;
+      case 'stall': [1046, 880].forEach((f, i) => tone(f, f * 0.9, 0.2, 'triangle', 0.05, i * 0.15)); break;
+      // ひゅうう(風)
+      case 'wind': noise(2.2, 0.16, 'bandpass', 500, 0, 1.2, 1200); break;
       case 'clear': audio.stopMusic(); audio.jingle('clear'); break;
       case 'fail': audio.stopMusic(); audio.jingle('fail'); break;
     }
@@ -126,7 +135,8 @@ export function startSweep(root: HTMLElement, level: SweepLevel): () => void {
     const seen = new Set<number>(), running = run.phase === 'running';
     for (const p of run.poops) {
       const a = run.ahead(p.s);
-      if (!running || p.maxHp <= 1 || a > 9 || a < -0.2) continue;
+      // 夜は 近くに来てから 出る
+      if (!running || p.maxHp <= 1 || a > (level.night ? 5.5 : 9) || a < -0.2) continue;
       seen.add(p.id);
       let el = hpTags.get(p.id);
       if (!el) { el = document.createElement('div'); el.className = 'sw-hp'; elLabels.append(el); hpTags.set(p.id, el); }
@@ -165,9 +175,10 @@ export function startSweep(root: HTMLElement, level: SweepLevel): () => void {
   };
   const alertText = (): [string, string] => {
     if (run.phase !== 'running') return ['', ''];
-    if (run.buddha === 'glow') return ['目が 光った！ うんこが 硬くなる！', 'gold'];
+    if (run.buddha === 'glow') return ['大混乱！ 鹿が どっと出てきた！', 'gold'];
     if (run.buddha === 'warn') return [`目が 光るまで… ${Math.ceil(run.buddhaLeft)}`, 'yellow'];
     if (run.pollution >= 80) return ['よごれが いっぱい！ のがさないで！', 'red'];
+    if (run.wind) return [run.wind > 0 ? '風だ！ →→→' : '←←← 風だ！', 'yellow'];
     return ['', ''];
   };
   let lastLv = 1;
@@ -286,18 +297,20 @@ export function startSweep(root: HTMLElement, level: SweepLevel): () => void {
 
   // ---- 入力: 指を置いた所からの、横のずれで動かす(Spra に さわらなくてよい) ----
   const frameEl = q('frame');
-  let drag: { id: number; x0: number; target0: number } | null = null;
+  // 指の動いた分だけ、ねらいを ずらす(風で 流されても、そこから 動かせる)
+  let drag: { id: number; lastX: number } | null = null;
   const onDown = (ev: PointerEvent) => {
     if ((ev.target as HTMLElement).closest('a, button, .ks-overlay.on')) return;
     ev.preventDefault();
     if (run.phase !== 'running') return;
-    drag = { id: ev.pointerId, x0: ev.clientX, target0: run.targetX };
+    drag = { id: ev.pointerId, lastX: ev.clientX };
     frameEl.setPointerCapture?.(ev.pointerId);
   };
   const onMove = (ev: PointerEvent) => {
     if (!drag || ev.pointerId !== drag.id) return;
     // 指の動きの 1.3倍(小さく動かしても、端まで届く)
-    run.steer(drag.target0 + ((ev.clientX - drag.x0) / view.pxPerMeter()) * 1.3);
+    run.steer(run.targetX + ((ev.clientX - drag.lastX) / view.pxPerMeter()) * 1.3);
+    drag.lastX = ev.clientX;
   };
   const onUp = (ev: PointerEvent) => { if (drag && ev.pointerId === drag.id) drag = null; };
   frameEl.addEventListener('pointerdown', onDown);
@@ -347,13 +360,16 @@ export function startSweep(root: HTMLElement, level: SweepLevel): () => void {
       case 'glow': toast('大混乱！！ 鹿が どっと出てきた！', 2000); break;
       case 'rain': hint('rain', '雨だ！ うんこが べちゃべちゃで 固い。ほうきも 遅くなる', 3000); break;
       case 'rainEnd': toast('雨が やんだ！', 1500); break;
-      case 'boltWarn': hint('boltWarn', '赤い輪に 雷が 落ちる！ 仲間ごと にげて！', 2600); break;
+      case 'boltWarn': hint('boltWarn', fire ? 'オレンジの輪に 火の粉が 落ちる！ 仲間ごと にげて！' : '赤い輪に 雷が 落ちる！ 仲間ごと にげて！', 2600); break;
       case 'bolt':
-        flash();
-        if ((e.n ?? 0) > 0) pop(e.s!, e.x!, 1.3, `ビリビリ！ −${e.n}`, 'miss');
-        if (e.hard) toast('しびれて 動けない…！', 1200);
+        if (!fire) flash();
+        if ((e.n ?? 0) > 0) pop(e.s!, e.x!, 1.3, fire ? `あちち！ −${e.n}` : `ビリビリ！ −${e.n}`, 'miss');
+        if (e.hard) toast(fire ? 'あちちっ！ 動けない…！' : 'しびれて 動けない…！', 1200);
         break;
-      case 'clear': toast('大仏さまに 着いた！ 参道が ぴかぴか！', 3000); break;
+      case 'herd': hint('herd', '鹿の群れが 横ぎる！ 一列に うんこが ならぶよ', 2600); break;
+      case 'stall': hint('stall', 'せんべい売り場に 鹿が 集まってきた！', 2400); break;
+      case 'wind': toast((e.n ?? 0) > 0 ? '風だ！ → → → 右へ 流される！' : '風だ！ ← ← ← 左へ 流される！', 1800); break;
+      case 'clear': toast(`${level.goal.name}に 着いた！ ぴかぴか！`, 3000); break;
       case 'gate': {
         const n = e.n ?? 0;
         pop(run.d + 1.2, run.x, 1.6, n > 0 ? `なかま +${n}！` : n < 0 ? `なかま ${n}…` : 'そのまま', n > 0 ? 'big' : 'miss');

@@ -74,7 +74,15 @@ export class SweepView {
   private rain: THREE.LineSegments | null = null;
   private rainK = 0;
   private hemi!: THREE.HemisphereLight;
+  private hemiBase = 1.0;
   private sky = { clear: new THREE.Color('#bfe2f2'), fog: new THREE.Color('#d4e9ef'), rain: new THREE.Color('#7f8d99'), rainFog: new THREE.Color('#8e9aa4') };
+  /** 夜の面: Spra の持つ灯り・ゆらめく火(お松明・ろうそく) */
+  private lamp: THREE.PointLight | null = null;
+  private flames: THREE.Object3D[] = [];
+  /** 風の強さ(−1〜1。なめらかに かわる) */
+  private windK = 0;
+  /** 池(浮見堂)の水面の模様 */
+  private waterTex: THREE.Texture | null = null;
   /** 雷(予告の輪・落ちた光・こげあと) */
   private boltObjs = new Map<number, { ring: THREE.Mesh; beam: THREE.Mesh; scorch: THREE.Mesh }>();
   private spra: THREE.Sprite;
@@ -133,6 +141,19 @@ export class SweepView {
     const sc = sun.shadow.camera; sc.left = -6; sc.right = 6; sc.top = 8; sc.bottom = -8; sc.near = 1; sc.far = 30;
     sun.target.position.set(0, 0, -4);
     this.scene.add(sun, sun.target);
+    // 夜: 空も霧も 紺色に、月あかり。Spra のまわりだけ あたたかい灯り
+    if (level.night) {
+      this.sky = { clear: new THREE.Color('#0d1330'), fog: new THREE.Color('#121a3a'), rain: new THREE.Color('#0a0f22'), rainFog: new THREE.Color('#0e1428') };
+      this.scene.background = this.sky.clear.clone();
+      this.scene.fog = new THREE.Fog(this.sky.fog.clone(), 7, 30);
+      this.hemi.color.set('#8a9cff'); this.hemi.groundColor.set('#2a2230');
+      this.hemiBase = 0.2;
+      sun.color.set('#9fb4ff'); sun.intensity = 0.22;
+      this.renderer.toneMappingExposure = 0.9;
+      this.scene.environmentIntensity = 0.12;
+      this.lamp = new THREE.PointLight('#ffc27a', 9, 9, 1.6);
+      this.scene.add(this.lamp);
+    }
 
     // 地面: 芝と、まん中の参道(砂利)。歩くと、模様が手前へ流れる
     this.grassTex = grainTex('#8fc266', [['#7db257', 900, 3], ['#a6d47b', 700, 2], ['#6aa047', 300, 2]], 3);
@@ -140,7 +161,7 @@ export class SweepView {
     const ground = new THREE.Mesh(new THREE.PlaneGeometry(60, 90), new THREE.MeshStandardMaterial({ map: this.grassTex, roughness: 1 }));
     ground.rotation.x = -Math.PI / 2; ground.position.z = -35; ground.receiveShadow = true;
     // 道: 春日大社・東大寺は石だたみ、ほかは砂利
-    const stoneWay = level.place === 'kasuga' || level.place === 'todaiji';
+    const stoneWay = level.place === 'kasuga' || level.place === 'todaiji' || level.place === 'naramachi' || level.place === 'nigatsudo';
     this.pathTex = stoneWay
       ? grainTex('#c9c4b8', [['#b4aea2', 1100, 4], ['#dcd8cd', 700, 3], ['#9f998d', 400, 2]], 9)
       : grainTex(level.place === 'wakakusa' ? '#e3d3a8' : '#dcc8a0', [['#cbb38a', 1200, 3], ['#ebdcbc', 700, 2], ['#b9a07a', 300, 2], ['#f4ead2', 200, 1]], 5);
@@ -235,9 +256,14 @@ export class SweepView {
     const stone = new THREE.MeshStandardMaterial({ color: '#b9b3a6', roughness: 0.95 });
     const lamp = new THREE.MeshStandardMaterial({ color: '#ffe7a8', emissive: new THREE.Color('#ffcf6b'), emissiveIntensity: 0.5 });
     // 場所ごとに: 春日大社は灯籠がずらり、若草山は 木が少なく ひらけた草原、奈良公園は 芝で休む鹿
+    // ならまちは 町家と ろうそく(燈花会)、浮見堂は 左に池、二月堂は 杉と灯籠
     const place = this.level.place;
-    const gap = place === 'kasuga' ? 2.6 : PROP_GAP, lanternRate = place === 'kasuga' ? 1 : place === 'wakakusa' ? 0 : place === 'kofukuji' ? 0.2 : 0.32;
-    if (place === 'kasuga') leafMats.forEach((m, i) => m.color.set(['#3f7a33', '#4a8a3a', '#356d2c', '#58964a'][i]));
+    if (this.level.night) lamp.emissiveIntensity = 2.4;
+    if (place === 'naramachi') { this.buildTown(); this.buildStalls(); return; }
+    const cedar = place === 'kasuga' || place === 'nigatsudo';
+    const gap = cedar ? 2.6 : PROP_GAP;
+    const lanternRate = place === 'kasuga' ? 1 : place === 'nigatsudo' ? 0.55 : place === 'wakakusa' ? 0 : place === 'kofukuji' || place === 'ukimido' ? 0.2 : 0.32;
+    if (cedar) leafMats.forEach((m, i) => m.color.set(['#3f7a33', '#4a8a3a', '#356d2c', '#58964a'][i]));
     // 道のり全体ぶんを、はじめに置いておく(見えない所は fog と、カメラの外)
     for (let s = -10; s < this.length + 30; s += gap) {
       for (const side of [-1, 1]) {
@@ -245,7 +271,9 @@ export class SweepView {
         let obj: THREE.Object3D;
         const x = side * (WBAL.half + 1.0 + r * 3.5) * (place === 'wakakusa' ? 1.8 : 1);
         if (place === 'wakakusa' && r > 0.3) continue;
-        if (place === 'kasuga' && r > 0.5) {
+        // 浮見堂: 左は 池(木は 右だけ)
+        if (place === 'ukimido' && side < 0) continue;
+        if (cedar && r > 0.5) {
           // 灯籠のうしろの杉
           const tree = new THREE.Group();
           const trunk = new THREE.Mesh(trunkGeo, trunkMat); trunk.position.y = 1.2; tree.add(trunk);
@@ -302,6 +330,95 @@ export class SweepView {
       hill.scale.set(40, 11, 14); hill.position.set(4, -1, -70);
       this.scene.add(hill);
     }
+    if (place === 'ukimido') this.buildPond();
+    this.buildStalls();
+  }
+  /** ならまち: 格子の町家が ならび、参道の両はしに ろうそく(燈花会)。夜は 格子の中が ぽうっと明るい */
+  private buildTown(): void {
+    const lattice = canvasTex(256, 256, g => {
+      g.fillStyle = '#ffcf87'; g.fillRect(0, 0, 256, 256);
+      g.fillStyle = '#3a271b';
+      for (let x = 0; x < 256; x += 16) g.fillRect(x, 0, 9, 256);
+      g.fillRect(0, 0, 256, 40); g.fillRect(0, 160, 256, 96);
+    });
+    this.disposables.push(lattice);
+    const wall = new THREE.MeshStandardMaterial({ color: '#4a3426', roughness: 0.9 });
+    const front = new THREE.MeshStandardMaterial({ map: lattice, emissive: new THREE.Color('#ffb060'), emissiveMap: lattice, emissiveIntensity: this.level.night ? 0.9 : 0.1, roughness: 0.8 });
+    const roof = new THREE.MeshStandardMaterial({ color: '#3b3f47', roughness: 0.7 });
+    const paper = new THREE.MeshStandardMaterial({ color: '#e8453a', emissive: new THREE.Color('#ff7a3a'), emissiveIntensity: this.level.night ? 1.6 : 0.2 });
+    const bodyGeo = new THREE.BoxGeometry(2.4, 2.6, 3.8), roofGeo = new THREE.BoxGeometry(1.6, 0.12, 4.0), lanternGeo = new THREE.SphereGeometry(0.16, 12, 8);
+    for (let s = -10; s < this.length + 30; s += 4) {
+      for (const side of [-1, 1]) {
+        const r = hash(s * 3 + side), g = new THREE.Group();
+        // 参道に向いた面だけ 格子(左の家は +x、右の家は −x)
+        const mats = side < 0 ? [front, wall, wall, wall, wall, wall] : [wall, front, wall, wall, wall, wall];
+        const body = new THREE.Mesh(bodyGeo, mats); body.position.y = 1.3; body.castShadow = true; g.add(body);
+        for (const k of [-1, 1]) { const rf = new THREE.Mesh(roofGeo, roof); rf.position.set(k * 0.68, 2.85, 0); rf.rotation.z = -k * 0.42; g.add(rf); }
+        // 軒先の ちょうちん
+        if (r < 0.55) { const lt = new THREE.Mesh(lanternGeo, paper); lt.scale.y = 1.3; lt.position.set(-side * 1.35, 2.05, (r - 0.3) * 2); g.add(lt); }
+        g.scale.y = 0.9 + r * 0.25;
+        this.scene.add(g);
+        this.props.push({ obj: g, s: s + r * 0.4, x: side * (WBAL.half + 2.1) });
+      }
+    }
+    this.buildCandles();
+  }
+  /** 燈花会: 参道の両はしに、ろうそくの灯りが 2列 */
+  private buildCandles(): void {
+    const glow = canvasTex(64, 64, g => {
+      const grd = g.createRadialGradient(32, 36, 0, 32, 36, 30);
+      grd.addColorStop(0, 'rgba(255,240,200,1)'); grd.addColorStop(0.3, 'rgba(255,180,90,0.6)'); grd.addColorStop(1, 'rgba(255,140,40,0)');
+      g.fillStyle = grd; g.fillRect(0, 0, 64, 64);
+    });
+    this.disposables.push(glow);
+    const mat = new THREE.SpriteMaterial({ map: glow, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending });
+    const cupMat = new THREE.MeshStandardMaterial({ color: '#f4efe4', emissive: new THREE.Color('#ffcf87'), emissiveIntensity: 1.2, roughness: 0.6 });
+    const cupGeo = new THREE.CylinderGeometry(0.07, 0.06, 0.12, 8);
+    for (let s = -10; s < this.length + 30; s += 1.4) {
+      for (const side of [-1, 1]) for (const row of [0, 1]) {
+        const g = new THREE.Group();
+        const cup = new THREE.Mesh(cupGeo, cupMat); cup.position.y = 0.06; g.add(cup);
+        const sp = new THREE.Sprite(mat); sp.scale.setScalar(0.45); sp.position.y = 0.18; sp.userData.base = 0.45; g.add(sp);
+        this.flames.push(sp);
+        this.scene.add(g);
+        this.props.push({ obj: g, s: s + row * 0.7 + hash(s * 5 + side) * 0.2, x: side * (WBAL.half + 0.25 + row * 0.38) });
+      }
+    }
+  }
+  /** 浮見堂: 参道の左に 池(水面の模様が ゆっくり流れる) */
+  private buildPond(): void {
+    this.waterTex = grainTex('#4f86a8', [['#5f97b9', 600, 6], ['#3f7697', 500, 5], ['#9cc8de', 160, 3]], 11);
+    this.waterTex.repeat.set(10, 30);
+    const pond = new THREE.Mesh(new THREE.PlaneGeometry(30, 90), new THREE.MeshStandardMaterial({ map: this.waterTex, roughness: 0.15, metalness: 0.2 }));
+    pond.rotation.x = -Math.PI / 2; pond.position.set(-WBAL.half - 0.9 - 15, 0.012, -35);
+    const bank = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.14, 90), new THREE.MeshStandardMaterial({ color: '#8f8a7e', roughness: 0.95 }));
+    bank.position.set(-WBAL.half - 0.8, 0.05, -35);
+    this.scene.add(pond, bank);
+  }
+  /** せんべい売り場の屋台(赤い屋根・「鹿せんべい」の のぼり・つんだ せんべい) */
+  private buildStalls(): void {
+    const stalls = this.level.stalls ?? [];
+    if (!stalls.length) return;
+    const banner = canvasTex(64, 256, g => {
+      g.fillStyle = '#f7f2e4'; g.fillRect(0, 0, 64, 256);
+      g.fillStyle = '#c8302a'; g.fillRect(0, 0, 64, 14);
+      g.fillStyle = '#5a2a14'; g.font = 'bold 38px "Zen Maru Gothic", "M PLUS Rounded 1c", sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+      [...'鹿せんべい'].forEach((ch, i) => g.fillText(ch, 32, 46 + i * 42));
+    });
+    this.disposables.push(banner);
+    const wood = new THREE.MeshStandardMaterial({ color: '#9a6a3c', roughness: 0.8 }), cloth = new THREE.MeshStandardMaterial({ color: '#d8463a', roughness: 0.7 });
+    const senbei = new THREE.MeshStandardMaterial({ color: '#d9a65a', roughness: 0.8 }), flag = new THREE.MeshBasicMaterial({ map: banner, side: THREE.DoubleSide });
+    for (const st of stalls) {
+      const g = new THREE.Group();
+      const counter = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.8, 1.6), wood); counter.position.y = 0.4; counter.castShadow = true; g.add(counter);
+      for (const [px, pz] of [[-0.45, -0.75], [0.45, -0.75], [-0.45, 0.75], [0.45, 0.75]]) { const p = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 1.8, 6), wood); p.position.set(px, 0.9, pz); g.add(p); }
+      const roof = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.08, 2.0), cloth); roof.position.y = 1.82; roof.rotation.z = st.side * 0.15; roof.castShadow = true; g.add(roof);
+      for (let i = 0; i < 6; i++) { const c = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.03, 16), senbei); c.position.set(-st.side * 0.15, 0.82 + i * 0.035, (i % 3 - 1) * 0.4); g.add(c); }
+      const fl = new THREE.Mesh(new THREE.PlaneGeometry(0.34, 1.36), flag); fl.position.set(-st.side * 0.62, 1.25, 0.9); g.add(fl);
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 2.0, 6), wood); pole.position.set(-st.side * 0.8, 1.0, 0.9); g.add(pole);
+      this.scene.add(g);
+      this.props.push({ obj: g, s: st.s, x: st.side * (WBAL.half + 1.0) });
+    }
   }
   /** ゴール: 名所の絵(興福寺の五重塔・春日大社の楼門 など)か、赤い鳥居 */
   private buildGoal(): void {
@@ -314,6 +431,10 @@ export class SweepView {
       m.position.y = h / 2 - 0.2;
       const g = new THREE.Group(); g.add(m);
       this.goal = g;
+    } else if (gd.model === 'ukimido') {
+      this.goal = this.buildUkimido();
+    } else if (gd.model === 'nigatsudo') {
+      this.goal = this.buildNigatsudo();
     } else {
       const red = new THREE.MeshStandardMaterial({ color: '#d8342c', roughness: 0.5 }), black = new THREE.MeshStandardMaterial({ color: '#2a2422', roughness: 0.6 });
       const g = new THREE.Group();
@@ -324,6 +445,42 @@ export class SweepView {
       this.goal = g;
     }
     this.scene.add(this.goal);
+  }
+  /** 浮見堂: 池に うかぶ 六角形の おどう(ひのきの屋根・白木の柱) */
+  private buildUkimido(): THREE.Group {
+    const g = new THREE.Group();
+    const water = new THREE.Mesh(new THREE.CircleGeometry(9, 40), new THREE.MeshStandardMaterial({ color: '#4f86a8', roughness: 0.15, metalness: 0.2 }));
+    water.rotation.x = -Math.PI / 2; water.position.set(0, 0.014, -3);
+    const post = new THREE.MeshStandardMaterial({ color: '#d9c8a6', roughness: 0.7 }), roof = new THREE.MeshStandardMaterial({ color: '#4c4644', roughness: 0.75 });
+    const floor = new THREE.Mesh(new THREE.CylinderGeometry(3.1, 3.1, 0.25, 6), post); floor.position.set(0, 0.5, -3);
+    g.add(water, floor);
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      const p = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 2.4, 8), post); p.position.set(Math.cos(a) * 2.8, 1.8, -3 + Math.sin(a) * 2.8); p.castShadow = true; g.add(p);
+    }
+    const rf = new THREE.Mesh(new THREE.ConeGeometry(4.2, 1.9, 6), roof); rf.position.set(0, 3.9, -3); rf.castShadow = true; g.add(rf);
+    const top = new THREE.Mesh(new THREE.SphereGeometry(0.25, 12, 8), new THREE.MeshStandardMaterial({ color: '#c9a440', metalness: 0.7, roughness: 0.3 })); top.position.set(0, 4.95, -3); g.add(top);
+    // 参道から おどうへの 橋
+    const bridge = new THREE.Mesh(new THREE.BoxGeometry(WBAL.half * 1.4, 0.2, 3), post); bridge.position.set(0, 0.3, 1.2); g.add(bridge);
+    g.scale.setScalar(1.15);
+    return g;
+  }
+  /** 二月堂: 山の斜面に 柱で立つ 舞台づくり。のきに つり灯籠、舞台で お松明が もえる */
+  private buildNigatsudo(): THREE.Group {
+    const g = new THREE.Group();
+    const wood = new THREE.MeshStandardMaterial({ color: '#7a4e30', roughness: 0.8 }), wall = new THREE.MeshStandardMaterial({ color: '#d8cdb4', roughness: 0.9 }), roof = new THREE.MeshStandardMaterial({ color: '#3d3a38', roughness: 0.7 });
+    for (let i = -3; i <= 3; i++) for (const z of [-1.6, 0, 1.6]) { const p = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.18, 3.6, 8), wood); p.position.set(i * 1.5, 1.8, z - 4); p.castShadow = true; g.add(p); }
+    const deck = new THREE.Mesh(new THREE.BoxGeometry(11, 0.3, 4.4), wood); deck.position.set(0, 3.7, -4); g.add(deck);
+    const hall = new THREE.Mesh(new THREE.BoxGeometry(8.4, 2.6, 3.4), wall); hall.position.set(0, 5.15, -4.6); g.add(hall);
+    const rf = new THREE.Mesh(new THREE.ConeGeometry(8.2, 2.6, 4), roof); rf.rotation.y = Math.PI / 4; rf.scale.set(1, 1, 0.45); rf.position.set(0, 7.6, -4.6); rf.castShadow = true; g.add(rf);
+    const lanternMat = new THREE.MeshStandardMaterial({ color: '#c9a440', emissive: new THREE.Color('#ffb347'), emissiveIntensity: this.level.night ? 2 : 0.3, metalness: 0.5, roughness: 0.4 });
+    for (let i = -3; i <= 3; i++) { const lt = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.14, 0.4, 6), lanternMat); lt.position.set(i * 1.3, 6.2, -2.4); g.add(lt); }
+    // お松明(舞台の上で もえる火)
+    const fire = new THREE.MeshBasicMaterial({ color: '#ff8a1a', transparent: true, opacity: 0.9, fog: false });
+    for (const x of [-4.2, -1.4, 1.4, 4.2]) { const f = new THREE.Mesh(new THREE.SphereGeometry(0.45, 12, 8), fire); f.position.set(x, 4.4, -2.2); f.userData.base = 1; g.add(f); this.flames.push(f); }
+    // 画面の上(表示の下)に かくれないように、ひくめに
+    g.scale.setScalar(0.62);
+    return g;
   }
   /** 雨のすじ(カメラのまわりの箱の中を、くり返し落ちる) */
   private buildRain(): void {
@@ -516,6 +673,13 @@ export class SweepView {
       case 'glow':
         this.shake = Math.max(this.shake, 0.5);
         break;
+      case 'herd':
+        // 群れが 来る: 足音で 少し ゆれる
+        this.shake = Math.max(this.shake, 0.25);
+        break;
+      case 'wind':
+        this.shake = Math.max(this.shake, 0.2);
+        break;
       case 'gate': {
         const gt = this.gates[e.id!];
         const at = new THREE.Vector3((e.x ?? 1) * WBAL.half / 2, 1.5, -0.3);
@@ -555,7 +719,7 @@ export class SweepView {
       }
       case 'bolt':
         if (!p) break;
-        this.emit('star', p.clone().setY(0.3), { n: 26, spread: 1.4, vr: 4, size: 0.22, life: 0.6, gravity: 3, color: '#fff6a0' });
+        this.emit('star', p.clone().setY(0.3), { n: 26, spread: 1.4, vr: 4, size: 0.22, life: 0.6, gravity: 3, color: this.level.bolts?.fire ? '#ff9a2a' : '#fff6a0' });
         this.emit('soft', p.setY(0.2), { n: 8, spread: 1.2, v: new THREE.Vector3(0, 0.8, 0), vr: 1, size: 0.6, life: 0.9, grow: 1.2, color: '#5a5652', opacity: 0.6 });
         this.shake = Math.max(this.shake, 0.9);
         break;
@@ -572,20 +736,24 @@ export class SweepView {
     // 地面の模様を流す
     this.grassTex.offset.y = (d / 90) * 30 % 1;
     this.pathTex.offset.y = (d / 90) * 30 % 1;
+    if (this.waterTex) { this.waterTex.offset.y = (d / 90) * 30 % 1; this.waterTex.offset.x = (this.time * 0.02) % 1; }
+    // ゆらめく火(ろうそく・お松明)
+    this.flames.forEach((f, i) => f.scale.setScalar((f.userData.base ?? 1) * (0.88 + 0.14 * Math.sin(this.time * (11 + (i % 5)) + i * 1.7))));
+    if (this.lamp) this.lamp.position.set(run.x, 1.7, -0.8);
     for (const pr of this.props) {
       const z = -(pr.s - d);
       pr.obj.visible = z < 6 && z > -64;
       pr.obj.position.set(pr.x, 0, z);
     }
-    // ゴール(遠くても見えるように、ある所より奥には行かない)
-    const gz = -(run.level.length + 3 - d);
-    this.goal.position.set(0, 0, Math.max(gz, -56));
-    // 大仏さま(ボスの面。道のりの終わりの先)
+    // ゴール(遠くても見えるように、ある所より奥には行かない)。ボスの面は、大仏殿の前に 大仏さまが 立ちはだかる
+    const boss = !!this.buddha;
+    const gz = -(run.level.length + (boss ? 18 : 3) - d);
+    this.goal.position.set(0, 0, Math.max(gz, boss ? -68 : -56));
     if (this.buddha) {
-      const bz = -(run.level.length + 9 - d);
-      this.buddha.position.set(0, 4.3, Math.max(bz, -58));
+      const bz = -(run.level.length + 5 - d);
+      this.buddha.position.set(0, 4.3, Math.max(bz, -52));
       (this.buddha.material as THREE.MeshBasicMaterial).map = this.buddhaTex[run.buddha === 'glow' || (run.buddha === 'warn' && Math.sin(this.time * 18) > 0.3) ? 1 : 0];
-      this.buddha.visible = bz > -62;
+      // ボスなので、ずっと 奥に 見えている
     }
     this.paintWeather(run, dt);
 
@@ -643,7 +811,16 @@ export class SweepView {
     const k = this.rainK;
     (this.scene.background as THREE.Color).copy(this.sky.clear).lerp(this.sky.rain, k);
     (this.scene.fog as THREE.Fog).color.copy(this.sky.fog).lerp(this.sky.rainFog, k);
-    this.hemi.intensity = 1.0 - 0.35 * k;
+    this.hemi.intensity = this.hemiBase * (1.0 - 0.35 * k);
+    // 風: 雨すじが ななめに、葉っぱが 横へ 飛ぶ。Spra も 少し かたむく
+    this.windK += (run.wind - this.windK) * Math.min(1, dt * 3);
+    const wk = this.windK;
+    if (Math.abs(wk) > 0.15 && Math.random() < dt * 30 * Math.abs(wk)) {
+      const z = -1 - Math.random() * 12;
+      this.emit('petal', new THREE.Vector3(this.camX - Math.sign(wk) * 6, 0.3 + Math.random() * 2.2, z), { n: 1, spread: 0.5, v: new THREE.Vector3(wk * 7, 0.4, 0.3), vr: 1.2, size: 0.13, life: 1.6, color: Math.random() < 0.6 ? '#6fae47' : '#c9a25a' });
+    }
+    if (Math.abs(wk) > 0.15 && Math.random() < dt * 14) this.emit('soft', new THREE.Vector3(this.camX - Math.sign(wk) * 5, 0.2 + Math.random() * 1.5, -Math.random() * 8), { n: 1, spread: 0.3, v: new THREE.Vector3(wk * 9, 0, 0), size: 0.5, life: 0.8, grow: 2, color: '#ffffff', opacity: 0.18 });
+    this.spra.material.rotation = -wk * 0.12;
     if (this.rain) {
       (this.rain.material as THREE.LineBasicMaterial).opacity = 0.8 * k;
       this.rain.visible = k > 0.02;
@@ -653,7 +830,7 @@ export class SweepView {
           let y = arr[i + 1] - 15 * dt;
           if (y < 0) y += 9;
           arr[i + 1] = y; arr[i + 4] = y - 0.45;
-          arr[i] = arr[i + 3] - 0.05;
+          arr[i] = arr[i + 3] - 0.05 - wk * 0.35;
         }
         a.needsUpdate = true;
         this.rain.position.x = this.camX;
@@ -670,9 +847,11 @@ export class SweepView {
     for (const [id, o] of this.boltObjs) if (!alive.has(id)) { this.scene.remove(o.ring, o.beam, o.scorch); for (const m of [o.ring, o.beam, o.scorch]) { (m.material as THREE.Material).dispose(); } this.boltObjs.delete(id); }
   }
   private makeBolt() {
-    const ring = new THREE.Mesh(new THREE.RingGeometry(WBAL.boltR * 0.82, WBAL.boltR, 40), new THREE.MeshBasicMaterial({ color: '#ff3a2a', transparent: true, opacity: 0.8, depthWrite: false }));
+    // お松明の火の粉は オレンジの輪と、火の柱
+    const fire = !!this.level.bolts?.fire;
+    const ring = new THREE.Mesh(new THREE.RingGeometry(WBAL.boltR * 0.82, WBAL.boltR, 40), new THREE.MeshBasicMaterial({ color: fire ? '#ff9a1a' : '#ff3a2a', transparent: true, opacity: 0.8, depthWrite: false }));
     ring.rotation.x = -Math.PI / 2; ring.renderOrder = 2;
-    const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.3, 16, 8, 1, true), new THREE.MeshBasicMaterial({ color: '#fffbd0', transparent: true, opacity: 0.95, depthWrite: false, fog: false }));
+    const beam = new THREE.Mesh(new THREE.CylinderGeometry(fire ? 0.3 : 0.14, fire ? 0.5 : 0.3, 16, 8, 1, true), new THREE.MeshBasicMaterial({ color: fire ? '#ffb347' : '#fffbd0', transparent: true, opacity: 0.95, depthWrite: false, fog: false }));
     beam.renderOrder = 6;
     const scorch = new THREE.Mesh(new THREE.CircleGeometry(WBAL.boltR * 0.8, 24), new THREE.MeshBasicMaterial({ color: '#2a2018', transparent: true, opacity: 0.5, depthWrite: false }));
     scorch.rotation.x = -Math.PI / 2;

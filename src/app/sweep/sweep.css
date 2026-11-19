@@ -460,3 +460,9 @@
     opacity: 0;
   }
 }
+
+/* ゴールが 建物(浮見堂・二月堂)の面は、ちょうちん */
+.sw-buddha-icon.torii[data-icon]::before {
+  content: attr(data-icon);
+  font-size: 17px;
+}

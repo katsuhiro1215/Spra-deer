@@ -5,6 +5,7 @@
 // 掃除したうんこは肥料になって、道ばたにお花が咲く(よごれが少し減る)。点数がたまると、ほうきが育つ(ワイド → つよい → 竜巻)。
 // 仲間の Spra(チーム): ゲート(+3・×2 など)を通る・おてつだいの たるを掃いて開けると ふえる。赤いゲート・走ってくる鹿で へる。
 // 仲間も みんな前でほうきを振る(範囲が重なると、たくさん掃ける)。先頭の Spra は いなくならない。
+// しかけ(面ごと): 雨・雷(お松明の火の粉も同じしくみ)・走ってくる鹿・鹿の群れ(横ぎって 一列に落とす)・せんべい売り場(鹿が集まる)・風(横へ流される)・大仏さまの目(ボス)。
 import type { DeerKind, PoopKind, SweepLevel } from './levels.ts';
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
@@ -70,6 +71,20 @@ export const WBAL = {
   boltR: 1.1,
   boltMaxHits: 4,
   boltStun: 0.9,
+  /** 鹿の群れ: 出てくる所(先、m)・横ぎる速さ(m/秒)・一列の間(m) */
+  herdAppear: 16,
+  herdSpeed: 2.6,
+  herdGap: 0.9,
+  /** せんべい売り場: 鹿が集まりはじめる所(先、m)・集まる速さ・落とす間(秒)・1頭が落とす数・この近さまで来ると にげる(m) */
+  stallAppear: 15,
+  stallRun: 3.2,
+  stallDrop: 1.3,
+  stallDrops: 3,
+  stallFlee: 1.4,
+  /** 売り場の鹿の うんこが 大きいになる割合(小は いつも中になる) */
+  stallBig: 0.15,
+  /** 風: うんこが流される速さ(Spra の何倍。小さいほど よく流れる) */
+  windPoop: { small: 0.7, medium: 0.45, large: 0.2 } as Record<PoopKind, number>,
 };
 
 /** 仲間の並ぶ所(先頭からの 横 dx・前 da)。先頭のまわりの、前と横から うまっていく */
@@ -108,12 +123,18 @@ export type SweepDeer = {
   leaving: boolean;
   /** 大仏さまの目が光ったときに、どっと出てきた鹿(光りおわると帰る) */
   swarm?: boolean;
+  /** 群れで横ぎる鹿(herd)・せんべい売り場に集まる鹿(stall)。ふつうの鹿の数には 入れない */
+  mode?: 'herd' | 'stall';
+  /** 群れ: うんこを落とす横の位置。売り場: 集まる横の位置 */
+  home?: number;
+  /** 売り場の鹿の、のこりの落とす数 */
+  drops?: number;
   /** 落とした直後(絵のため) */
   dropPose: number;
 };
 export type Flower = { id: number; s: number; x: number; hue: number; t: number };
 export type SweepEvent = {
-  kind: 'drop' | 'sweep' | 'hit' | 'clean' | 'miss' | 'level' | 'flower' | 'warn' | 'glow' | 'clear' | 'fail' | 'combo' | 'gate' | 'barrelHit' | 'barrel' | 'charge' | 'bump' | 'rain' | 'rainEnd' | 'boltWarn' | 'bolt' | 'swarm';
+  kind: 'drop' | 'sweep' | 'hit' | 'clean' | 'miss' | 'level' | 'flower' | 'warn' | 'glow' | 'clear' | 'fail' | 'combo' | 'gate' | 'barrelHit' | 'barrel' | 'charge' | 'bump' | 'rain' | 'rainEnd' | 'boltWarn' | 'bolt' | 'swarm' | 'herd' | 'stall' | 'wind' | 'windEnd';
   id?: number; x?: number; s?: number; n?: number; hard?: boolean; poop?: PoopKind;
 };
 
@@ -169,6 +190,12 @@ export class SweepRun {
   stun = 0;
   /** 雨が降っているか */
   raining = false;
+  /** 風の向き(−1 = 左へ・1 = 右へ・0 = ふいていない)と、のこりの秒数 */
+  wind: -1 | 0 | 1 = 0;
+  windLeft = 0;
+  private nextWind = 0;
+  private herdIndex = 0;
+  private stallIndex = 0;
   poops: Poop[] = [];
   deer: SweepDeer[] = [];
   flowers: Flower[] = [];
@@ -234,10 +261,13 @@ export class SweepRun {
     this.pace = this.level.speed * (busy ? WBAL.slow : 1);
     this.d += this.pace * dt;
     this.stepBuddha();
+    this.stepHerds();
+    this.stepStalls();
     this.stepDeer(dt);
     this.stepGates();
     this.stepChargers(dt);
     this.stepWeather(dt);
+    this.stepWind(dt);
     // 通りすぎた たるは、もう開けられない
     this.barrels = this.barrels.filter(b => this.ahead(b.s) >= WBAL.passAt - 1);
     for (const p of this.poops) p.t += dt;
@@ -394,6 +424,55 @@ export class SweepRun {
     this.events.push({ kind: 'bolt', id: b.id, x: b.x, s: b.s, n: lost, hard: leader });
   }
 
+  /** 鹿の群れ: 先で 一列になって 参道を横ぎり、1頭ずつ うんこを落としていく(横 いっぱいに ならぶ) */
+  private stepHerds() {
+    const hs = this.level.herds ?? [], kinds = this.level.deer.kinds;
+    while (this.herdIndex < hs.length && this.d >= hs[this.herdIndex].s - WBAL.herdAppear) {
+      const h = hs[this.herdIndex++], dir: 1 | -1 = this.rng() < 0.5 ? 1 : -1;
+      for (let k = 0; k < h.n; k++) {
+        this.deer.push({
+          id: this.nextId++, kind: kinds[(this.deerMade + k) % kinds.length], s: h.s + (this.rng() - 0.5) * 1.6, x: -dir * (WBAL.half + 1.2 + k * WBAL.herdGap), dir,
+          aim: 0, dropIn: 0, life: 99, leaving: false, dropPose: 0, mode: 'herd', home: (this.rng() * 2 - 1) * (WBAL.half - 0.4), drops: 1,
+        });
+      }
+      this.events.push({ kind: 'herd', s: h.s, x: dir, n: h.n });
+    }
+  }
+  /** せんべい売り場: 屋台のまわりに 鹿が集まって、うんこを どんどん落とす(Spra が近づくと にげる) */
+  private stepStalls() {
+    const ss = this.level.stalls ?? [], kinds = this.level.deer.kinds;
+    while (this.stallIndex < ss.length && this.d >= ss[this.stallIndex].s - WBAL.stallAppear) {
+      const st = ss[this.stallIndex++];
+      for (let k = 0; k < st.n; k++) {
+        this.deer.push({
+          id: this.nextId++, kind: kinds[(this.deerMade + k) % kinds.length], s: st.s + (this.rng() - 0.5) * 3, x: st.side * (WBAL.half + 1.5 + this.rng() * 2.5), dir: (-st.side) as 1 | -1,
+          aim: 0, dropIn: 0.4 + this.rng() * 0.9, life: 99, leaving: false, dropPose: 0, mode: 'stall', home: st.side * (WBAL.half - 0.35 - this.rng() * 1.5), drops: WBAL.stallDrops,
+        });
+      }
+      this.events.push({ kind: 'stall', s: st.s, x: st.side, n: st.n });
+    }
+  }
+  /** 風: ときどき 横から ふいて、Spra(ねらいの位置)と うんこを 流す。小さい うんこほど よく流れて、参道のはしに たまる */
+  private stepWind(dt: number) {
+    const w = this.level.wind;
+    if (!w) return;
+    if (this.windLeft > 0) {
+      this.windLeft -= dt;
+      const f = w.force * this.wind * dt;
+      this.targetX = clamp(this.targetX + f, -WBAL.reachX, WBAL.reachX);
+      for (const p of this.poops) p.x = clamp(p.x + f * WBAL.windPoop[p.kind], -WBAL.half + 0.2, WBAL.half - 0.2);
+      if (this.windLeft <= 0) { this.wind = 0; this.windLeft = 0; this.events.push({ kind: 'windEnd' }); }
+      return;
+    }
+    if (this.progress < w.from) return;
+    this.nextWind -= dt;
+    if (this.nextWind > 0) return;
+    this.nextWind = w.every * (0.8 + this.rng() * 0.4);
+    this.wind = this.rng() < 0.5 ? -1 : 1;
+    this.windLeft = w.dur;
+    this.events.push({ kind: 'wind', n: this.wind });
+  }
+
   /** 道ばたに、お花が咲く(よごれが少し減る)。Spra の少し先に咲くので、近づきながら見える */
   private bloom() {
     const side = this.flowers.length % 2 ? 1 : -1;
@@ -425,12 +504,29 @@ export class SweepRun {
     return n + b.extraDeer + (this.buddha === 'glow' ? b.swarm ?? 0 : 0);
   }
   private stepDeer(dt: number) {
-    const lv = this.level, live = this.deer.filter(d => !d.leaving), want = this.wantDeer();
+    const lv = this.level, live = this.deer.filter(d => !d.leaving && !d.mode), want = this.wantDeer();
     if (live.length < want) this.spawnDeer(this.buddha === 'glow');
     // 目が光りおわったら、どっと出てきた鹿は帰っていく
     else if (live.length > want) { const d = live.find(x => x.swarm) ?? live[0]; d.leaving = true; d.dir = d.x >= 0 ? 1 : -1; }
     for (const d of [...this.deer]) {
       d.dropPose = Math.max(0, d.dropPose - dt);
+      if (d.mode === 'herd') {
+        // 一列で 横ぎる(道のりの位置は そのまま)。決めた所で、1回 落とす
+        d.x += d.dir * WBAL.herdSpeed * dt;
+        if (d.drops && d.dir * (d.x - (d.home ?? 0)) >= 0) { d.drops = 0; if (this.ahead(d.s) > 0.8) this.drop(d); }
+        // 向こう側へ 横ぎりおわったら いなくなる(出てくる側は 参道から遠くても 消さない)
+        if (d.dir * d.x > WBAL.half + 1.5 || this.ahead(d.s) < -3) this.deer.splice(this.deer.indexOf(d), 1);
+        continue;
+      }
+      if (d.mode === 'stall' && !d.leaving) {
+        // 屋台の前へ かけよって、落とす。Spra が近づくか、落としおわると にげる
+        const gap = (d.home ?? 0) - d.x;
+        d.x += Math.sign(gap) * Math.min(Math.abs(gap), WBAL.stallRun * dt);
+        if (this.ahead(d.s) < WBAL.stallFlee || !d.drops) { d.leaving = true; d.dir = d.x >= 0 ? 1 : -1; continue; }
+        d.dropIn -= dt;
+        if (Math.abs(gap) < 0.3 && d.dropIn <= 0) { this.drop(d); d.drops = (d.drops ?? 1) - 1; d.dropIn = WBAL.stallDrop * (0.7 + this.rng() * 0.6); }
+        continue;
+      }
       if (d.leaving) {
         // 横へ出ていく
         d.x += d.dir * WBAL.deerExit * dt;
@@ -484,7 +580,10 @@ export class SweepRun {
     return r < a ? 'small' : r < a + b ? 'medium' : 'large';
   }
   private drop(d: SweepDeer) {
-    const kind = this.kindNow(), b = this.level.buddha;
+    // せんべいを食べた鹿の うんこは、ひとまわり大きい
+    let kind = this.kindNow();
+    if (d.mode === 'stall') kind = kind === 'small' ? 'medium' : this.rng() < WBAL.stallBig ? 'large' : kind;
+    const b = this.level.buddha;
     const hard = !!b && this.buddha === 'glow' && this.rng() < b.hard;
     // 雨の間は、べちゃべちゃで固い
     const wet = this.raining, hp = Math.ceil(WBAL.poop[kind].hp * (hard ? WBAL.hardHp : 1) * (wet ? WBAL.wetHp : 1));

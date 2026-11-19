@@ -224,3 +224,48 @@ test("大仏さまの目(ボス): 光っている間は 鹿が どっと出て�
   assert.ok(most >= lv.deer.max + BUDDHA_BOSS.swarm, `光ると 鹿が ${most}頭`);
   assert.ok(calm <= lv.deer.max + BUDDHA_BOSS.extraDeer, `光りおわると ${calm}頭に もどる`);
 });
+
+test("鹿の群れ: 先で 一列に 参道を横ぎって、1頭ずつ うんこを落とす(横に ならぶ)。ふつうの鹿の数には 入らない", () => {
+  const r = start(quiet({ herds: [{ s: 20, n: 5 }] }));
+  r.cooldown = 99; // 掃かないで、落ちた うんこを 数える
+  wait(r, (20 - WBAL.herdAppear) / r.level.speed + 0.1);
+  assert.ok(r.deer.filter(d => d.mode === "herd").length === 5, "5頭の群れ");
+  wait(r, 6);
+  const row = r.poops.filter(p => Math.abs(p.s - 20) < 1.5);
+  assert.equal(row.length, 5, "1頭 1こずつ");
+  const xs = row.map(p => p.x);
+  assert.ok(Math.max(...xs) - Math.min(...xs) > 1.5, "横に ちらばって ならぶ");
+  assert.equal(r.deer.filter(d => d.mode === "herd").length, 0, "横ぎりおわると いなくなる");
+});
+
+test("せんべい売り場: 屋台の側に 鹿が集まって、大きめの うんこを 何こか落とし、Spra が来ると にげる", () => {
+  const r = start(quiet({ stalls: [{ s: 20, side: 1, n: 3 }] }));
+  r.cooldown = 99;
+  wait(r, (20 - WBAL.stallAppear) / r.level.speed + 0.1);
+  assert.equal(r.deer.filter(d => d.mode === "stall").length, 3);
+  wait(r, 8);
+  const ps = r.poops;
+  assert.ok(ps.length >= 3 && ps.length <= 3 * WBAL.stallDrops, `うんこ ${ps.length}こ`);
+  assert.ok(ps.every(p => p.x > 0), "屋台の側(右)に たまる");
+  assert.ok(ps.every(p => p.kind !== "small"), "せんべいを食べた鹿の うんこは 小さくない");
+  assert.ok(r.deer.every(d => d.leaving), "落としおわると にげていく");
+});
+
+test("風: ふいている間は、Spra のねらいと うんこが 横へ流される(小さいほど よく流れる)。やむと とまる", () => {
+  const r = start(quiet({ wind: { from: 0, every: 999, dur: 2, force: 1 } }));
+  r.cooldown = 99;
+  const small = put(r, 6, 0), large = put(r, 6.2, 0, "large");
+  wait(r, 0.05);
+  assert.notEqual(r.wind, 0);
+  const dir = r.wind;
+  wait(r, 1);
+  assert.ok(r.targetX * dir > 0.8, "ねらいが 流された");
+  assert.ok(small.x * dir > large.x * dir && large.x * dir > 0, "小さい うんこほど よく流れる");
+  wait(r, 1.2);
+  assert.equal(r.wind, 0, "やんだ");
+  assert.ok(kinds(r).includes("windEnd"));
+  const sx = small.x, tx = r.targetX;
+  wait(r, 0.5);
+  assert.equal(small.x, sx, "やむと 流れない");
+  assert.equal(r.targetX, tx);
+});
