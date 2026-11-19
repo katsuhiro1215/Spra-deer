@@ -135,10 +135,10 @@ test('2-1: 先に焼きためないと(1枚ずつ)、鹿を待たせてしまう
   assert.ok(r.phase === 'failed' || r.lives < 3, `phase=${r.phase} lives=${r.lives}`);
 });
 
-test('どの面も: 鹿の来る時刻が順番どおり・注文は1〜3枚・こんがりの幅は ok と smoke の間', () => {
+test('どの面も: 鹿の来る時刻が順番どおり・注文は1〜3枚(団体さんは 5枚まで)・こんがりの幅は ok と smoke の間', () => {
   // 焼く面だけ(積む面は tests/tower.test.ts)
   for (const lv of BAKE_LEVELS.filter(isBake)) {
-    lv.arrivals.forEach((a, i) => { if (i) assert.ok(a.t >= lv.arrivals[i - 1].t, lv.id); assert.ok(a.want >= 1 && a.want <= 3, lv.id); });
+    lv.arrivals.forEach((a, i) => { if (i) assert.ok(a.t >= lv.arrivals[i - 1].t, lv.id); assert.ok(a.want >= 1 && a.want <= (lv.id === '2-8' || lv.id >= '2-9' ? 5 : 3), lv.id); });
     const c = lv.cook;
     assert.ok(c.ok < c.perfect[0] && c.perfect[0] < c.perfect[1] && c.perfect[1] < c.smoke && c.smoke < c.burn, lv.id);
     assert.ok(lv.arrivals.length >= lv.goal + 3, `${lv.id}: 失敗しても取りかえせる数の鹿が来る`);
@@ -201,4 +201,82 @@ test("2-2: 追いはらわない・食べられてから追いはらうと、失
     assert.equal(r.phase, "failed", `shoo=${shoo}`);
     assert.equal(r.reason, "stolen");
   }
+});
+
+// ---- 2-5 から: 焼き加減の注文・火の強さ・お店を手伝う なかま ----
+/** 鉄板 i で、両面を 焼け具合 t1・t2 で 取る */
+const bakeOne = (r: BakeRun, i: number, t1: number, t2: number) => {
+  r.tapPlate(i); wait(r, BAL.pour + 0.01);
+  wait(r, t1); r.tapPlate(i);
+  wait(r, BAL.flip + 0.01);
+  wait(r, t2); r.tapPlate(i);
+};
+
+test('焼き加減の注文: 「やわらか」の鹿は やわらか、「こんがり」の鹿は 極上だけ 受けとる。合わないと 受けとらない', () => {
+  const c = LEVEL_2_1.cook;
+  const r = run(quiet({ arrivals: [{ t: 0, kind: 'fawn', want: 1, taste: 'soft' }, { t: 0, kind: 'stag', want: 1, taste: 'crisp' }] }));
+  bakeOne(r, 0, (c.ok + c.perfect[0]) / 2, (c.ok + c.perfect[0]) / 2);
+  assert.equal(r.tray[0].soft, true, '両面 金色の前 → やわらか');
+  wait(r, BAL.walk);
+  const stag = r.deer.find(d => d.kind === 'stag')!, fawn = r.deer.find(d => d.kind === 'fawn')!;
+  r.drainEvents();
+  r.tapDeer(stag.spot);
+  assert.ok(r.drainEvents().some(e => e.kind === 'wrong'), 'こんがりの鹿は やわらかを 受けとらない');
+  assert.equal(r.tray.length, 1);
+  r.tapDeer(fawn.spot);
+  assert.equal(r.tray.length, 0, 'やわらかの鹿は 受けとる');
+});
+
+test('火の強さ: 強火の鉄板は 速く焼け、弱火は ゆっくり', () => {
+  const r = run(quiet({ plates: 3, heat: [1.5, 1, 0.5] }));
+  for (let i = 0; i < 3; i++) r.tapPlate(i);
+  wait(r, BAL.pour + 2);
+  const [a, b, c] = r.plates.map(p => p.t);
+  assert.ok(Math.abs(a - 3) < 0.05 && Math.abs(b - 2) < 0.05 && Math.abs(c - 1) < 0.05, `${a} ${b} ${c}`);
+});
+
+test('Ruru: 焦げそうな 鉄板に 水を かけて もどす(間をあけて 1回ずつ)', () => {
+  const c = LEVEL_2_1.cook;
+  const r = run(quiet({ helpers: ['ruru'] }));
+  r.tapPlate(0); r.tapPlate(1);
+  wait(r, BAL.pour + c.smoke + 0.05);
+  const ev = r.drainEvents();
+  assert.equal(ev.filter(e => e.kind === 'water').length, 1, '1回だけ');
+  assert.equal(r.burntCount, 0);
+  wait(r, c.burn - c.smoke);
+  assert.equal(r.burntCount, 1, 'もう1まいは 間に合わず 焦げる');
+  const solo = run(quiet());
+  solo.tapPlate(0); wait(solo, BAL.pour + c.burn + 0.05);
+  assert.equal(solo.burntCount, 1, 'Ruru が いなければ 焦げる');
+});
+
+test('Kuru: 左から来た くいしんぼう鹿を 通せんぼ(右から来たのは 通る)', () => {
+  const r = run(quiet({ helpers: ['kuru'], sneaks: [{ t: 0, side: -1 }, { t: 0.1, side: 1 }] }));
+  wait(r, BAL.sneakWalk + 0.1);
+  assert.ok(r.drainEvents().some(e => e.kind === 'block'));
+  wait(r, BAL.sneakFlee + 0.1);
+  wait(r, BAL.sneakWalk + 0.1);
+  assert.equal(r.sneak?.phase, 'aim', '右から来た鹿は 台を ねらう');
+});
+
+test('Lumi: 金色の時間が のびる・Momo: 鹿が 長く 待つ', () => {
+  const c = LEVEL_2_1.cook;
+  const lumi = run(quiet({ helpers: ['lumi'] }));
+  assert.equal(lumi.quality(c.perfect[0] - 0.1), 'perfect');
+  assert.equal(run(quiet()).quality(c.perfect[0] - 0.1), 'soft');
+  const momo = run(quiet({ helpers: ['momo'], arrivals: [{ t: 0, kind: 'doe', want: 1 }] }));
+  wait(momo, 0.1);
+  assert.ok(momo.deer[0].patience > LEVEL_2_1.patience.doe * 1.2);
+});
+
+test('2-5・2-8 のバランス: 人の手の ぶれ(±0.45秒)が あっても クリア。焼き加減を 気にしないと ハートが へる', () => {
+  for (const id of ['2-5', '2-8']) {
+    const lv = BAKE_LEVELS.find(l => l.id === id)!;
+    assert.ok(isBake(lv));
+    let clear = 0;
+    for (let seed = 1; seed <= 6; seed++) if (drive(lv, { delay: 0.6, jitter: 0.45, seed }).phase === 'cleared') clear++;
+    assert.ok(clear >= 5, `${id} ${clear}/6`);
+  }
+  const careless = drive(BAKE_LEVELS.find(l => l.id === '2-5') as BakeLevel, { timing: 'ok', delay: 0.4 });
+  assert.ok(careless.lives < 3, '「やわらか」「こんがり」を 気にしないと ハートが へる');
 });

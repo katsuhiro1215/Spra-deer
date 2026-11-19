@@ -1,10 +1,20 @@
 // WORLD 2「鹿せんべい大作戦」の面のデータ(設計書 30章)。せんべい屋台で、焼いて・渡す(bake)/積んで・とどける(tower)/投げて・配る(toss)。
 // 面は、このデータを足せば作れる(焼ける速さ・鹿の来る時刻・注文の数・待てる時間・ゆれる速さ)。
 
-export type DeerKind = 'fawn' | 'doe' | 'stag';
+import type { FriendId } from '../sweep/levels.ts';
 
+export type DeerKind = 'fawn' | 'doe' | 'stag';
+export type { FriendId };
+
+/** 焼き加減の注文(2-5 から)。soft = 両面「やわらか」(金色の前で裏返す・取る)/crisp = 両面「こんがり」(極上) */
+export type Taste = 'soft' | 'crisp';
 /** 鹿の来る時刻と注文(この順に、空いた場所へ来る。空きがなければ、空くまで待つ) */
-export type Arrival = { t: number; kind: DeerKind; want: number };
+export type Arrival = { t: number; kind: DeerKind; want: number; taste?: Taste };
+
+/** 屋台を出す場所(2-5 から 面ごとに かわる): 奥に見える名所の絵・夜・雨 */
+export type W2Scene = { place: string; landmark?: { img: string; w: number; h: number; x?: number; z?: number }; night?: boolean; rain?: boolean };
+/** 面の共通: 場所と、お店を手伝う なかま */
+type W2Common = { scene?: W2Scene; helpers?: FriendId[] };
 
 /** くいしんぼう鹿(並ばずに、台のせんべいをこっそり食べに来る)の来る時刻と、来る側(−1=左・1=右) */
 export type Sneak = { t: number; side: -1 | 1 };
@@ -15,7 +25,7 @@ export type PremiumRule = { kind: 'streak'; n: number } | { kind: 'earlyShoo' };
 /** 片面の焼け方(秒)。ok から裏返せる・perfect の間は「こんがり」・smoke から煙・burn で焦げる */
 export type Cook = { ok: number; perfect: [number, number]; smoke: number; burn: number };
 
-export type BakeLevel = {
+export type BakeLevel = W2Common & {
   mode?: 'bake';
   id: string;
   title: string;
@@ -34,6 +44,8 @@ export type BakeLevel = {
   arrivals: Arrival[];
   /** くいしんぼう鹿(2-2 から) */
   sneaks?: Sneak[];
+  /** 鉄板ごとの火の強さ(焼ける速さの倍。2-8 から。無ければ みんな 1) */
+  heat?: number[];
   premium: PremiumRule;
   /** その面ならではの一言(時刻) */
   notes?: { t: number; text: string }[];
@@ -42,7 +54,7 @@ export type BakeLevel = {
 /** 積む面(せんべいタワー)の、鹿の注文: 何段のタワーがほしいか */
 export type TowerOrder = { kind: DeerKind; want: number };
 
-export type TowerLevel = {
+export type TowerLevel = W2Common & {
   mode: 'tower';
   id: string;
   title: string;
@@ -66,7 +78,7 @@ export type TowerLevel = {
 /** 配る面の鹿: 来る時刻・立つ場所(x, z。屋台は z=0、公園の奥ほど z がマイナス)・ほしい枚数。move があると、その場所との間を行ったり来たりする */
 export type TossArrival = { t: number; kind: DeerKind; at: [number, number]; want: number; move?: [number, number]; speed?: number };
 
-export type TossLevel = {
+export type TossLevel = W2Common & {
   mode: 'toss';
   id: string;
   title: string;
@@ -93,7 +105,7 @@ export type W2Level = BakeLevel | TowerLevel | TossLevel;
 /** 鹿の種類ごとの名前 */
 export const DEER_NAME: Record<DeerKind, string> = { fawn: '子鹿', doe: 'めす鹿', stag: '大きな鹿' };
 
-const seq = (list: [number, DeerKind, number][]): Arrival[] => list.map(([t, kind, want]) => ({ t, kind, want }));
+const seq = (list: [number, DeerKind, number, Taste?][]): Arrival[] => list.map(([t, kind, want, taste]) => ({ t, kind, want, ...(taste ? { taste } : {}) }));
 
 export const LEVEL_2_1: BakeLevel = {
   id: '2-1', title: 'はじめての せんべい屋', summary: '焼いて、裏返して、鹿にわたす',
@@ -181,7 +193,58 @@ export const LEVEL_2_4: TossLevel = {
   ],
 };
 
-export const BAKE_LEVELS: W2Level[] = [LEVEL_2_1, LEVEL_2_2, LEVEL_2_3, LEVEL_2_4];
+// 2-5 から: 屋台が 奈良を まわる(奥に 名所)。なかまが 1人ずつ お店を 手伝う(設計書 30-8)
+const LANDMARK = '/assets/runner/landmarks';
+
+export const LEVEL_2_5: BakeLevel = {
+  id: '2-5', title: 'ちゅうもん いろいろ', summary: '春日大社の 参道で。「やわらか」と「こんがり」の 注文',
+  intro: '今日は 春日大社の 参道に お店を 出すよ！ 鹿の 注文を よく見てね',
+  scene: { place: 'kasuga', landmark: { img: `${LANDMARK}/kasuga.webp`, w: 10, h: 4.9, z: -11 } },
+  helpers: ['lumi'],
+  time: 120, goal: 10, plates: 4,
+  cook: { ok: 3.0, perfect: [3.7, 4.5], smoke: 5.2, burn: 6.4 },
+  patience: { fawn: 26, doe: 30, stag: 36 },
+  // 子鹿は「やわらか」、大きな鹿は「こんがり」が すき。めす鹿は どちらでも
+  arrivals: seq([
+    [4, 'fawn', 1, 'soft'], [12, 'doe', 2], [20, 'stag', 2, 'crisp'], [28, 'fawn', 1, 'soft'], [34, 'doe', 2], [40, 'fawn', 2, 'soft'],
+    [47, 'stag', 3, 'crisp'], [53, 'doe', 2], [59, 'fawn', 1, 'soft'], [65, 'stag', 2, 'crisp'], [71, 'doe', 2], [77, 'fawn', 2, 'soft'],
+    [83, 'stag', 3, 'crisp'], [89, 'doe', 2], [95, 'fawn', 1, 'soft'], [101, 'doe', 2], [107, 'fawn', 1, 'soft'],
+  ]),
+  premium: { kind: 'streak', n: 5 },
+  notes: [
+    { t: 3, text: '子鹿は「やわらか」が すき！ 輪が 緑のうちに 裏返して、緑のうちに 取ろう' },
+    { t: 19, text: '大きな鹿は「こんがり」(金色)が すき！ 鉄板が 4まいに ふえたよ' },
+  ],
+};
+
+export const LEVEL_2_8: BakeLevel = {
+  id: '2-8', title: '鹿の 団体さん', summary: '夜の 燈花会で。団体さんの 大きな注文と、強火・弱火の 鉄板',
+  intro: '夜の 燈花会に お店を 出すよ！ 暗いので 焼き色を よく見て',
+  scene: { place: 'tokae', night: true },
+  helpers: ['ruru'],
+  time: 130, goal: 12, plates: 4,
+  cook: { ok: 3.0, perfect: [3.7, 4.5], smoke: 5.2, burn: 6.4 },
+  // 左はしは 強火(速く焼ける)・右はしは 弱火(ゆっくり)
+  heat: [1.35, 1, 1, 0.75],
+  patience: { fawn: 28, doe: 32, stag: 40 },
+  // 団体さん: 3頭が いっしょに 来て、まとめて たくさん 注文する
+  arrivals: seq([
+    [4, 'doe', 2], [12, 'fawn', 1, 'soft'],
+    [20, 'stag', 4], [20.5, 'doe', 2], [21, 'fawn', 2],
+    [42, 'doe', 2, 'crisp'], [48, 'fawn', 1, 'soft'],
+    [56, 'stag', 5], [56.5, 'doe', 3], [57, 'fawn', 2, 'soft'],
+    [80, 'doe', 2], [86, 'stag', 3, 'crisp'],
+    [94, 'stag', 4], [94.5, 'doe', 3], [95, 'fawn', 2], [112, 'fawn', 1],
+  ]),
+  sneaks: [{ t: 30, side: 1 }, { t: 66, side: -1 }, { t: 104, side: 1 }],
+  premium: { kind: 'streak', n: 6 },
+  notes: [
+    { t: 2, text: '左の 鉄板は 強火(速い)、右は 弱火(ゆっくり)。Ruru が 焦げそうな 鉄板に 水を かけてくれるよ' },
+    { t: 18, text: '団体さんだ！ 3頭 いっしょに たくさん 注文！ 先に 焼いておこう' },
+  ],
+};
+
+export const BAKE_LEVELS: W2Level[] = [LEVEL_2_1, LEVEL_2_2, LEVEL_2_3, LEVEL_2_4, LEVEL_2_5, LEVEL_2_8];
 export const bakeById = (id: string): W2Level | undefined => BAKE_LEVELS.find(l => l.id === id);
 export const isTower = (l: W2Level): l is TowerLevel => l.mode === 'tower';
 export const isToss = (l: W2Level): l is TossLevel => l.mode === 'toss';

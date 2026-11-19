@@ -675,3 +675,90 @@
   left: 4px !important;
   bottom: calc(100% + 2px) !important;
 }
+
+/* お店を手伝う なかま(Spra の横。2-5 から) */
+.bk-helpers {
+  position: absolute;
+  right: 6px;
+  bottom: 8px;
+  display: flex;
+  gap: 2px;
+  pointer-events: none;
+  z-index: 4;
+}
+.bk-helper {
+  position: relative;
+  width: 58px;
+  text-align: center;
+}
+.bk-helper img {
+  width: 100%;
+  height: auto;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.25));
+}
+.bk-helper small {
+  display: block;
+  margin-top: -4px;
+  font-size: 11px;
+  font-weight: 800;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+.bk-helper.jump img {
+  animation: bk-helper-jump 0.45s ease-out;
+}
+@keyframes bk-helper-jump {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  40% {
+    transform: translateY(-14px);
+  }
+}
+.bk-helper-say {
+  position: absolute;
+  bottom: 100%;
+  right: 0;
+  padding: 4px 9px;
+  border-radius: 12px;
+  background: #fff;
+  color: #3a2a1a;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity 0.2s, transform 0.2s;
+}
+.bk-helper.saying .bk-helper-say {
+  opacity: 1;
+  transform: translateY(0);
+}
+/* 焼き加減の注文: やわらか(白っぽい)・こんがり(金色に星) */
+.bk-icons i.soft {
+  background: radial-gradient(circle at 40% 35%, #fff8e6, #f1dfae 70%, #dcc28a);
+}
+.bk-icons i.crisp {
+  background: radial-gradient(circle at 40% 35%, #ffe08a, #e2962c 65%, #a8641c);
+  box-shadow: inset 0 0 0 2px rgba(120, 70, 20, 0.45), 0 0 6px rgba(255, 200, 60, 0.9);
+}
+.bk-order .bk-taste {
+  display: block;
+  font-size: 11px;
+  font-weight: 900;
+  text-align: center;
+  color: #6b4a1a;
+}
+.bk-tag[data-tone='soft'] {
+  background: #fff8e2;
+  color: #7a5a20;
+}
+
+/* 鉄板が 4まいの面: 札を 小さく(となりと 重ならないように) */
+.bk-p4 .bk-tag {
+  font-size: 11px;
+  padding: 3px 7px;
+  letter-spacing: -0.02em;
+}

@@ -3,12 +3,14 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { BAL, type BakeEvent, type BakeRun, type Deer, type Plate } from './sim.ts';
-import type { BakeLevel, DeerKind, W2Level } from './levels.ts';
+import type { BakeLevel, DeerKind, W2Level, W2Scene } from './levels.ts';
 
 const ASSET = '/assets';
 export const COUNTER_TOP = 0.92;
 const GRIDDLE_TOP = 0.98;
 const PLATE_GAP = 0.92;
+/** 鉄板が 4まいのときは、間を少し つめる(画面の はばに おさめる) */
+const PLATE_GAP4 = 0.9;
 const PLATE_Z = 0.28;
 const SENBEI_R = 0.31;
 const TRAY_Z = -0.6;
@@ -115,6 +117,7 @@ export class BakeView {
   protected time = 0;
   protected shake = 0;
   protected plateX: number[];
+  protected gap = PLATE_GAP;
   protected senbei: THREE.Mesh[] = [];
   protected senbeiMats: THREE.MeshStandardMaterial[][] = [];
   protected rings: THREE.ShaderMaterial[] = [];
@@ -122,7 +125,13 @@ export class BakeView {
   protected trayItems: THREE.Mesh[] = [];
   protected senbeiGeo = new THREE.CylinderGeometry(SENBEI_R, SENBEI_R * 0.98, 0.05, 48);
   protected surfTex: THREE.Texture;
-  protected trayMat: { normal: THREE.MeshStandardMaterial; gokujo: THREE.MeshStandardMaterial };
+  protected trayMat: { normal: THREE.MeshStandardMaterial; gokujo: THREE.MeshStandardMaterial; soft: THREE.MeshStandardMaterial };
+  protected hemi!: THREE.HemisphereLight;
+  protected sun!: THREE.DirectionalLight;
+  /** 雨のすじ(雨の面だけ) */
+  protected rainLines: THREE.LineSegments | null = null;
+  /** ゆらめく ろうそく(夜の面) */
+  protected candles: THREE.Sprite[] = [];
   protected side1Color: THREE.Color[] = [];
   protected particles: Particle[] = [];
   protected pmat: Record<'soft' | 'star' | 'heart' | 'crumb', THREE.SpriteMaterial>;
@@ -145,7 +154,8 @@ export class BakeView {
   constructor(host: HTMLElement, w2level: W2Level) {
     const level = w2level as BakeLevel; // 焼く面だけの値(plates など)は、ほかの面では使わない
     this.host = host; this.level = level; this.tower = !!w2level.mode && w2level.mode !== 'bake';
-    this.plateX = this.tower ? [] : Array.from({ length: level.plates }, (_, i) => (i - (level.plates - 1) / 2) * PLATE_GAP);
+    this.gap = level.plates > 3 ? PLATE_GAP4 : PLATE_GAP;
+    this.plateX = this.tower ? [] : Array.from({ length: level.plates }, (_, i) => (i - (level.plates - 1) / 2) * this.gap);
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -161,8 +171,10 @@ export class BakeView {
     const pmrem = new THREE.PMREMGenerator(this.renderer), env = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
     this.scene.environment = env; this.scene.environmentIntensity = 0.35;
     pmrem.dispose(); this.disposables.push(env);
-    this.scene.add(new THREE.HemisphereLight(0xe4f1ff, 0x7a6a48, 1.0));
+    this.hemi = new THREE.HemisphereLight(0xe4f1ff, 0x7a6a48, 1.0);
+    this.scene.add(this.hemi);
     const sun = new THREE.DirectionalLight(0xfff0d6, 2.2);
+    this.sun = sun;
     sun.position.set(-4, 9, 5);
     sun.castShadow = true;
     sun.shadow.mapSize.set(1024, 1024);
@@ -176,10 +188,11 @@ export class BakeView {
 
     this.surfTex = this.makeSurface();
     const tm = (c: string, e = 0) => new THREE.MeshStandardMaterial({ color: c, map: this.surfTex, roughness: 0.78, emissive: new THREE.Color(c), emissiveIntensity: e });
-    this.trayMat = { normal: tm('#e2b467'), gokujo: tm('#d8963c', 0.12) };
+    this.trayMat = { normal: tm('#e2b467'), gokujo: tm('#d8963c', 0.12), soft: tm('#f2dfae') };
     this.pmat = this.makeParticleMats();
 
     this.buildPark();
+    this.buildScene(w2level.scene);
     this.buildStall();
     if (!this.tower) { this.buildGriddle(); this.buildTray(); }
     this.loadDeer();
@@ -343,7 +356,7 @@ export class BakeView {
   }
 
   protected buildGriddle(): void {
-    const n = this.level.plates, w = n * PLATE_GAP + 0.32;
+    const n = this.level.plates, w = n * this.gap + 0.32;
     const iron = new THREE.MeshStandardMaterial({ color: '#2b2a2c', roughness: 0.55, metalness: 0.6 });
     const slab = new THREE.Mesh(new THREE.BoxGeometry(w, 0.1, 1.06), iron);
     slab.position.set(0, GRIDDLE_TOP - 0.05, PLATE_Z); slab.castShadow = true; slab.receiveShadow = true;
@@ -452,7 +465,7 @@ export class BakeView {
     this.camera.aspect = aspect;
     // 鉄板の列(と台の左右)が、横に収まる距離から見る。縦長の画面ほど引いて見る
     // 鉄板は見る中心より手前(カメラ寄り)にあるので、その近さ(toward)を足した距離にする
-    const half = 1.62, tanH = Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2)) * aspect;
+    const half = this.tower ? 1.62 : Math.max(1.62, ((this.level.plates - 1) / 2) * this.gap + 0.5), tanH = Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2)) * aspect;
     const pitch = THREE.MathUtils.degToRad(36);
     const target = new THREE.Vector3(0, 0.85, -1.15);
     const toward = (GRIDDLE_TOP - target.y) * Math.sin(pitch) + (PLATE_Z - target.z) * Math.cos(pitch);
@@ -498,6 +511,12 @@ export class BakeView {
   /** ルールの出来事に合わせた、絵の動き */
   onEvent(e: BakeEvent, run: BakeRun): void {
     const c = e.plate !== undefined ? this.plateCenter(e.plate) : null;
+    // Ruru の水(ジュワッと 白い湯気と 水しぶき)
+    if (e.kind === 'water' && c) {
+      this.emit('soft', c.clone().setY(GRIDDLE_TOP + 0.2), { n: 14, spread: 0.5, v: new THREE.Vector3(0, 1.1, 0), vr: 0.8, size: 0.4, life: 1.0, grow: 1.4, color: '#ffffff', opacity: 0.8 });
+      this.emit('crumb', c.clone().setY(GRIDDLE_TOP + 0.5), { n: 16, spread: 0.3, vr: 2.4, size: 0.06, life: 0.6, gravity: 6, color: '#7cc4ff' });
+    }
+    if (e.kind === 'block' && this.sneakAt) this.emit('star', this.sneakAt.clone().setY(0.8), { n: 14, spread: 0.5, vr: 2.4, size: 0.18, life: 0.6, gravity: 2, color: '#e0b070' });
     const deer = e.deer !== undefined ? run.spots.find(d => d?.id === e.deer) ?? null : null;
     switch (e.kind) {
       case 'pour':
@@ -572,7 +591,7 @@ export class BakeView {
     this.trayItems.forEach((m, k) => {
       const s = run.tray[k];
       m.visible = !!s && !m.userData.hold;
-      if (s) m.material = s.gokujo ? this.trayMat.gokujo : this.trayMat.normal;
+      if (s) m.material = s.gokujo ? this.trayMat.gokujo : s.soft ? this.trayMat.soft : this.trayMat.normal;
     });
     // くいしんぼう鹿にねらわれている台の端のせんべいは、赤く点滅
     const sn = run.sneak;
@@ -592,8 +611,73 @@ export class BakeView {
     this.finishFrame(dt);
   }
 
+  /** 屋台を出す場所(2-5 から): 奥の名所の絵・夜(燈花会の ろうそく)・雨 */
+  protected buildScene(sc: W2Scene | undefined): void {
+    if (!sc) return;
+    if (sc.landmark) {
+      const lm = sc.landmark, tex = loadTex(lm.img);
+      this.disposables.push(tex);
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(lm.w, lm.h), new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: 0.1, fog: false, color: sc.night ? '#9aa2d0' : '#ffffff' }));
+      m.position.set(lm.x ?? 0, lm.h / 2 - 0.4, lm.z ?? -24);
+      this.scene.add(m);
+    }
+    if (sc.night) {
+      this.scene.background = new THREE.Color('#0f1630');
+      this.scene.fog = new THREE.Fog('#141c3a', 9, 34);
+      this.hemi.color.set('#8a9cff'); this.hemi.groundColor.set('#2a2230'); this.hemi.intensity = 0.32;
+      this.sun.color.set('#9fb4ff'); this.sun.intensity = 0.4;
+      this.scene.environmentIntensity = 0.15;
+      this.renderer.toneMappingExposure = 0.95;
+      // 屋台の ちょうちんの灯り
+      const lamp = new THREE.PointLight('#ffc27a', 7, 8, 1.4);
+      lamp.position.set(0, 2.3, 0.6);
+      this.scene.add(lamp);
+      // 石灯籠を 明るく
+      this.scene.traverse(o => { const m = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined; if (m && 'emissive' in m && m.emissiveIntensity === 0.5) m.emissiveIntensity = 2.4; });
+      // 燈花会: 広場を かこむ ろうそくの灯り
+      const glow = canvasTex(64, 64, g => {
+        const grd = g.createRadialGradient(32, 36, 0, 32, 36, 30);
+        grd.addColorStop(0, 'rgba(255,240,200,1)'); grd.addColorStop(0.3, 'rgba(255,180,90,0.6)'); grd.addColorStop(1, 'rgba(255,140,40,0)');
+        g.fillStyle = grd; g.fillRect(0, 0, 64, 64);
+      });
+      this.disposables.push(glow);
+      const mat = new THREE.SpriteMaterial({ map: glow, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending });
+      const cup = new THREE.MeshStandardMaterial({ color: '#f4efe4', emissive: new THREE.Color('#ffcf87'), emissiveIntensity: 1.2 }), cupGeo = new THREE.CylinderGeometry(0.07, 0.06, 0.12, 8);
+      const rnd = mulberry(7);
+      for (let i = 0; i < 90; i++) {
+        const a = (i / 90) * Math.PI * 2, r = 5.4 + (i % 3) * 0.5 + rnd() * 0.3;
+        const x = Math.sin(a) * r * 1.35, z = -2.2 - Math.cos(a) * r;
+        if (z > 0.2) continue;
+        const c = new THREE.Mesh(cupGeo, cup); c.position.set(x, 0.06, z); this.scene.add(c);
+        const sp = new THREE.Sprite(mat); sp.position.set(x, 0.2, z); sp.scale.setScalar(0.5); this.scene.add(sp);
+        this.candles.push(sp);
+      }
+    }
+    if (sc.rain) {
+      this.scene.background = new THREE.Color('#8b99a6');
+      this.scene.fog = new THREE.Fog('#97a3ad', 10, 38);
+      this.hemi.intensity = 0.7; this.sun.intensity = 1.0;
+      const n = 500, pos = new Float32Array(n * 6), rnd = mulberry(3);
+      for (let i = 0; i < n; i++) {
+        const x = (rnd() - 0.5) * 14, y = rnd() * 8, z = -rnd() * 16 + 2;
+        pos.set([x, y, z, x + 0.04, y - 0.4, z + 0.06], i * 6);
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      this.rainLines = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: '#e4edf6', transparent: true, opacity: 0.65, depthWrite: false }));
+      this.rainLines.frustumCulled = false;
+      this.scene.add(this.rainLines);
+    }
+  }
+
   /** 毎フレームの共通部分: 背景の鹿・飛んでいるもの・粒・カメラのゆれ・描く(TowerView も使う) */
   protected finishFrame(dt: number): void {
+    if (this.rainLines) {
+      const a = this.rainLines.geometry.getAttribute('position') as THREE.BufferAttribute, arr = a.array as Float32Array;
+      for (let i = 0; i < arr.length; i += 6) { let y = arr[i + 1] - 13 * dt; if (y < 0) y += 8; arr[i + 1] = y; arr[i + 4] = y - 0.4; }
+      a.needsUpdate = true;
+    }
+    this.candles.forEach((c, i) => c.scale.setScalar(0.5 * (0.88 + 0.14 * Math.sin(this.time * (11 + (i % 5)) + i * 1.7))));
     for (const b of this.bgDeer) b.s.position.y = Math.max(0, Math.sin(this.time * 1.3 + b.ph)) * 0.015;
     // 飛んでいるせんべい
     this.flyers = this.flyers.filter(f => {

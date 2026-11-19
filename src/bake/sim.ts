@@ -1,7 +1,7 @@
 // WORLD 2 せんべい屋台のルール(画面とは切りはなす。テストで動きを確かめる)。設計書 30章。
 // 鉄板: 空き → 生地を置く → 片面を焼く → 裏返す → もう片面 → 台へ。焼きすぎると焦げる(ハート −1)。
 // 鹿: 来て、注文の数だけ受け取ると満足して帰る。待たせすぎると怒って帰る(ハート −1)。
-import type { BakeLevel, DeerKind } from './levels.ts';
+import type { BakeLevel, DeerKind, Taste } from './levels.ts';
 
 export const BAL = {
   /** 生地を流す時間 */
@@ -36,10 +36,21 @@ export const BAL = {
   sneakLeave: 1.4,
 } as const;
 
-export type Quality = 'good' | 'perfect';
+/** お店を手伝う なかま(2-5 から): Lumi = 金色の時間が のびる/Ruru = 焦げそうな鉄板に 水(焼け具合が もどる。間をあけて)/
+ *  Kuru = 左から来る くいしんぼう鹿を 通せんぼ/Momo = 鹿が 長く 待ってくれる */
+export const HELP = {
+  lumiWiden: 0.2,
+  ruruBack: 1.0,
+  ruruCool: 9,
+  kuruSide: -1 as -1 | 1,
+  momoPatience: 1.3,
+};
+
+/** 片面の焼け方: soft = 金色の前(やわらか)・perfect = 金色(こんがり)・good = 金色のあと */
+export type Quality = 'good' | 'perfect' | 'soft';
 export type PlateState = 'empty' | 'pour' | 'side1' | 'flip' | 'side2' | 'burnt' | 'discard';
 export type Plate = { state: PlateState; t: number; side1: Quality | null; smoking: boolean; /** 鉄板の上のせんべいの番号(絵と結びつける) */ sid: number };
-export type Senbei = { id: number; gokujo: boolean };
+export type Senbei = { id: number; gokujo: boolean; /** 両面 やわらか */ soft?: boolean };
 export type DeerPhase = 'walk' | 'wait' | 'eat' | 'happy' | 'angry';
 export type Deer = {
   id: number; kind: DeerKind; want: number; got: number; spot: number; phase: DeerPhase;
@@ -51,6 +62,8 @@ export type Deer = {
   allGokujo: boolean;
   /** 来た向き(−1=左から、1=右から) */
   from: -1 | 1;
+  /** 焼き加減の注文(無ければ、どれでもよい) */
+  taste?: Taste;
 };
 export type SneakPhase = 'walk' | 'aim' | 'eat' | 'flee' | 'leave';
 /** くいしんぼう鹿(1頭ずつ来る) */
@@ -58,7 +71,7 @@ export type Sneaker = { id: number; side: -1 | 1; phase: SneakPhase; t: number; 
 export type FailReason = 'burnt' | 'angry' | 'stolen' | 'time';
 export type BakeEvent = {
   kind: 'pour' | 'early' | 'flip' | 'collect' | 'full' | 'smoke' | 'burnt' | 'discard' | 'arrive' | 'serve' | 'empty' | 'happy' | 'angry' | 'heart' | 'premium' | 'clear' | 'fail'
-    | 'sneak' | 'aim' | 'steal' | 'shoo' | 'sneakLeave';
+    | 'sneak' | 'aim' | 'steal' | 'shoo' | 'sneakLeave' | 'wrong' | 'water' | 'block';
   plate?: number; deer?: number; q?: Quality; gokujo?: boolean; gold?: boolean; sid?: number;
 };
 
@@ -108,8 +121,20 @@ export class BakeRun {
   drainEvents(): BakeEvent[] { const e = this.events; this.events = []; return e; }
   get timeLeft() { return Math.max(0, this.level.time - this.t); }
   get deer(): Deer[] { return this.spots.filter((d): d is Deer => !!d); }
+  /** その なかまが 手伝っているか */
+  helps(id: string): boolean { return !!this.level.helpers?.includes(id as never); }
+  /** 金色(こんがり)の時間。Lumi が手伝うと 前後に のびる */
+  get perfectWin(): [number, number] { const [a, b] = this.level.cook.perfect, w = this.helps('lumi') ? HELP.lumiWiden : 0; return [a - w, b + w]; }
   /** 片面の焼け具合の質 */
-  quality(t: number): Quality { const [a, b] = this.level.cook.perfect; return t >= a && t <= b ? 'perfect' : 'good'; }
+  quality(t: number): Quality { const [a, b] = this.perfectWin; return t >= a && t <= b ? 'perfect' : t < a ? 'soft' : 'good'; }
+  /** Ruru が 次に 水をかけられるまで(秒) */
+  ruruCool = 0;
+  /** 焼き加減の注文に合う、台の せんべいの番号(無ければ −1) */
+  pickFor(d: Deer): number {
+    if (d.taste === 'soft') return this.tray.findIndex(s => s.soft);
+    if (d.taste === 'crisp') return this.tray.findIndex(s => s.gokujo);
+    return this.tray.length ? 0 : -1;
+  }
 
   private loseHeart(reason: FailReason) {
     this.lives--;
@@ -147,7 +172,7 @@ export class BakeRun {
         const q = this.quality(p.t);
         if (q === 'perfect') this.perfectFlips++;
         const gokujo = p.side1 === 'perfect' && q === 'perfect';
-        this.tray.push({ id: p.sid, gokujo });
+        this.tray.push({ id: p.sid, gokujo, soft: p.side1 === 'soft' && q === 'soft' });
         if (gokujo) { this.gokujoCount++; this.streak++; } else this.streak = 0;
         this.events.push({ kind: 'collect', plate: i, q, gokujo, sid: p.sid });
         const pr = this.level.premium;
@@ -182,8 +207,11 @@ export class BakeRun {
   tapDeer(spot: number): void {
     const d = this.spots[spot];
     if (!d || this.phase !== 'running' || d.phase !== 'wait') return;
-    const s = this.tray.shift();
-    if (!s) { this.events.push({ kind: 'empty', deer: d.id }); return; }
+    if (!this.tray.length) { this.events.push({ kind: 'empty', deer: d.id }); return; }
+    // 焼き加減の注文: 合う せんべいが 台に無ければ、受けとらない
+    const k = this.pickFor(d);
+    if (k < 0) { this.events.push({ kind: 'wrong', deer: d.id }); return; }
+    const [s] = this.tray.splice(k, 1);
     d.got++;
     d.allGokujo &&= s.gokujo;
     d.waited = Math.max(0, d.waited - BAL.serveRelief);
@@ -201,12 +229,19 @@ export class BakeRun {
     }
     this.t += dt;
     const c = this.level.cook;
+    this.ruruCool = Math.max(0, this.ruruCool - dt);
     this.plates.forEach((p, i) => {
-      p.t += dt;
+      // 焼いている間だけ、火の強さで 速さが かわる
+      p.t += dt * (p.state === 'side1' || p.state === 'side2' ? this.level.heat?.[i] ?? 1 : 1);
       if (p.state === 'pour' && p.t >= BAL.pour) { p.state = 'side1'; p.t = 0; }
       else if (p.state === 'flip' && p.t >= BAL.flip) { p.state = 'side2'; p.t = 0; }
       else if (p.state === 'discard' && p.t >= BAL.discard) { p.state = 'empty'; p.t = 0; }
       else if (p.state === 'side1' || p.state === 'side2') {
+        // Ruru: 焦げそうな鉄板に 水をかけて、焼け具合を もどす(間をあけて)
+        if (p.t >= c.smoke && this.helps('ruru') && this.ruruCool <= 0) {
+          p.t = c.smoke - HELP.ruruBack; p.smoking = false; this.ruruCool = HELP.ruruCool;
+          this.events.push({ kind: 'water', plate: i });
+        }
         if (p.t >= c.smoke && !p.smoking) { p.smoking = true; this.events.push({ kind: 'smoke', plate: i }); }
         if (p.t >= c.burn) {
           p.state = 'burnt'; p.t = 0; p.smoking = false;
@@ -239,7 +274,11 @@ export class BakeRun {
     s.t += dt;
     switch (s.phase) {
       case 'walk':
-        if (s.t >= BAL.sneakWalk) { s.phase = 'aim'; s.t = 0; this.events.push({ kind: 'aim', deer: s.id }); }
+        if (s.t >= BAL.sneakWalk) {
+          // Kuru: 自分の側から来た くいしんぼう鹿を 通せんぼ(おいはらったのと 同じ)
+          if (this.helps('kuru') && s.side === HELP.kuruSide) { s.phase = 'flee'; s.t = 0; this.shooed++; this.events.push({ kind: 'block', deer: s.id }); break; }
+          s.phase = 'aim'; s.t = 0; this.events.push({ kind: 'aim', deer: s.id });
+        }
         break;
       case 'aim':
         if (s.t >= BAL.sneakAim) { s.phase = 'eat'; s.t = 0; this.bite(s); }
@@ -278,8 +317,8 @@ export class BakeRun {
       const a = list[this.nextArrival++];
       this.deerCount++;
       this.spots[spot] = {
-        id: this.nextId++, kind: a.kind, want: a.want, got: 0, spot, phase: 'walk', t: 0,
-        waited: 0, patience: this.level.patience[a.kind], allGokujo: true,
+        id: this.nextId++, kind: a.kind, want: a.want, got: 0, spot, phase: 'walk', t: 0, taste: a.taste,
+        waited: 0, patience: this.level.patience[a.kind] * (this.helps('momo') ? HELP.momoPatience : 1), allGokujo: true,
         from: spot === 0 ? -1 : spot === 2 ? 1 : this.deerCount % 2 ? -1 : 1,
       };
     }

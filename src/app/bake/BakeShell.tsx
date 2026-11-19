@@ -96,6 +96,8 @@ export function BakeShell() {
           <img data-ks="spra" src="/assets/bake/spra_idle.png" alt="Spra" />
           <span className="bk-say" data-ks="say" />
         </div>
+        {/* お店を手伝う なかま(2-5 から) */}
+        <div className="bk-helpers" data-ks="helpers" />
 
         <div className="ks-overlay on" data-ks="start">
           <div className="ks-card">

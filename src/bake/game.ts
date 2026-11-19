@@ -3,6 +3,7 @@ import { Progress } from '../progress.ts';
 import { Wallet, clearRewards, waitText, STAMINA_MAX, STAMINA_FAIL } from '../wallet.ts';
 import { RunnerAudio } from '../runner/audio.ts';
 import { BAKE_LEVELS, DEER_NAME, type BakeLevel } from './levels.ts';
+import { HELPER_TEXT, mountHelpers } from './helpers.ts';
 import { BAL, BakeRun, type BakeEvent } from './sim.ts';
 import { BakeView } from './view.ts';
 
@@ -39,6 +40,15 @@ export function startBake(root: HTMLElement, base: BakeLevel): () => void {
   const pr = level.premium;
   q('s-prem').textContent = premiumTaken ? '◆ この面の プレミアムコインは 取ったよ'
     : pr.kind === 'streak' ? `◆ 極上せんべいを ${pr.n}まい 続けて作ると…？` : '◆ くいしんぼう鹿を、台に 着く前に 全部 おいはらうと…？';
+  const helpers = mountHelpers(root, level.helpers);
+  for (const id of level.helpers ?? []) { const t = HELPER_TEXT[id]; if (t) { const li = document.createElement('li'); li.innerHTML = `<b>なかま</b> ${t}`; q('how').append(li); } }
+  if (level.arrivals.some(a => a.taste)) {
+    const li = document.createElement('li');
+    li.innerHTML = '<b>注文</b> 白=やわらか(金色の前で タップ)・金=こんがり';
+    q('how').append(li);
+  }
+  if (level.plates > 3) q('keys').textContent = 'キーボード: 1・2・3・4 = 鉄板/Q・W・E = 鹿';
+  root.classList.toggle('bk-p4', level.plates > 3);
   if (level.sneaks?.length) {
     const li = document.createElement('li');
     li.innerHTML = '<b>いたずら</b> 鹿は タップで おいはらう(食べられると ♥が へる)';
@@ -116,6 +126,10 @@ export function startBake(root: HTMLElement, base: BakeLevel): () => void {
       case 'aim': tone(880, 880, 0.1, 'square', 0.04); tone(880, 880, 0.1, 'square', 0.04, 0.16); break;
       case 'steal': noise(0.09, 0.35, 'bandpass', 3000, 0.2, 1.2); noise(0.08, 0.3, 'bandpass', 2500, 0.3, 1.2); break;
       case 'shoo': tone(500, 1400, 0.25, 'sine', 0.07); noise(0.3, 0.15, 'bandpass', 1800); break;
+      case 'wrong': tone(420, 360, 0.12, 'triangle', 0.06); tone(360, 300, 0.14, 'triangle', 0.06, 0.12); break;
+      // ジュワッ(水)
+      case 'water': noise(0.7, 0.3, 'highpass', 2200); tone(900, 300, 0.4, 'sine', 0.04); break;
+      case 'block': tone(1200, 1100, 0.06, 'square', 0.06); tone(700, 660, 0.12, 'triangle', 0.06, 0.04); break;
       case 'clear': audio.stopMusic(); audio.jingle('clear'); break;
       case 'fail': audio.stopMusic(); audio.jingle('fail'); break;
     }
@@ -143,7 +157,7 @@ export function startBake(root: HTMLElement, base: BakeLevel): () => void {
   };
   // 鉄板の下の札と、鹿の注文のふきだし(画面の位置は、毎フレーム 3D から求める)
   const plateTags = run.plates.map(() => { const el = document.createElement('div'); el.className = 'bk-tag'; elLabels.append(el); return el; });
-  const orders = [0, 1, 2].map(() => { const el = document.createElement('div'); el.className = 'bk-order'; el.innerHTML = '<span class="bk-pat"></span><span class="bk-icons"></span>'; elLabels.append(el); return el; });
+  const orders = [0, 1, 2].map(() => { const el = document.createElement('div'); el.className = 'bk-order'; el.innerHTML = '<span class="bk-pat"></span><span class="bk-icons"></span><span class="bk-taste"></span>'; elLabels.append(el); return el; });
   const orderKey = ['', '', ''];
   const sneakMark = document.createElement('div');
   sneakMark.className = 'bk-sneak-mark'; sneakMark.textContent = '！'; sneakMark.hidden = true;
@@ -154,12 +168,18 @@ export function startBake(root: HTMLElement, base: BakeLevel): () => void {
       const el = plateTags[i], at = view.toScreen(view.plateCenter(i).setZ(view.plateCenter(i).z + 0.55));
       el.style.transform = `translate(${at.x}px, ${at.y}px) translate(-50%, -50%)`;
       let text = '', tone_ = '';
+      // 火の強さ(2-8 から)
+      const heat = level.heat?.[i] ?? 1, fire = heat > 1.1 ? '🔥強火 ' : heat < 0.9 ? '弱火 ' : '';
+      // 夜は 暗くて 焼き色が 見えにくい(Lumi がいれば 光で 分かる)
+      const dark = !!level.scene?.night && !run.helps('lumi');
+      const wantSoft = run.deer.some(d => d.taste === 'soft' && d.got < d.want);
       if (!running) text = '';
-      else if (p.state === 'empty') { text = '＋ 生地'; tone_ = 'empty'; }
+      else if (p.state === 'empty') { text = `${fire}＋ 生地`; tone_ = 'empty'; }
       else if (p.state === 'side1' || p.state === 'side2') {
         const verb = p.state === 'side1' ? '↻ うらがえす' : '✓ できあがり';
         if (p.t < c.ok) { text = 'やいてる…'; tone_ = 'wait'; }
-        else if (run.quality(p.t) === 'perfect') { text = `★ いまだ！`; tone_ = 'gold'; }
+        else if (run.quality(p.t) === 'perfect' && !dark) { text = `★ いまだ！`; tone_ = 'gold'; }
+        else if (run.quality(p.t) === 'soft' && wantSoft) { text = `◎ やわらか ${verb.slice(0, 1)}`; tone_ = 'soft'; }
         else if (p.smoking) { text = `あぶない！ ${verb.slice(0, 1)}`; tone_ = 'red'; }
         else { text = verb; tone_ = 'ok'; }
       } else if (p.state === 'burnt') { text = '焦げた… すてる'; tone_ = 'red'; }
@@ -188,7 +208,9 @@ export function startBake(root: HTMLElement, base: BakeLevel): () => void {
       const key = `${d.id}:${d.got}/${d.want}`;
       if (orderKey[s] !== key) {
         orderKey[s] = key;
-        el.querySelector('.bk-icons')!.innerHTML = Array.from({ length: d.want }, (_, k) => `<i class="${k < d.got ? 'got' : ''}"></i>`).join('');
+        const tc = d.taste ?? '';
+        el.querySelector('.bk-icons')!.innerHTML = Array.from({ length: d.want }, (_, k) => `<i class="${k < d.got ? 'got' : ''} ${tc}"></i>`).join('');
+        el.querySelector('.bk-taste')!.textContent = d.taste === 'soft' ? 'やわらか' : d.taste === 'crisp' ? 'こんがり' : '';
         el.setAttribute('aria-label', `${DEER_NAME[d.kind]}: ${d.want}まい ほしい(${d.got}まい もらった)`);
       }
     }
@@ -205,7 +227,7 @@ export function startBake(root: HTMLElement, base: BakeLevel): () => void {
     const tired = run.deer.find(d => d.phase === 'wait' && d.waited / d.patience > 0.7);
     if (tired) return run.tray.length ? ['鹿が まちくたびれてる！ タップで わたそう', 'yellow'] : ['鹿が まちくたびれてる！ いそいで 焼こう', 'yellow'];
     if (run.tray.length >= BAL.trayMax) return ['台が いっぱい！ 鹿に わたそう', 'yellow'];
-    if (run.plates.some(p => (p.state === 'side1' || p.state === 'side2') && p.t >= c.perfect[0] && p.t <= c.perfect[1])) return ['金色！ いまだ！', 'gold'];
+    if (!level.scene?.night && run.plates.some(p => (p.state === 'side1' || p.state === 'side2') && run.quality(p.t) === 'perfect' && p.t >= c.ok)) return ['金色！ いまだ！', 'gold'];
     return ['', ''];
   };
   const paintHud = () => {
@@ -346,6 +368,7 @@ export function startBake(root: HTMLElement, base: BakeLevel): () => void {
       case 'collect':
         if (e.gokujo) { react('hooray', '極上せんべい！', 1200); toast(run.streak >= 2 ? `極上！ ${run.streak}まい 続けて こんがり！` : '極上せんべい！ 両面 こんがり', 1500); }
         hint('collect', 'できた せんべいは、台に ならぶよ。鹿を タップして わたそう', 3600);
+        if (e.gokujo && run.helps('lumi') && Math.random() < 0.4) helpers.say('lumi', 'ぴかっ！ こんがり！', 1000);
         break;
       case 'full': toast('台が いっぱい！ 先に 鹿に わたそう', 1800); break;
       case 'smoke': hint('smoke', '煙が出てる！ はやく タップ！', 2400); react('trouble', 'あわわ…', 900); break;
@@ -365,6 +388,14 @@ export function startBake(root: HTMLElement, base: BakeLevel): () => void {
       case 'aim': react('trouble', 'あっ！ だめだよ！', 1000); break;
       case 'steal': react('trouble', '食べられた〜！', 1400); toast('せんべいを 食べられた！', 1500); break;
       case 'shoo': react('wave', 'じゅんばんに ならんでね！', 1400); break;
+      case 'wrong': {
+        const d = run.deer.find(x => x.id === e.deer);
+        toast(d?.taste === 'soft' ? 'この鹿は「やわらか」が ほしいって！ 金色の 前で 取ろう' : 'この鹿は「こんがり」が ほしいって！ 両面 金色で', 2200);
+        break;
+      }
+      case 'water': helpers.say('ruru', 'ジュワッ！ 水だよ！'); hint('water', 'Ruru が 焦げそうな 鉄板に 水を かけてくれた！(しばらく 休けい)', 2800); break;
+      case 'block': helpers.say('kuru', 'とおせんぼ！'); toast('Kuru が くいしんぼう鹿を 通せんぼ！', 1600); break;
+
       case 'clear': toast('目標たっせい！ おみせ だいせいこう！', 3000); react('hooray', 'やったね！', 4000); break;
       case 'fail': react('trouble', '', 4000); break;
     }
@@ -416,6 +447,7 @@ export function startBake(root: HTMLElement, base: BakeLevel): () => void {
     try { sizzle?.src.stop(); } catch { /* 止まっていたら何もしない */ }
     audio.close();
     view.dispose();
+    helpers.dispose();
     elLabels.replaceChildren();
   };
 }
