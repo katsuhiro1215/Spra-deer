@@ -62,6 +62,14 @@ export const WBAL = {
   chargeHitZ: 0.35,
   chargeMaxHits: 5,
   chargeLeaderLoss: 2,
+  /** 雨: べちゃべちゃの うんこの固さ(何倍)・ほうきの遅さ(振る間が何倍) */
+  wetHp: 1.6,
+  rainSlow: 1.3,
+  /** 雷: 予告の秒数・輪の半径・はじき飛ばす いちばん多い人数・先頭がしびれる秒数 */
+  boltWarn: 1.5,
+  boltR: 1.1,
+  boltMaxHits: 4,
+  boltStun: 0.9,
 };
 
 /** 仲間の並ぶ所(先頭からの 横 dx・前 da)。先頭のまわりの、前と横から うまっていく */
@@ -83,25 +91,29 @@ export type Barrel = { id: number; s: number; x: number; hp: number; maxHp: numb
 export type Charger = { id: number; s: number; x: number; hits: number; hitLeader: boolean; cool: number };
 export type Member = { x: number; a: number; leader: boolean };
 /** ゲートの数字('+3'・'-4'・'x2')を、通ったあとの人数にする */
-export function applyGate(team: number, g: string): number {
+export function applyGate(team: number, g: string, max: number = WBAL.teamMax): number {
   const n = Number(g.slice(1));
   const v = g[0] === '+' ? team + n : g[0] === '-' ? team - n : g[0] === 'x' ? team * n : team;
-  return clamp(Math.round(v), 1, WBAL.teamMax);
+  return clamp(Math.round(v), 1, max);
 }
 
-export type Poop = { id: number; kind: PoopKind; s: number; x: number; hp: number; maxHp: number; hard: boolean; t: number };
+export type Poop = { id: number; kind: PoopKind; s: number; x: number; hp: number; maxHp: number; hard: boolean; t: number; wet?: boolean };
+/** 雷(予告の間は t < 0。落ちた所) */
+export type Bolt = { id: number; s: number; x: number; t: number };
 export type SweepDeer = {
   id: number; kind: DeerKind; s: number; x: number; dir: 1 | -1;
   /** 前を歩く距離のねらい・落とすまで(秒)・帰るまで(秒) */
   aim: number; dropIn: number; life: number;
   /** 帰っている途中(横へ出ていく) */
   leaving: boolean;
+  /** 大仏さまの目が光ったときに、どっと出てきた鹿(光りおわると帰る) */
+  swarm?: boolean;
   /** 落とした直後(絵のため) */
   dropPose: number;
 };
 export type Flower = { id: number; s: number; x: number; hue: number; t: number };
 export type SweepEvent = {
-  kind: 'drop' | 'sweep' | 'hit' | 'clean' | 'miss' | 'level' | 'flower' | 'warn' | 'glow' | 'clear' | 'fail' | 'combo' | 'gate' | 'barrelHit' | 'barrel' | 'charge' | 'bump';
+  kind: 'drop' | 'sweep' | 'hit' | 'clean' | 'miss' | 'level' | 'flower' | 'warn' | 'glow' | 'clear' | 'fail' | 'combo' | 'gate' | 'barrelHit' | 'barrel' | 'charge' | 'bump' | 'rain' | 'rainEnd' | 'boltWarn' | 'bolt' | 'swarm';
   id?: number; x?: number; s?: number; n?: number; hard?: boolean; poop?: PoopKind;
 };
 
@@ -150,6 +162,13 @@ export class SweepRun {
   barrels: Barrel[] = [];
   chargers: Charger[] = [];
   private chargeIndex = 0;
+  /** 雷(予告中・落ちた直後) */
+  bolts: Bolt[] = [];
+  private nextBolt = 0;
+  /** 先頭がしびれている(動けない)のこりの秒数 */
+  stun = 0;
+  /** 雨が降っているか */
+  raining = false;
   poops: Poop[] = [];
   deer: SweepDeer[] = [];
   flowers: Flower[] = [];
@@ -205,7 +224,8 @@ export class SweepRun {
     if (this.phase !== 'running') return;
     this.t += dt;
     // 左右
-    const dx = this.targetX - this.x;
+    this.stun = Math.max(0, this.stun - dt);
+    const dx = this.stun > 0 ? 0 : this.targetX - this.x;
     this.x += Math.sign(dx) * Math.min(Math.abs(dx), WBAL.moveSpeed * dt);
     // 歩く(掃いている間は、ゆっくり)
     const atFoot = (s: number, x: number, r: number) => { const a = this.ahead(s); return a >= -0.1 && a <= WBAL.footAhead && Math.abs(x - this.x) <= WBAL.footX + r; };
@@ -217,6 +237,7 @@ export class SweepRun {
     this.stepDeer(dt);
     this.stepGates();
     this.stepChargers(dt);
+    this.stepWeather(dt);
     // 通りすぎた たるは、もう開けられない
     this.barrels = this.barrels.filter(b => this.ahead(b.s) >= WBAL.passAt - 1);
     for (const p of this.poops) p.t += dt;
@@ -235,7 +256,7 @@ export class SweepRun {
     this.comboLeft = Math.max(0, this.comboLeft - dt);
     if (!this.comboLeft) this.combo = 0;
     this.cooldown -= dt;
-    if (this.cooldown <= 0) { this.cooldown += this.stats.interval; this.sweep(); }
+    if (this.cooldown <= 0) { this.cooldown += this.stats.interval * (this.raining ? WBAL.rainSlow : 1); this.sweep(); }
     if (this.d >= this.level.length) this.end('cleared');
   }
 
@@ -262,7 +283,7 @@ export class SweepRun {
       if (b.hp > 0) { this.events.push({ kind: 'barrelHit', id: b.id, x: b.x, s: b.s, n: b.hp }); continue; }
       this.barrels.splice(this.barrels.indexOf(b), 1);
       const before = this.team;
-      this.team = Math.min(WBAL.teamMax, this.team + b.n);
+      this.team = Math.min(this.level.teamMax, this.team + b.n);
       this.bestTeam = Math.max(this.bestTeam, this.team);
       this.events.push({ kind: 'barrel', id: b.id, x: b.x, s: b.s, n: this.team - before });
     }
@@ -291,7 +312,7 @@ export class SweepRun {
     const gs = this.level.gates ?? [];
     while (this.gateIndex < gs.length && this.d >= gs[this.gateIndex].s) {
       const g = gs[this.gateIndex++], side = this.x < 0 ? g.left : g.right, before = this.team;
-      this.team = applyGate(this.team, side);
+      this.team = applyGate(this.team, side, this.level.teamMax);
       this.bestTeam = Math.max(this.bestTeam, this.team);
       this.events.push({ kind: 'gate', x: this.x < 0 ? -1 : 1, s: g.s, n: this.team - before, id: this.gateIndex - 1 });
     }
@@ -330,6 +351,49 @@ export class SweepRun {
     }
   }
 
+  /** 雨と雷 */
+  private stepWeather(dt: number) {
+    const k = this.progress, wet = (this.level.rain ?? []).some(([a, b]) => k >= a && k < b);
+    if (wet !== this.raining) { this.raining = wet; this.events.push({ kind: wet ? 'rain' : 'rainEnd' }); }
+    const bo = this.level.bolts;
+    for (const b of [...this.bolts]) {
+      const before = b.t;
+      b.t += dt;
+      if (before < 0 && b.t >= 0) this.strike(b);
+      if (b.t > 1.2) this.bolts.splice(this.bolts.indexOf(b), 1);
+    }
+    if (!bo || k < bo.from) return;
+    this.nextBolt -= dt;
+    if (this.nextBolt > 0) return;
+    this.nextBolt = bo.every * (0.8 + this.rng() * 0.4);
+    // チームの あたり(だれかの少し先)に落ちる。予告の輪を見て、よける
+    const ms = this.members(), m = ms[Math.floor(this.rng() * ms.length)];
+    const b: Bolt = { id: this.nextId++, s: this.d + m.a + 1.2 + this.rng() * 1.5, x: clamp(m.x + (this.rng() - 0.5) * 0.8, -WBAL.half + 0.4, WBAL.half - 0.4), t: -WBAL.boltWarn };
+    this.bolts.push(b);
+    this.events.push({ kind: 'boltWarn', id: b.id, x: b.x, s: b.s });
+  }
+  /** 雷が落ちた: 輪の中の なかまは はじき飛ばされ、先頭は しびれる。うんこは 飛び散る(小さく分かれる) */
+  private strike(b: Bolt) {
+    let lost = 0, leader = false;
+    for (const m of this.members()) {
+      if (Math.hypot(m.x - b.x, this.d + m.a - b.s) > WBAL.boltR) continue;
+      if (m.leader) leader = true; else if (lost < WBAL.boltMaxHits) lost++;
+    }
+    this.team = Math.max(1, this.team - lost);
+    if (leader) this.stun = WBAL.boltStun;
+    for (const p of [...this.poops]) {
+      if (p.kind === 'small' || Math.hypot(p.x - b.x, p.s - b.s) > WBAL.boltR) continue;
+      this.poops.splice(this.poops.indexOf(p), 1);
+      const n = p.kind === 'large' ? 4 : 2;
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2 + this.rng();
+        const hp = WBAL.poop.small.hp * (p.hard ? WBAL.hardHp : 1);
+        this.poops.push({ id: this.nextId++, kind: 'small', s: p.s + Math.sin(a) * 1.4, x: clamp(p.x + Math.cos(a) * 1.4, -WBAL.half + 0.2, WBAL.half - 0.2), hp, maxHp: hp, hard: p.hard, t: 0, wet: p.wet });
+      }
+    }
+    this.events.push({ kind: 'bolt', id: b.id, x: b.x, s: b.s, n: lost, hard: leader });
+  }
+
   /** 道ばたに、お花が咲く(よごれが少し減る)。Spra の少し先に咲くので、近づきながら見える */
   private bloom() {
     const side = this.flowers.length % 2 ? 1 : -1;
@@ -357,11 +421,14 @@ export class SweepRun {
   private wantDeer(): number {
     const lv = this.level.deer, b = this.level.buddha;
     const n = Math.min(lv.max, lv.start + Math.floor(this.t / lv.addEvery));
-    return b && this.buddhaAt !== null ? n + b.extraDeer : n;
+    if (!b || this.buddhaAt === null) return n;
+    return n + b.extraDeer + (this.buddha === 'glow' ? b.swarm ?? 0 : 0);
   }
   private stepDeer(dt: number) {
-    const lv = this.level, live = this.deer.filter(d => !d.leaving).length;
-    if (live < this.wantDeer()) this.spawnDeer();
+    const lv = this.level, live = this.deer.filter(d => !d.leaving), want = this.wantDeer();
+    if (live.length < want) this.spawnDeer(this.buddha === 'glow');
+    // 目が光りおわったら、どっと出てきた鹿は帰っていく
+    else if (live.length > want) { const d = live.find(x => x.swarm) ?? live[0]; d.leaving = true; d.dir = d.x >= 0 ? 1 : -1; }
     for (const d of [...this.deer]) {
       d.dropPose = Math.max(0, d.dropPose - dt);
       if (d.leaving) {
@@ -374,6 +441,8 @@ export class SweepRun {
       // 前を歩く距離を、ねらいに近づける(Spra が ゆっくりなら、鹿も ゆっくり)
       const a = this.ahead(d.s);
       d.s += (this.pace + (d.aim - a) * 0.5) * dt;
+      // 横から かけこんでくる鹿(参道の外にいる間)
+      if (Math.abs(d.x) > WBAL.reachX + 0.05) { d.x -= Math.sign(d.x) * 3.5 * dt; continue; }
       d.x += d.dir * WBAL.deerSide * dt;
       if (Math.abs(d.x) > WBAL.reachX) { d.x = clamp(d.x, -WBAL.reachX, WBAL.reachX); d.dir = (d.dir * -1) as 1 | -1; }
       if (this.rng() < dt * 0.15) d.aim = WBAL.deerAhead[0] + this.rng() * (WBAL.deerAhead[1] - WBAL.deerAhead[0]);
@@ -387,8 +456,17 @@ export class SweepRun {
       d.dropIn = (a0 + (a1 - a0) * k) * (0.8 + this.rng() * 0.4);
     }
   }
-  private spawnDeer() {
+  private spawnDeer(swarm = false) {
     const kinds = this.level.deer.kinds, n = this.deerMade++;
+    if (swarm) {
+      // 大混乱: 参道の横から、すぐ前に かけこんでくる
+      const side = this.rng() < 0.5 ? -1 : 1;
+      this.deer.push({
+        id: this.nextId++, kind: kinds[n % kinds.length], s: this.d + 5 + this.rng() * 7, x: side * (WBAL.half + 1.5), dir: (-side) as 1 | -1,
+        aim: WBAL.deerAhead[0] + this.rng() * 5, dropIn: 0.3 + this.rng() * 0.8, life: 99, leaving: false, dropPose: 0, swarm: true,
+      });
+      return;
+    }
     // はじめの鹿は、もう前を歩いている。あとの鹿は、奥の横から入ってくる
     const first = n < this.level.deer.start;
     const x = first ? (n % 2 ? 1 : -1) * (0.6 + this.rng() * 1.0) : (this.rng() * 2 - 1) * WBAL.reachX;
@@ -408,9 +486,10 @@ export class SweepRun {
   private drop(d: SweepDeer) {
     const kind = this.kindNow(), b = this.level.buddha;
     const hard = !!b && this.buddha === 'glow' && this.rng() < b.hard;
-    const hp = WBAL.poop[kind].hp * (hard ? WBAL.hardHp : 1);
+    // 雨の間は、べちゃべちゃで固い
+    const wet = this.raining, hp = Math.ceil(WBAL.poop[kind].hp * (hard ? WBAL.hardHp : 1) * (wet ? WBAL.wetHp : 1));
     // 鹿のおしりの後ろ(手前)に落ちる
-    const p: Poop = { id: this.nextId++, kind, s: d.s - 0.35, x: clamp(d.x - d.dir * 0.12, -WBAL.half + 0.2, WBAL.half - 0.2), hp, maxHp: hp, hard, t: 0 };
+    const p: Poop = { id: this.nextId++, kind, s: d.s - 0.35, x: clamp(d.x - d.dir * 0.12, -WBAL.half + 0.2, WBAL.half - 0.2), hp, maxHp: hp, hard, t: 0, wet };
     this.poops.push(p);
     d.dropPose = 0.3;
     this.events.push({ kind: 'drop', id: p.id, x: p.x, s: p.s, hard, poop: kind });

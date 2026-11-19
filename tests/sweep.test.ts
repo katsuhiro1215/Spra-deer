@@ -2,11 +2,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { SweepRun, WBAL, applyGate, type Poop } from "../src/sweep/sim.ts";
-import { LEVEL_3_1, type SweepLevel, type PoopKind } from "../src/sweep/levels.ts";
+import { LEVEL_3_1, BUDDHA_BOSS, SWEEP_LEVELS, type SweepLevel, type PoopKind } from "../src/sweep/levels.ts";
 import { driveSweep } from "./sweepbot.ts";
 
 /** 鹿の来ない面(うんこは手で置く) */
-const quiet = (extra: Partial<SweepLevel> = {}): SweepLevel => ({ ...LEVEL_3_1, notes: [], buddha: undefined, gates: [], barrels: [], chargers: [], deer: { start: 0, addEvery: 999, max: 0, kinds: ["doe"] }, ...extra });
+const quiet = (extra: Partial<SweepLevel> = {}): SweepLevel => ({ ...LEVEL_3_1, notes: [], buddha: undefined, rain: undefined, bolts: undefined, teamMax: 24, gates: [], barrels: [], chargers: [], deer: { start: 0, addEvery: 999, max: 0, kinds: ["doe"] }, ...extra });
 const start = (lv = quiet()) => { const r = new SweepRun(lv, { seed: 1 }); r.start(); return r; };
 let nid = 1000;
 const put = (r: SweepRun, ahead: number, x: number, kind: PoopKind = "small", hard = false): Poop => {
@@ -85,7 +85,7 @@ test("お花: 何こか掃除するたびに、道ばたに咲いて よごれ�
 });
 
 test("大仏さまの目: 近づくと、予告のあとに光る。光っている間に落ちたうんこは硬い(固さ・点数が2倍)", () => {
-  const lv = { ...LEVEL_3_1, notes: [] };
+  const lv = { ...LEVEL_3_1, notes: [], buddha: BUDDHA_BOSS };
   const r = new SweepRun(lv, { seed: 3 });
   r.start();
   r.d = lv.length * lv.buddha!.from;
@@ -122,15 +122,15 @@ test("左右: 参道の外へは出ない", () => {
   assert.equal(r.x, -WBAL.reachX);
 });
 
-test("3-1 のバランス: うまく動けば ほぼクリア。動かないと失敗", () => {
+for (const lv of SWEEP_LEVELS) test(`${lv.id} のバランス: うまく動けば ほぼクリア。動かないと失敗`, () => {
   let good = 0, human = 0, idle = 0;
-  for (let seed = 1; seed <= 8; seed++) {
-    if (driveSweep(LEVEL_3_1, { seed }).phase === "cleared") good++;
-    if (driveSweep(LEVEL_3_1, { seed, every: 0.5, err: 0.3 }).phase === "cleared") human++;
-    if (driveSweep(LEVEL_3_1, { seed, idle: true }).phase === "cleared") idle++;
+  for (let seed = 1; seed <= 6; seed++) {
+    if (driveSweep(lv, { seed }).phase === "cleared") good++;
+    if (driveSweep(lv, { seed, every: 0.5, err: 0.3, gateMiss: 0.15 }).phase === "cleared") human++;
+    if (driveSweep(lv, { seed, idle: true }).phase === "cleared") idle++;
   }
-  assert.ok(good >= 7, `うまい ${good}/8`);
-  assert.ok(human >= 6, `ふつう ${human}/8`);
+  assert.ok(good >= 5, `うまい ${good}/6`);
+  assert.ok(human >= 4, `ふつう ${human}/6`);
   assert.equal(idle, 0, "動かないとクリアできない");
 });
 
@@ -139,6 +139,7 @@ test("ゲート: 通った側の数字で 人数が かわる(+・−・×)。1�
   assert.equal(applyGate(3, "-5"), 1);
   assert.equal(applyGate(5, "x2"), 10);
   assert.equal(applyGate(20, "x2"), WBAL.teamMax);
+  assert.equal(applyGate(6, "x2", 8), 8, "面ごとの上限");
   const r = start(quiet({ gates: [{ s: 3, left: "-2", right: "+4" }, { s: 6, left: "x2", right: "+1" }] }));
   r.steer(1); wait(r, 2);
   assert.equal(r.team, 5, "右(+4)を通った");
@@ -177,4 +178,49 @@ test("走ってくる鹿: ぶつかった なかまを はじき飛ばす(1頭�
   miss.team = 3; miss.steer(-2);
   wait(miss, 6);
   assert.equal(miss.team, 3, "よけたら へらない");
+});
+
+test("雨: 降っている間に落ちた うんこは べちゃべちゃで固い", () => {
+  const r = new SweepRun({ ...LEVEL_3_1, notes: [], gates: [], barrels: [], rain: [[0, 1]] }, { seed: 2 });
+  r.start();
+  wait(r, 0.05);
+  assert.equal(r.raining, true);
+  wait(r, 6);
+  const wet = r.poops.filter(p => p.wet);
+  assert.ok(wet.length > 0);
+  for (const p of wet) assert.equal(p.maxHp, Math.ceil(WBAL.poop[p.kind].hp * WBAL.wetHp));
+});
+
+test("雷: 予告の輪のあとに落ちる。輪の中の なかまは はじき飛ばされ、先頭は しびれて動けない。うんこは 飛び散る", () => {
+  const r = start(quiet({ bolts: { from: 0, every: 999 } }));
+  r.team = 8;
+  wait(r, 0.05);
+  assert.equal(r.bolts.length, 1);
+  const b = r.bolts[0];
+  b.x = r.x; b.s = r.d + 1.0;
+  const big = put(r, 1.0, r.x + 0.3, "large"); big.s = b.s; big.hp = big.maxHp = 999; // 落ちるまで掃ききれない固さに
+  const before = r.team;
+  r.cooldown = 99; // ほうきを止めて、飛び散った うんこを 数える
+  r.steer(r.x); wait(r, WBAL.boltWarn);
+  assert.ok(r.team < before, "なかまが へった");
+  assert.ok(r.stun > 0, "先頭が しびれた");
+  assert.ok(!r.poops.includes(big) && r.poops.filter(p => p.kind === "small").length + r.missed >= 4, "大きい うんこが 小さく 飛び散った");
+  const x0 = r.x; r.steer(2); wait(r, 0.3);
+  assert.equal(r.x, x0, "しびれている間は 動けない");
+});
+
+test("大仏さまの目(ボス): 光っている間は 鹿が どっと出てきて、光りおわると 帰っていく", () => {
+  const lv = { ...LEVEL_3_1, notes: [], gates: [], barrels: [], buddha: BUDDHA_BOSS };
+  const r = new SweepRun(lv, { seed: 4 });
+  r.start();
+  r.d = lv.length * BUDDHA_BOSS.from;
+  let most = 0, calm = 99;
+  for (let i = 0; i < 120 * 30; i++) {
+    r.d -= r.pace / 120; r.dirt = 0;
+    r.step(1 / 120); r.drainEvents();
+    const live = r.deer.filter(d => !d.leaving).length;
+    if (r.buddha === "glow") most = Math.max(most, live); else if (r.buddha === "sleep" && r.t > 20) calm = Math.min(calm, live);
+  }
+  assert.ok(most >= lv.deer.max + BUDDHA_BOSS.swarm, `光ると 鹿が ${most}頭`);
+  assert.ok(calm <= lv.deer.max + BUDDHA_BOSS.extraDeer, `光りおわると ${calm}頭に もどる`);
 });

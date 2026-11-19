@@ -26,7 +26,10 @@ export function startSweep(root: HTMLElement, level: SweepLevel): () => void {
   q('lv-id').textContent = `面 ${level.id}`;
   q('lv-title').textContent = level.title;
   q('s-title').textContent = level.title;
-  q('s-lead').textContent = `${level.summary}。大仏さまの所まで ${level.length}m、うんこを 掃除しながら 歩こう！`;
+  q('s-lead').textContent = `${level.summary}。${level.goal.name}まで ${level.length}m、うんこを 掃除しながら 歩こう！`;
+  // 道のりの右はしの絵は、その面のゴール(名所の絵か、鳥居)
+  const roadIcon = root.querySelector<HTMLElement>('.sw-buddha-icon');
+  if (roadIcon) { if (level.goal.img) roadIcon.style.backgroundImage = `url(${level.goal.img})`; else roadIcon.classList.add('torii'); }
   q('s-prem').textContent = premiumTaken ? '◆ この面の プレミアムコインは 取ったよ' : `◆ よごれ ${level.premiumUnder}%以下で ゴールすると…？`;
 
   // ---- 音 ----
@@ -83,6 +86,10 @@ export function startSweep(root: HTMLElement, level: SweepLevel): () => void {
       case 'bump': tone(300, 900, 0.18, 'sine', 0.07); noise(0.1, 0.2, 'lowpass', 800); break;
       case 'warn': [0, 0.4, 0.8].forEach(d => tone(1320, 1240, 0.3, 'sine', 0.05, d)); break;
       case 'glow': tone(110, 80, 1.2, 'sawtooth', 0.05); noise(0.9, 0.12, 'lowpass', 300); break;
+      case 'boltWarn': tone(1500, 1400, 0.08, 'square', 0.03); tone(1500, 1400, 0.08, 'square', 0.03, 0.25); break;
+      // ゴロゴロ…ドーン
+      case 'bolt': noise(1.4, 0.5, 'lowpass', 900, 0, 0.7, 120); noise(0.15, 0.4, 'highpass', 2000); break;
+      case 'rain': noise(1.2, 0.08, 'bandpass', 3000, 0, 0.5); break;
       case 'clear': audio.stopMusic(); audio.jingle('clear'); break;
       case 'fail': audio.stopMusic(); audio.jingle('fail'); break;
     }
@@ -98,6 +105,13 @@ export function startSweep(root: HTMLElement, level: SweepLevel): () => void {
     window.clearTimeout(toastTimer);
     toastTimer = window.setTimeout(() => elToast.classList.remove('on'), ms);
   };
+  /** 雷の光(画面が白く ぴかっ) */
+  const flash = () => {
+    const el = document.createElement('div');
+    el.className = 'sw-flash';
+    elLabels.append(el);
+    window.setTimeout(() => el.remove(), 450);
+  };
   const pop = (s: number, x: number, y: number, text: string, tone_ = '') => {
     const p = view.toScreen(view.at(run, s, x, y));
     const el = document.createElement('div');
@@ -112,7 +126,7 @@ export function startSweep(root: HTMLElement, level: SweepLevel): () => void {
     const seen = new Set<number>(), running = run.phase === 'running';
     for (const p of run.poops) {
       const a = run.ahead(p.s);
-      if (!running || p.maxHp <= 1 || a > 16 || a < -0.2) continue;
+      if (!running || p.maxHp <= 1 || a > 9 || a < -0.2) continue;
       seen.add(p.id);
       let el = hpTags.get(p.id);
       if (!el) { el = document.createElement('div'); el.className = 'sw-hp'; elLabels.append(el); hpTags.set(p.id, el); }
@@ -218,8 +232,8 @@ export function startSweep(root: HTMLElement, level: SweepLevel): () => void {
     }
     paintStamina();
     const best = progress.get(level.id).best;
-    q('r-title').textContent = cleared ? '大仏さまに 着いた！ 参道 ぴかぴか！' : '公園が、うんこだらけ…！';
-    q('r-tip').textContent = cleared ? '' : `大仏さままで あと ${Math.ceil(level.length - run.d)}m。うんこの 前に 立つと、ほうきが 届くよ`;
+    q('r-title').textContent = cleared ? `${level.goal.name}に 着いた！ ぴかぴか！` : '公園が、うんこだらけ…！';
+    q('r-tip').textContent = cleared ? '' : `${level.goal.name}まで あと ${Math.ceil(level.length - run.d)}m。うんこの 前に 立つと、ほうきが 届くよ`;
     q('r-stars').textContent = cleared ? '★'.repeat(stars) + '☆'.repeat(3 - stars) : '';
     q('r-dirt').textContent = `${pol}%`;
     q('r-cleaned').textContent = `${run.cleaned} こ` + (run.maxCombo >= 5 ? `(コンボ ${run.maxCombo})` : '');
@@ -329,7 +343,16 @@ export function startSweep(root: HTMLElement, level: SweepLevel): () => void {
         break;
       }
       case 'combo': pop(run.d + 1.2, run.x, 1.1, `${e.n} コンボ！`, 'gold'); break;
-      case 'warn': hint('warn', '大仏さまの目が 光ると、落ちた うんこが 硬くなる！', 3000); break;
+      case 'warn': hint('warn', '大仏さまの目が 光ると、鹿が どっと出てくる！ うんこも 硬くなる！', 3000); break;
+      case 'glow': toast('大混乱！！ 鹿が どっと出てきた！', 2000); break;
+      case 'rain': hint('rain', '雨だ！ うんこが べちゃべちゃで 固い。ほうきも 遅くなる', 3000); break;
+      case 'rainEnd': toast('雨が やんだ！', 1500); break;
+      case 'boltWarn': hint('boltWarn', '赤い輪に 雷が 落ちる！ 仲間ごと にげて！', 2600); break;
+      case 'bolt':
+        flash();
+        if ((e.n ?? 0) > 0) pop(e.s!, e.x!, 1.3, `ビリビリ！ −${e.n}`, 'miss');
+        if (e.hard) toast('しびれて 動けない…！', 1200);
+        break;
       case 'clear': toast('大仏さまに 着いた！ 参道が ぴかぴか！', 3000); break;
       case 'gate': {
         const n = e.n ?? 0;

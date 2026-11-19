@@ -39,7 +39,7 @@ export function driveSweep(level: SweepLevel, policy: SweepPolicy = {}, dt = 1 /
       // ゲートが近いなら、人数が多くなる側へ
       if (g && g.s - run.d < 5) {
         if (!gateWrong.has(run.gateIndex)) gateWrong.set(run.gateIndex, rnd() < gateMiss);
-        const left = applyGate(run.team, g.left), right = applyGate(run.team, g.right);
+        const left = applyGate(run.team, g.left, level.teamMax), right = applyGate(run.team, g.right, level.teamMax);
         let side = left >= right ? -1 : 1;
         if (gateWrong.get(run.gateIndex)) side = -side;
         target = side * 1.4;
@@ -55,6 +55,8 @@ export function driveSweep(level: SweepLevel, policy: SweepPolicy = {}, dt = 1 /
             if (ms.some(m => Math.abs(p.x - m.x) <= m.w / 2 + WBAL.poop[p.kind].r)) v += (p.hp / p.maxHp) * WBAL.poop[p.kind].pollution / (1 + ah);
           }
           if (barrels) for (const b of run.barrels) { const ah = run.ahead(b.s); if (ah > -0.1 && ah < look + 3 && ms.some(m => Math.abs(b.x - m.x) <= m.w / 2 + 0.35)) v += 4; }
+          // 雷の輪からは にげる
+          if (dodge) for (const b of run.bolts) if (b.t < 0) v -= ms.filter(m => Math.hypot(m.x - b.x, run.d + m.a - b.s) < WBAL.boltR + 0.2).length * 3;
           if (dodge) for (const c of run.chargers) { const ah = run.ahead(c.s); if (ah > -0.5 && ah < 8) v -= ms.filter(m => Math.abs(c.x - m.x) < WBAL.chargeHitX + 0.1).length * 3; }
           v -= Math.abs(x - run.x) * 0.02;
           if (v > bestV) { bestV = v; best = x; }

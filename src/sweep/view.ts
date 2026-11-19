@@ -2,7 +2,7 @@
 // ルールは sim.ts。ここは、その状態を絵にするだけ。道のり s は奥(−z)へのびる。Spra は z=0 にいて、世界のほうが手前へ流れる。
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import { WBAL, type Poop, type SweepDeer, type SweepEvent, type SweepRun } from './sim.ts';
+import { WBAL, type Bolt, type Poop, type SweepDeer, type SweepEvent, type SweepRun } from './sim.ts';
 import type { DeerKind, PoopKind, SweepLevel } from './levels.ts';
 
 const ASSET = '/assets';
@@ -10,7 +10,7 @@ const DEER_H: Record<DeerKind, number> = { fawn: 1.3, doe: 1.45, stag: 1.6 };
 const POOP_SIZE: Record<PoopKind, number> = { small: 0.2, medium: 0.3, large: 0.42 };
 const SPRA_H = 1.05;
 /** なかまの Spra の大きさ(先頭の何倍) */
-const HELPER = 0.72;
+const HELPER = 0.62;
 /** 道ばたの木・灯籠を置く間(m) */
 const PROP_GAP = 5;
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
@@ -65,8 +65,18 @@ export class SweepView {
   private grassTex: THREE.Texture;
   private pathTex: THREE.Texture;
   private props: { obj: THREE.Object3D; s: number; x: number }[] = [];
-  private buddha: THREE.Mesh;
-  private buddhaTex: THREE.Texture[];
+  /** 大仏さま(大仏さまの出る面だけ) */
+  private buddha: THREE.Mesh | null = null;
+  private buddhaTex: THREE.Texture[] = [];
+  /** ゴール(名所の絵か、赤い鳥居) */
+  private goal!: THREE.Object3D;
+  /** 雨のすじ・雨の強さ(0〜1。なめらかに かわる) */
+  private rain: THREE.LineSegments | null = null;
+  private rainK = 0;
+  private hemi!: THREE.HemisphereLight;
+  private sky = { clear: new THREE.Color('#bfe2f2'), fog: new THREE.Color('#d4e9ef'), rain: new THREE.Color('#7f8d99'), rainFog: new THREE.Color('#8e9aa4') };
+  /** 雷(予告の輪・落ちた光・こげあと) */
+  private boltObjs = new Map<number, { ring: THREE.Mesh; beam: THREE.Mesh; scorch: THREE.Mesh }>();
   private spra: THREE.Sprite;
   private spraTex: { l: THREE.Texture[]; r: THREE.Texture[] };
   private spraDir: 'l' | 'r' = 'l';
@@ -79,7 +89,7 @@ export class SweepView {
   private deerTex: Record<string, THREE.Texture> = {};
   private deerSprites = new Map<number, DeerSprite>();
   private poopMeshes = new Map<number, PoopMesh>();
-  private poopMat: { normal: THREE.MeshStandardMaterial; hard: THREE.MeshStandardMaterial };
+  private poopMat: { normal: THREE.MeshStandardMaterial; hard: THREE.MeshStandardMaterial; wet: THREE.MeshStandardMaterial };
   private poopGeo: THREE.BufferGeometry[];
   private flowerTex: THREE.Texture[] = [];
   private flowerSprites = new Map<number, THREE.Sprite>();
@@ -114,7 +124,8 @@ export class SweepView {
     const pmrem = new THREE.PMREMGenerator(this.renderer), env = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
     this.scene.environment = env; this.scene.environmentIntensity = 0.35;
     pmrem.dispose(); this.disposables.push(env);
-    this.scene.add(new THREE.HemisphereLight(0xe4f1ff, 0x7a6a48, 1.0));
+    this.hemi = new THREE.HemisphereLight(0xe4f1ff, 0x7a6a48, 1.0);
+    this.scene.add(this.hemi);
     const sun = new THREE.DirectionalLight(0xfff0d6, 2.2);
     sun.position.set(-4, 9, 4);
     sun.castShadow = true;
@@ -128,7 +139,11 @@ export class SweepView {
     this.grassTex.repeat.set(20, 30);
     const ground = new THREE.Mesh(new THREE.PlaneGeometry(60, 90), new THREE.MeshStandardMaterial({ map: this.grassTex, roughness: 1 }));
     ground.rotation.x = -Math.PI / 2; ground.position.z = -35; ground.receiveShadow = true;
-    this.pathTex = grainTex('#dcc8a0', [['#cbb38a', 1200, 3], ['#ebdcbc', 700, 2], ['#b9a07a', 300, 2], ['#f4ead2', 200, 1]], 5);
+    // 道: 春日大社・東大寺は石だたみ、ほかは砂利
+    const stoneWay = level.place === 'kasuga' || level.place === 'todaiji';
+    this.pathTex = stoneWay
+      ? grainTex('#c9c4b8', [['#b4aea2', 1100, 4], ['#dcd8cd', 700, 3], ['#9f998d', 400, 2]], 9)
+      : grainTex(level.place === 'wakakusa' ? '#e3d3a8' : '#dcc8a0', [['#cbb38a', 1200, 3], ['#ebdcbc', 700, 2], ['#b9a07a', 300, 2], ['#f4ead2', 200, 1]], 5);
     this.pathTex.repeat.set(2, 30);
     const path = new THREE.Mesh(new THREE.PlaneGeometry(WBAL.half * 2, 90), new THREE.MeshStandardMaterial({ map: this.pathTex, roughness: 1 }));
     path.rotation.x = -Math.PI / 2; path.position.set(0, 0.005, -35); path.receiveShadow = true;
@@ -141,12 +156,16 @@ export class SweepView {
     }
     this.scene.add(ground, path);
     this.buildProps();
+    this.buildGoal();
+    if (level.rain?.length) this.buildRain();
 
-    // 大仏さま(道のりの終わり)。目が光ると、絵を光る目にかえる
-    this.buddhaTex = [loadTex(`${ASSET}/runner/daibutsu_0.png`), loadTex(`${ASSET}/runner/daibutsu_1.png`)];
-    this.disposables.push(...this.buddhaTex);
-    this.buddha = new THREE.Mesh(new THREE.PlaneGeometry(10, 9.2), new THREE.MeshBasicMaterial({ map: this.buddhaTex[0], transparent: true, alphaTest: 0.1, fog: false }));
-    this.scene.add(this.buddha);
+    // 大仏さま(ボスの面だけ)。目が光ると、絵を光る目にかえる
+    if (level.buddha) {
+      this.buddhaTex = [loadTex(`${ASSET}/runner/daibutsu_0.png`), loadTex(`${ASSET}/runner/daibutsu_1.png`)];
+      this.disposables.push(...this.buddhaTex);
+      this.buddha = new THREE.Mesh(new THREE.PlaneGeometry(10, 9.2), new THREE.MeshBasicMaterial({ map: this.buddhaTex[0], transparent: true, alphaTest: 0.1, fog: false }));
+      this.scene.add(this.buddha);
+    }
 
     // Spra(後ろ姿で歩く。右へ動くときは、左右を反転)
     const ul = [0, 1, 2].map(i => loadTex(`${ASSET}/spru-walk/ul_${i}.png`));
@@ -189,9 +208,11 @@ export class SweepView {
     this.poopMat = {
       normal: new THREE.MeshStandardMaterial({ color: '#7a4a24', roughness: 0.55, metalness: 0.05 }),
       hard: new THREE.MeshStandardMaterial({ color: '#b58a2e', roughness: 0.3, metalness: 0.65, emissive: new THREE.Color('#5a3c00'), emissiveIntensity: 0.4 }),
+      // 雨で べちゃべちゃ(こい色で、てかてか)
+      wet: new THREE.MeshStandardMaterial({ color: '#4e2c14', roughness: 0.12, metalness: 0.25 }),
     };
     this.poopGeo = [new THREE.TorusGeometry(0.62, 0.32, 10, 24), new THREE.TorusGeometry(0.42, 0.27, 10, 22), new THREE.ConeGeometry(0.34, 0.5, 14)];
-    this.disposables.push(...this.poopGeo, this.poopMat.normal, this.poopMat.hard);
+    this.disposables.push(...this.poopGeo, this.poopMat.normal, this.poopMat.hard, this.poopMat.wet);
 
     this.buildHelpers();
     this.buildGates();
@@ -213,13 +234,27 @@ export class SweepView {
     const leafGeo = new THREE.IcosahedronGeometry(1, 1), trunkGeo = new THREE.CylinderGeometry(0.16, 0.24, 2.4, 8);
     const stone = new THREE.MeshStandardMaterial({ color: '#b9b3a6', roughness: 0.95 });
     const lamp = new THREE.MeshStandardMaterial({ color: '#ffe7a8', emissive: new THREE.Color('#ffcf6b'), emissiveIntensity: 0.5 });
+    // 場所ごとに: 春日大社は灯籠がずらり、若草山は 木が少なく ひらけた草原、奈良公園は 芝で休む鹿
+    const place = this.level.place;
+    const gap = place === 'kasuga' ? 2.6 : PROP_GAP, lanternRate = place === 'kasuga' ? 1 : place === 'wakakusa' ? 0 : place === 'kofukuji' ? 0.2 : 0.32;
+    if (place === 'kasuga') leafMats.forEach((m, i) => m.color.set(['#3f7a33', '#4a8a3a', '#356d2c', '#58964a'][i]));
     // 道のり全体ぶんを、はじめに置いておく(見えない所は fog と、カメラの外)
-    for (let s = -10; s < this.length + 30; s += PROP_GAP) {
+    for (let s = -10; s < this.length + 30; s += gap) {
       for (const side of [-1, 1]) {
         const k = s * 2 + (side > 0 ? 1 : 0), r = hash(k);
         let obj: THREE.Object3D;
-        const x = side * (WBAL.half + 1.0 + r * 3.5);
-        if (r < 0.32) {
+        const x = side * (WBAL.half + 1.0 + r * 3.5) * (place === 'wakakusa' ? 1.8 : 1);
+        if (place === 'wakakusa' && r > 0.3) continue;
+        if (place === 'kasuga' && r > 0.5) {
+          // 灯籠のうしろの杉
+          const tree = new THREE.Group();
+          const trunk = new THREE.Mesh(trunkGeo, trunkMat); trunk.position.y = 1.2; tree.add(trunk);
+          const cone = new THREE.Mesh(new THREE.ConeGeometry(1.1, 3.4, 8), leafMats[Math.floor(r * 4) % 4]); cone.position.y = 3.4; cone.castShadow = true; tree.add(cone);
+          tree.scale.setScalar(0.9 + r * 0.5);
+          this.props.push({ obj: tree, s: s + 1.3, x: side * (WBAL.half + 2.2 + r * 2) });
+          this.scene.add(tree);
+        }
+        if (r < lanternRate) {
           // 石灯籠(参道のすぐ横)
           const g = new THREE.Group();
           const add = (geo: THREE.BufferGeometry, y: number, m: THREE.Material = stone) => { const o = new THREE.Mesh(geo, m); o.position.y = y; o.castShadow = true; g.add(o); };
@@ -249,11 +284,64 @@ export class SweepView {
         this.scene.add(obj);
       }
     }
+    // 奈良公園: 芝で休む鹿(にぎやかし)
+    if (place === 'park' || place === 'wakakusa') {
+      const lie = loadTex(`${ASSET}/bake/stag_lie.png`);
+      this.disposables.push(lie);
+      for (let s = 4; s < this.length + 20; s += 9) {
+        const r = hash(s * 3.1), side = r < 0.5 ? -1 : 1;
+        const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: lie, transparent: true, alphaTest: 0.1 }));
+        sp.center.set(0.5, 0.02); sp.scale.set(1.1, 1.25, 1);
+        this.scene.add(sp);
+        this.props.push({ obj: sp, s, x: side * (WBAL.half + 1.2 + hash(s * 7.7) * 3) });
+      }
+    }
+    // 若草山: 奥に、なだらかな 緑の山
+    if (place === 'wakakusa') {
+      const hill = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.MeshStandardMaterial({ color: '#7fb85a', roughness: 1, fog: false }));
+      hill.scale.set(40, 11, 14); hill.position.set(4, -1, -70);
+      this.scene.add(hill);
+    }
+  }
+  /** ゴール: 名所の絵(興福寺の五重塔・春日大社の楼門 など)か、赤い鳥居 */
+  private buildGoal(): void {
+    const gd = this.level.goal;
+    if (gd.img) {
+      const tex = loadTex(gd.img);
+      this.disposables.push(tex);
+      const w = gd.w ?? 8, h = gd.h ?? 6;
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: 0.1, fog: false }));
+      m.position.y = h / 2 - 0.2;
+      const g = new THREE.Group(); g.add(m);
+      this.goal = g;
+    } else {
+      const red = new THREE.MeshStandardMaterial({ color: '#d8342c', roughness: 0.5 }), black = new THREE.MeshStandardMaterial({ color: '#2a2422', roughness: 0.6 });
+      const g = new THREE.Group();
+      for (const x of [-WBAL.half - 0.3, WBAL.half + 0.3]) { const pl = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.26, 4.6, 14), red); pl.position.set(x, 2.3, 0); pl.castShadow = true; g.add(pl); }
+      const kasagi = new THREE.Mesh(new THREE.BoxGeometry(WBAL.half * 2 + 2.2, 0.32, 0.5), black); kasagi.position.y = 4.75; g.add(kasagi);
+      const shimaki = new THREE.Mesh(new THREE.BoxGeometry(WBAL.half * 2 + 1.8, 0.26, 0.44), red); shimaki.position.y = 4.45; g.add(shimaki);
+      const nuki = new THREE.Mesh(new THREE.BoxGeometry(WBAL.half * 2 + 1.2, 0.22, 0.3), red); nuki.position.y = 3.6; g.add(nuki);
+      this.goal = g;
+    }
+    this.scene.add(this.goal);
+  }
+  /** 雨のすじ(カメラのまわりの箱の中を、くり返し落ちる) */
+  private buildRain(): void {
+    const n = 420, pos = new Float32Array(n * 6);
+    for (let i = 0; i < n; i++) {
+      const x = (Math.random() - 0.5) * 14, y = Math.random() * 9, z = -Math.random() * 24 + 4;
+      pos.set([x, y, z, x + 0.05, y - 0.45, z + 0.08], i * 6);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    this.rain = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: '#dfeaf5', transparent: true, opacity: 0, depthWrite: false }));
+    this.rain.frustumCulled = false;
+    this.scene.add(this.rain);
   }
 
   /** なかまの Spra(いちばん多い人数ぶん、はじめに作って、人数だけ見せる) */
   private buildHelpers(): void {
-    for (let i = 0; i < WBAL.teamMax - 1; i++) {
+    for (let i = 0; i < this.level.teamMax - 1; i++) {
       const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.spraTex.l[0], transparent: true, alphaTest: 0.1 }));
       s.center.set(0.5, 0.02); s.visible = false; s.renderOrder = 3;
       const broom = this.broom.clone();
@@ -465,6 +553,12 @@ export class SweepView {
         this.shake = Math.max(this.shake, e.hard ? 0.6 : 0.3);
         break;
       }
+      case 'bolt':
+        if (!p) break;
+        this.emit('star', p.clone().setY(0.3), { n: 26, spread: 1.4, vr: 4, size: 0.22, life: 0.6, gravity: 3, color: '#fff6a0' });
+        this.emit('soft', p.setY(0.2), { n: 8, spread: 1.2, v: new THREE.Vector3(0, 0.8, 0), vr: 1, size: 0.6, life: 0.9, grow: 1.2, color: '#5a5652', opacity: 0.6 });
+        this.shake = Math.max(this.shake, 0.9);
+        break;
       case 'clear':
         this.emit('petal', new THREE.Vector3(run.x, 2, -2), { n: 60, spread: 4, v: new THREE.Vector3(0, -0.2, 0), vr: 1.5, size: 0.14, life: 2.4, gravity: 0.4, color: '#ff9fbf' });
         break;
@@ -483,11 +577,17 @@ export class SweepView {
       pr.obj.visible = z < 6 && z > -64;
       pr.obj.position.set(pr.x, 0, z);
     }
-    // 大仏さま(道のりの終わりの先)
-    const bz = -(run.level.length + 9 - d);
-    this.buddha.position.set(0, 4.3, Math.max(bz, -58));
-    (this.buddha.material as THREE.MeshBasicMaterial).map = this.buddhaTex[run.buddha === 'glow' || (run.buddha === 'warn' && Math.sin(this.time * 18) > 0.3) ? 1 : 0];
-    this.buddha.visible = bz > -62;
+    // ゴール(遠くても見えるように、ある所より奥には行かない)
+    const gz = -(run.level.length + 3 - d);
+    this.goal.position.set(0, 0, Math.max(gz, -56));
+    // 大仏さま(ボスの面。道のりの終わりの先)
+    if (this.buddha) {
+      const bz = -(run.level.length + 9 - d);
+      this.buddha.position.set(0, 4.3, Math.max(bz, -58));
+      (this.buddha.material as THREE.MeshBasicMaterial).map = this.buddhaTex[run.buddha === 'glow' || (run.buddha === 'warn' && Math.sin(this.time * 18) > 0.3) ? 1 : 0];
+      this.buddha.visible = bz > -62;
+    }
+    this.paintWeather(run, dt);
 
     // Spra
     const moving = run.phase === 'running' && run.pace > 0.5;
@@ -535,6 +635,64 @@ export class SweepView {
     this.camX += (run.x * 0.55 - this.camX) * Math.min(1, dt * 4);
     this.aim();
     this.finishFrame(dt);
+  }
+
+  /** 雨(空が暗くなり、すじが落ちる)と雷(予告の赤い輪 → 光の柱 → こげあと) */
+  private paintWeather(run: SweepRun, dt: number): void {
+    this.rainK += ((run.raining ? 1 : 0) - this.rainK) * Math.min(1, dt * 1.5);
+    const k = this.rainK;
+    (this.scene.background as THREE.Color).copy(this.sky.clear).lerp(this.sky.rain, k);
+    (this.scene.fog as THREE.Fog).color.copy(this.sky.fog).lerp(this.sky.rainFog, k);
+    this.hemi.intensity = 1.0 - 0.35 * k;
+    if (this.rain) {
+      (this.rain.material as THREE.LineBasicMaterial).opacity = 0.8 * k;
+      this.rain.visible = k > 0.02;
+      if (this.rain.visible) {
+        const a = this.rain.geometry.getAttribute('position') as THREE.BufferAttribute, arr = a.array as Float32Array;
+        for (let i = 0; i < arr.length; i += 6) {
+          let y = arr[i + 1] - 15 * dt;
+          if (y < 0) y += 9;
+          arr[i + 1] = y; arr[i + 4] = y - 0.45;
+          arr[i] = arr[i + 3] - 0.05;
+        }
+        a.needsUpdate = true;
+        this.rain.position.x = this.camX;
+      }
+    }
+    const alive = new Set<number>();
+    for (const b of run.bolts) {
+      alive.add(b.id);
+      let o = this.boltObjs.get(b.id);
+      if (!o) o = this.makeBolt();
+      this.boltObjs.set(b.id, o);
+      this.placeBolt(b, o, run);
+    }
+    for (const [id, o] of this.boltObjs) if (!alive.has(id)) { this.scene.remove(o.ring, o.beam, o.scorch); for (const m of [o.ring, o.beam, o.scorch]) { (m.material as THREE.Material).dispose(); } this.boltObjs.delete(id); }
+  }
+  private makeBolt() {
+    const ring = new THREE.Mesh(new THREE.RingGeometry(WBAL.boltR * 0.82, WBAL.boltR, 40), new THREE.MeshBasicMaterial({ color: '#ff3a2a', transparent: true, opacity: 0.8, depthWrite: false }));
+    ring.rotation.x = -Math.PI / 2; ring.renderOrder = 2;
+    const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.3, 16, 8, 1, true), new THREE.MeshBasicMaterial({ color: '#fffbd0', transparent: true, opacity: 0.95, depthWrite: false, fog: false }));
+    beam.renderOrder = 6;
+    const scorch = new THREE.Mesh(new THREE.CircleGeometry(WBAL.boltR * 0.8, 24), new THREE.MeshBasicMaterial({ color: '#2a2018', transparent: true, opacity: 0.5, depthWrite: false }));
+    scorch.rotation.x = -Math.PI / 2;
+    this.scene.add(ring, beam, scorch);
+    return { ring, beam, scorch };
+  }
+  private placeBolt(b: Bolt, o: { ring: THREE.Mesh; beam: THREE.Mesh; scorch: THREE.Mesh }, run: SweepRun): void {
+    const p = this.at(run, b.s, b.x);
+    const warn = b.t < 0, prog = warn ? 1 + b.t / WBAL.boltWarn : 0;
+    o.ring.visible = warn;
+    o.ring.position.copy(p).setY(0.03);
+    // 予告: 輪が ちかちか、だんだん速く
+    (o.ring.material as THREE.MeshBasicMaterial).opacity = 0.45 + 0.45 * Math.abs(Math.sin(this.time * (8 + prog * 18)));
+    o.ring.scale.setScalar(1 + (1 - prog) * 0.25);
+    o.beam.visible = !warn && b.t < 0.22;
+    o.beam.position.copy(p).setY(8);
+    o.beam.scale.set(1 + Math.random() * 0.4, 1, 1 + Math.random() * 0.4);
+    o.scorch.visible = !warn;
+    o.scorch.position.copy(p).setY(0.02);
+    (o.scorch.material as THREE.MeshBasicMaterial).opacity = warn ? 0 : 0.5 * Math.max(0, 1 - b.t / 1.2);
   }
 
   private paintHelpers(run: SweepRun, dt: number, frame: number, sw: number): void {
@@ -643,7 +801,7 @@ export class SweepView {
       alive.add(p.id);
       let pm = this.poopMeshes.get(p.id);
       if (!pm) {
-        const g = new THREE.Group(), mat = p.hard ? this.poopMat.hard : this.poopMat.normal;
+        const g = new THREE.Group(), mat = p.hard ? this.poopMat.hard : p.wet ? this.poopMat.wet : this.poopMat.normal;
         const [a, b, c] = this.poopGeo;
         const t1 = new THREE.Mesh(a, mat); t1.rotation.x = Math.PI / 2; t1.position.y = 0.3;
         const t2 = new THREE.Mesh(b, mat); t2.rotation.x = Math.PI / 2; t2.position.y = 0.72;
