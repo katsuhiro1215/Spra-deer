@@ -12,12 +12,12 @@ export function BakeShell() {
     let stop: (() => void) | undefined;
     let cancelled = false;
     // three.js はブラウザ側でだけ読み込む。面は /bake/?level=2-1 のように指定する(無ければ2-1)
-    // 焼く面(game.ts)と積む面(towerGame.ts)は、面のデータの mode で分ける
-    Promise.all([import('../../bake/game.ts'), import('../../bake/towerGame.ts'), import('../../bake/levels.ts')]).then(([game, tower, levels]) => {
+    // 焼く面(game.ts)・積む面(towerGame.ts)・配る面(tossGame.ts)は、面のデータの mode で分ける
+    Promise.all([import('../../bake/game.ts'), import('../../bake/towerGame.ts'), import('../../bake/tossGame.ts'), import('../../bake/levels.ts')]).then(([game, tower, toss, levels]) => {
       if (cancelled || !ref.current) return;
       const id = new URLSearchParams(window.location.search).get('level') ?? '2-1';
       const level = levels.bakeById(id) ?? levels.BAKE_LEVELS[0];
-      stop = levels.isTower(level) ? tower.startTower(ref.current, level) : game.startBake(ref.current, level);
+      stop = levels.isTower(level) ? tower.startTower(ref.current, level) : levels.isToss(level) ? toss.startToss(ref.current, level) : game.startBake(ref.current, level);
     });
     return () => {
       cancelled = true;
@@ -75,6 +75,13 @@ export function BakeShell() {
                 <i data-ks="t-stab-bar" />
               </i>
             </span>
+          </div>
+          {/* 配る面だけ: のこりの せんべいと、ぴったりの連続 */}
+          <div className="bk-toss-info">
+            <span className="bk-stock" data-ks="t-stock-box">
+              せんべい <b data-ks="t-stock">0</b>まい
+            </span>
+            <span className="bk-pstreak" data-ks="t-streak" hidden />
           </div>
           <div className="bk-alert" data-ks="alert" />
           <div className="ks-toast bk-toast" data-ks="toast" />

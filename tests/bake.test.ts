@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { BakeRun, BAL } from '../src/bake/sim.ts';
-import { BAKE_LEVELS, LEVEL_2_1, LEVEL_2_2, isTower, type BakeLevel } from '../src/bake/levels.ts';
+import { BAKE_LEVELS, LEVEL_2_1, LEVEL_2_2, isBake, type BakeLevel } from '../src/bake/levels.ts';
 import { drive } from './bakebot.ts';
 
 const quiet = (extra: Partial<BakeLevel> = {}): BakeLevel => ({ ...LEVEL_2_1, arrivals: [], notes: [], ...extra });
@@ -137,7 +137,7 @@ test('2-1: 先に焼きためないと(1枚ずつ)、鹿を待たせてしまう
 
 test('どの面も: 鹿の来る時刻が順番どおり・注文は1〜3枚・こんがりの幅は ok と smoke の間', () => {
   // 焼く面だけ(積む面は tests/tower.test.ts)
-  for (const lv of BAKE_LEVELS.filter((l): l is BakeLevel => !isTower(l))) {
+  for (const lv of BAKE_LEVELS.filter(isBake)) {
     lv.arrivals.forEach((a, i) => { if (i) assert.ok(a.t >= lv.arrivals[i - 1].t, lv.id); assert.ok(a.want >= 1 && a.want <= 3, lv.id); });
     const c = lv.cook;
     assert.ok(c.ok < c.perfect[0] && c.perfect[0] < c.perfect[1] && c.perfect[1] < c.smoke && c.smoke < c.burn, lv.id);

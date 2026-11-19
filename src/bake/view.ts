@@ -140,11 +140,11 @@ export class BakeView {
   protected blinkMat = new THREE.MeshStandardMaterial({ color: '#e2b467', roughness: 0.78, emissive: new THREE.Color('#ff2a1a'), emissiveIntensity: 0 });
   protected tmpV = new THREE.Vector3();
 
-  /** 積む面(せんべいタワー)では、鉄板と台を作らない(公園・屋台・鹿・演出は共通。TowerView が引きつぐ) */
+  /** 積む面・配る面では、鉄板と台を作らない(公園・屋台・鹿・演出は共通。TowerView・TossView が引きつぐ) */
   protected tower: boolean;
   constructor(host: HTMLElement, w2level: W2Level) {
-    const level = w2level as BakeLevel; // 焼く面だけの値(plates など)は、tower では使わない
-    this.host = host; this.level = level; this.tower = w2level.mode === 'tower';
+    const level = w2level as BakeLevel; // 焼く面だけの値(plates など)は、ほかの面では使わない
+    this.host = host; this.level = level; this.tower = !!w2level.mode && w2level.mode !== 'bake';
     this.plateX = this.tower ? [] : Array.from({ length: level.plates }, (_, i) => (i - (level.plates - 1) / 2) * PLATE_GAP);
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));

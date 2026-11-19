@@ -534,3 +534,144 @@
 .bk-mode-tower .bk-alert {
   top: calc(max(12px, env(safe-area-inset-top)) + 200px);
 }
+
+/* ---- 配る面(せんべい くばり)だけの部品。ほかの面では出さない ---- */
+.bk-toss-info {
+  display: none;
+}
+.bk-mode-toss .bk-toss-info {
+  position: absolute;
+  left: 14px;
+  top: calc(max(12px, env(safe-area-inset-top)) + 92px);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.bk-stock {
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: rgba(70, 40, 20, 0.62);
+  font-weight: 800;
+  font-size: 14px;
+}
+.bk-stock b {
+  font-size: 22px;
+  font-variant-numeric: tabular-nums;
+}
+.bk-stock[data-tone=yellow] {
+  background: rgba(214, 140, 20, 0.9);
+}
+.bk-stock[data-tone=red] {
+  background: rgba(216, 52, 44, 0.94);
+  animation: bk-pulse 0.4s ease-in-out infinite alternate;
+}
+.bk-pstreak {
+  padding: 4px 11px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #ffd84a, #f0a21a);
+  color: #5a3200;
+  font-weight: 900;
+  font-size: 14px;
+}
+.bk-pstreak[hidden] {
+  display: none;
+}
+/* 公園の鹿は遠くにもいるので、ふきだしは小さめ */
+.bk-order-sm {
+  padding: 3px 7px 3px 4px;
+  gap: 4px;
+  border-width: 2px;
+}
+.bk-order-sm .bk-pat {
+  width: 18px;
+  height: 18px;
+}
+.bk-order-sm .bk-icons i {
+  width: 17px;
+  height: 17px;
+}
+.bk-order-sm::after {
+  bottom: -7px;
+  width: 9px;
+  height: 9px;
+  border-right-width: 2px;
+  border-bottom-width: 2px;
+}
+/* 鹿の上に、ふわっと出て消える一言 */
+.bk-pop {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: #fff;
+  color: #3f9d3a;
+  font-weight: 900;
+  font-size: 16px;
+  white-space: nowrap;
+  box-shadow: 0 3px 0 rgba(0, 0, 0, 0.18);
+  animation: bk-pop-up 1s ease-out forwards;
+}
+.bk-pop[data-tone=perfect] {
+  background: linear-gradient(180deg, #ffd84a, #f0a21a);
+  color: #5a3200;
+  font-size: 18px;
+}
+.bk-pop[data-tone=gold] {
+  background: linear-gradient(180deg, #fff1a0, #f0b400);
+  color: #5a3200;
+  font-size: 20px;
+  border: 2px solid #fff;
+}
+.bk-pop[data-tone=pick] {
+  color: #8a5a2a;
+  font-size: 14px;
+}
+@keyframes bk-pop-up {
+  0% {
+    opacity: 0;
+    translate: 0 6px;
+    scale: 0.7;
+  }
+  15% {
+    opacity: 1;
+    translate: 0 0;
+    scale: 1.1;
+  }
+  30% {
+    scale: 1;
+  }
+  100% {
+    opacity: 0;
+    translate: 0 -34px;
+  }
+}
+/* なぞっている指が、画面をスクロールさせないように */
+.bk-mode-toss .ks-frame {
+  touch-action: none;
+}
+.bk-mode-toss .bk-toast {
+  top: calc(max(12px, env(safe-area-inset-top)) + 134px);
+}
+/* 配る面の注意の帯は、手前の台の上に(公園の鹿と、ふきだしに重ならないように) */
+.bk-mode-toss .bk-alert {
+  top: auto;
+  left: calc(50% + 40px);
+  bottom: calc(max(6px, env(safe-area-inset-bottom)) + 10px);
+  max-width: calc(100% - 128px);
+  padding: 5px 14px;
+  font-size: 15px;
+  line-height: 1.35;
+  white-space: normal;
+  word-break: keep-all;
+  text-wrap: balance;
+  text-align: center;
+  transform: translate(-50%, 0) scale(0.9);
+}
+.bk-mode-toss .bk-alert.on {
+  transform: translate(-50%, 0) scale(1);
+}
+/* 配る面では、Spra のひとことを頭の上に(右どなりは注意の帯) */
+.bk-mode-toss .bk-say {
+  left: 4px !important;
+  bottom: calc(100% + 2px) !important;
+}

@@ -1,4 +1,4 @@
-// WORLD 2「鹿せんべい大作戦」の面のデータ(設計書 30章)。せんべい屋台で、焼いて・渡す(bake)/積んで・とどける(tower)。
+// WORLD 2「鹿せんべい大作戦」の面のデータ(設計書 30章)。せんべい屋台で、焼いて・渡す(bake)/積んで・とどける(tower)/投げて・配る(toss)。
 // 面は、このデータを足せば作れる(焼ける速さ・鹿の来る時刻・注文の数・待てる時間・ゆれる速さ)。
 
 export type DeerKind = 'fawn' | 'doe' | 'stag';
@@ -63,7 +63,32 @@ export type TowerLevel = {
   notes?: { t: number; text: string }[];
 };
 
-export type W2Level = BakeLevel | TowerLevel;
+/** 配る面の鹿: 来る時刻・立つ場所(x, z。屋台は z=0、公園の奥ほど z がマイナス)・ほしい枚数。move があると、その場所との間を行ったり来たりする */
+export type TossArrival = { t: number; kind: DeerKind; at: [number, number]; want: number; move?: [number, number]; speed?: number };
+
+export type TossLevel = {
+  mode: 'toss';
+  id: string;
+  title: string;
+  summary: string;
+  intro: string;
+  /** 制限時間(秒) */
+  time: number;
+  /** 満足させる鹿の数(そろった時点でクリア) */
+  goal: number;
+  /** 持っている せんべいの数(鹿せんべいは 10まいで1束) */
+  senbei: number;
+  /** 鹿が待てる秒数 */
+  patience: Record<DeerKind, number>;
+  arrivals: TossArrival[];
+  /** 投げる前に見える、とぶ道すじの長さ(0〜1。1 なら落ちる所まで見える) */
+  guide: number;
+  /** プレミアムコイン: 「ぴったり」キャッチを n 回続ける */
+  premiumStreak: number;
+  notes?: { t: number; text: string }[];
+};
+
+export type W2Level = BakeLevel | TowerLevel | TossLevel;
 
 /** 鹿の種類ごとの名前 */
 export const DEER_NAME: Record<DeerKind, string> = { fawn: '子鹿', doe: 'めす鹿', stag: '大きな鹿' };
@@ -129,6 +154,35 @@ export const LEVEL_2_3: TowerLevel = {
   ],
 };
 
-export const BAKE_LEVELS: W2Level[] = [LEVEL_2_1, LEVEL_2_2, LEVEL_2_3];
+// 配る面の立ち位置(手前・まん中・奥)。屋台から 約2.5m・4.5m・7m
+const NEAR = -3.4, MID = -5.4, FAR = -7.8;
+const toss = (list: [number, DeerKind, number, number, number, [number, number]?, number?][]): TossArrival[] =>
+  list.map(([t, kind, x, z, want, move, speed]) => ({ t, kind, at: [x, z], want, ...(move ? { move, speed: speed ?? 0.5 } : {}) }));
+
+export const LEVEL_2_4: TossLevel = {
+  mode: 'toss',
+  id: '2-4', title: 'せんべい くばり', summary: '公園の鹿へ、せんべいを 投げて とどける',
+  intro: '鹿のほうへ 指で スーッと なぞって、はなすと 投げるよ！',
+  time: 90, goal: 12, senbei: 20,
+  patience: { fawn: 13, doe: 15, stag: 18 },
+  // はじめは手前の鹿から1頭ずつ。だんだん奥へ、2頭ずつ。40秒すぎから、歩きまわる鹿
+  arrivals: toss([
+    [2, 'fawn', 0, NEAR, 1], [6, 'doe', -0.9, MID, 1], [10, 'fawn', 1.1, NEAR, 1], [14, 'stag', 0, FAR, 2],
+    [19, 'doe', -1.1, NEAR, 1], [20, 'fawn', 1.0, MID, 1], [25, 'doe', -2.0, FAR, 1], [27, 'fawn', 0.2, NEAR, 1],
+    [32, 'stag', 2.0, FAR, 2], [33, 'doe', -1.0, MID, 1], [40, 'fawn', -1.6, MID, 1, [1.6, MID], 0.55], [42, 'doe', 1.1, NEAR, 1],
+    [47, 'doe', -2.0, FAR, 2, [0.4, FAR], 0.45], [49, 'fawn', -0.8, NEAR, 1], [54, 'fawn', 1.6, MID, 1, [-1.2, MID], 0.6],
+    [56, 'stag', 0.4, FAR, 2], [62, 'doe', -1.1, NEAR, 1], [64, 'fawn', 1.8, FAR, 1], [70, 'doe', 0, MID, 1],
+  ]),
+  guide: 0.6,
+  premiumStreak: 4,
+  notes: [
+    { t: 16, text: '長く なぞるほど 遠くへ とぶよ。奥の鹿は 長めに！' },
+    { t: 50, text: '歩いている鹿は、少し先を ねらおう' },
+  ],
+};
+
+export const BAKE_LEVELS: W2Level[] = [LEVEL_2_1, LEVEL_2_2, LEVEL_2_3, LEVEL_2_4];
 export const bakeById = (id: string): W2Level | undefined => BAKE_LEVELS.find(l => l.id === id);
 export const isTower = (l: W2Level): l is TowerLevel => l.mode === 'tower';
+export const isToss = (l: W2Level): l is TossLevel => l.mode === 'toss';
+export const isBake = (l: W2Level): l is BakeLevel => !l.mode || l.mode === 'bake';
