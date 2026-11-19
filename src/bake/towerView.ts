@@ -2,6 +2,7 @@
 // ゆれるせんべい(と、落ちる場所の影)・注文の高さの線・カメラ(タワーの高さについていく)。ルールは tower.ts。
 import * as THREE from 'three';
 import { BakeView, COUNTER_TOP } from './view.ts';
+import type { BakeRun } from './sim.ts';
 import { TBAL, type Layer, type TowerEvent, type TowerRun } from './tower.ts';
 import type { TowerLevel } from './levels.ts';
 
@@ -142,6 +143,13 @@ export class TowerView extends BakeView {
       case 'angry':
         this.emit('soft', this.spotPos(2).setY(1.7), { n: 4, spread: 0.3, v: new THREE.Vector3(0, 0.6, 0), size: 0.25, life: 0.8, color: '#ff8a7a', opacity: 0.7 });
         break;
+      case 'nibble': {
+        // いちばん下の段が、鹿の ほうへ 引っぱられて 消える
+        const l = e.fallen?.[0];
+        if (l) this.emit('crumb', new THREE.Vector3(l.x, BASE_Y, PLATE_Z), { n: 14, spread: 0.4, vr: 1.8, size: 0.06, life: 0.6, gravity: 4 });
+        this.shake = Math.max(this.shake, 0.3);
+        break;
+      }
       case 'premium':
         this.emit('star', this.towerTop(n).setY(this.topY(n) + 0.3), { n: 30, spread: 1.2, vr: 3, size: 0.22, life: 1.4, gravity: 2.5, color: '#e8b8ff' });
         break;
@@ -185,6 +193,12 @@ export class TowerView extends BakeView {
     this.goalMat.color.set(n >= want ? '#3fbf4a' : '#e04a3a');
     // 鹿(お客は、右に1頭。タワーにかくれないように)
     this.paintDeer(run.customer ? [run.customer] : [], dt);
+    // タワーの下を 食べに来る鹿(焼く面の くいしんぼう鹿と 同じ動き)
+    this.paintSneak({ sneak: run.nibbler } as unknown as BakeRun);
+    // 風: 葉っぱが 横へ とぶ
+    if (run.wind && Math.random() < dt * 22) {
+      this.emit('crumb', new THREE.Vector3(-run.wind * 3, this.camY + (Math.random() - 0.3) * 1.6, PLATE_Z - Math.random() * 1.5), { n: 1, spread: 0.3, v: new THREE.Vector3(run.wind * 4.5, 0.2, 0), vr: 0.6, size: 0.07, life: 1.3, color: Math.random() < 0.6 ? '#6fae47' : '#c9a25a' });
+    }
     // カメラは、タワーの高さに なめらかに ついていく
     const want2 = clamp(BASE_Y + n * TBAL.h * 0.8 + 0.25, 1.2, 4);
     this.camY += (want2 - this.camY) * Math.min(1, dt * 2.5);

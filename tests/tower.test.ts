@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { TowerRun, TBAL } from "../src/bake/tower.ts";
-import { LEVEL_2_3, type TowerLevel } from "../src/bake/levels.ts";
+import { BAKE_LEVELS, LEVEL_2_3, type TowerLevel } from "../src/bake/levels.ts";
 import { driveTower } from "./towerbot.ts";
 
 const lv = (extra: Partial<TowerLevel> = {}): TowerLevel => ({ ...LEVEL_2_3, notes: [], ...extra });
@@ -98,4 +98,51 @@ test("2-3: 手がぶれても(±0.1m)注文どおりならクリアできる。�
 test("2-3: いつも同じ側へずらして積むと、崩れる", () => {
   const r = driveTower(LEVEL_2_3, { err: 0.1, errSide: "same" });
   assert.ok(r.collapses > 0);
+});
+
+// ---- 2-6: 風・下を食べる鹿・Piko ----
+test("風: 予告のあとに ふいて、落ちている せんべいが 流される。Piko が手伝うと 弱い", () => {
+  const base = { ...LEVEL_2_3, notes: [], wind: { from: 0, every: 99, dur: 5, force: 1 } } as TowerLevel;
+  const drift = (helpers: ("piko")[]) => {
+    const r = new TowerRun({ ...base, helpers });
+    r.start();
+    for (let i = 0; i < 120 * (TBAL.windWarn + 0.1); i++) r.step(1 / 120);
+    assert.notEqual(r.wind, 0);
+    r.hold.x = 0; r.drop();
+    const x0 = r.falling!.x;
+    while (r.falling) { const f = r.falling; r.step(1 / 120); if (!r.falling) return Math.abs(f.x - x0); }
+    return 0;
+  };
+  const free = drift([]), piko = drift(["piko"]);
+  assert.ok(free > 0.25, `流される ${free}`);
+  assert.ok(piko < free * 0.5, `Piko がいると 弱い ${piko}`);
+});
+
+test("下を食べる鹿: いちばん下の段を 食べる(1段目で ♥−1)。タップで おいはらえる", () => {
+  const lv = { ...LEVEL_2_3, notes: [], orders: [], nibblers: [{ t: 0, side: -1 as const }] } as TowerLevel;
+  const r = new TowerRun(lv);
+  r.start();
+  r.stack = [0, 0, 0, 0].map(() => ({ x: 0, r: TBAL.r, perfect: false }));
+  for (let i = 0; i < 120 * (TBAL.nibWalk + TBAL.nibAim + 0.1); i++) r.step(1 / 120);
+  assert.equal(r.height, 3, "1段 食べられた");
+  assert.equal(r.lives, TBAL.lives - 1);
+  const s = new TowerRun(lv);
+  s.start();
+  s.stack = [0, 0, 0].map(() => ({ x: 0, r: TBAL.r, perfect: false }));
+  for (let i = 0; i < 120; i++) s.step(1 / 120);
+  s.shoo();
+  for (let i = 0; i < 120 * 5; i++) s.step(1 / 120);
+  assert.equal(s.height, 3, "おいはらえば 食べられない");
+  assert.equal(s.lives, TBAL.lives);
+});
+
+test("2-6: 手がぶれても(±0.1m)、風を 見こして 鹿を おいはらえば クリア。おいはらわないと 失敗", () => {
+  const lv = BAKE_LEVELS.find(l => l.id === "2-6") as TowerLevel;
+  let ok = 0, lazy = 0;
+  for (let seed = 1; seed <= 6; seed++) {
+    if (driveTower(lv, { err: 0.1, errSide: "rand", seed, windComp: 0.5, shooDelay: 1 }).phase === "cleared") ok++;
+    if (driveTower(lv, { err: 0.1, errSide: "rand", seed, windComp: 0.5, shooDelay: 999 }).phase === "cleared") lazy++;
+  }
+  assert.ok(ok >= 5, `${ok}/6`);
+  assert.equal(lazy, 0);
 });

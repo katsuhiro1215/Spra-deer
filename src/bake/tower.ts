@@ -40,17 +40,27 @@ export const TBAL = {
   coinPerfect: 2,
   /** 注文より この段数以上 多く積んでとどけると、ゴールド */
   goldExtra: 4,
+  /** 風: ふく前の 予告(秒)・Piko が手伝うと 流される割合 */
+  windWarn: 1.4,
+  pikoWind: 0.35,
+  /** 下を食べる鹿: 歩いてくる・ねらう(予告)・1段 食べる間(秒)・何段 食べるか・逃げる時間 */
+  nibWalk: 2.4,
+  nibAim: 1.8,
+  nibBite: 1.5,
+  nibBites: 2,
+  nibFlee: 0.9,
 } as const;
 
 export type Layer = { x: number; r: number; perfect: boolean };
 export type TowerEvent = {
-  kind: 'drop' | 'land' | 'perfect' | 'miss' | 'collapse' | 'big' | 'deliver' | 'arrive' | 'happy' | 'angry' | 'heart' | 'premium' | 'clear' | 'fail' | 'notYet';
+  kind: 'drop' | 'land' | 'perfect' | 'miss' | 'collapse' | 'big' | 'deliver' | 'arrive' | 'happy' | 'angry' | 'heart' | 'premium' | 'clear' | 'fail' | 'notYet'
+    | 'windWarn' | 'wind' | 'windEnd' | 'nibbler' | 'nibAim' | 'nibble' | 'nibShoo' | 'nibLeave';
   /** 着いた段・崩れはじめた段・とどけた段数 */
   n?: number; x?: number; gold?: boolean; deer?: number;
   /** 崩れて落ちた段・とどけたタワー(絵のため) */
   fallen?: Layer[];
 };
-export type TowerFail = 'collapse' | 'angry' | 'time';
+export type TowerFail = 'collapse' | 'angry' | 'time' | 'nibbled';
 
 export class TowerRun {
   phase: 'ready' | 'running' | 'cleared' | 'failed' = 'ready';
@@ -76,6 +86,16 @@ export class TowerRun {
   busy = 0;
   /** パーフェクトの連続 */
   perfectRun = 0;
+  /** 風: 向き(−1/0/1)・予告の向き・のこりの秒数 */
+  wind: -1 | 0 | 1 = 0;
+  windComing: -1 | 0 | 1 = 0;
+  windLeft = 0;
+  private nextWind = 0;
+  /** タワーの下を食べに来た鹿(1頭ずつ) */
+  nibbler: { id: number; side: -1 | 1; phase: 'walk' | 'aim' | 'eat' | 'flee'; t: number; bites: number } | null = null;
+  private nibIndex = 0;
+  /** 食べられた段の数 */
+  eaten = 0;
   events: TowerEvent[] = [];
   readonly level: TowerLevel;
   private premiumOn: boolean;
@@ -140,6 +160,15 @@ export class TowerRun {
   }
 
   // ---- 操作 ----
+  /** 風で 流される速さ(m/秒。左が −)。Piko が手伝うと 弱い */
+  get windSpeed(): number { const w = this.level.wind; return w && this.wind ? this.wind * w.force * (this.level.helpers?.includes('piko') ? TBAL.pikoWind : 1) : 0; }
+  /** 下を食べる鹿を おいはらう */
+  shoo(): void {
+    const b = this.nibbler;
+    if (!b || this.phase !== 'running' || b.phase === 'flee') return;
+    b.phase = 'flee'; b.t = 0;
+    this.events.push({ kind: 'nibShoo', deer: b.id });
+  }
   /** タップ: ゆれているせんべいを落とす */
   drop(): void {
     if (this.phase !== 'running' || this.falling || this.busy > 0) return;
@@ -183,8 +212,12 @@ export class TowerRun {
     if (h.x > TBAL.span) { h.x = 2 * TBAL.span - h.x; h.dir = -1; }
     if (h.x < -TBAL.span) { h.x = -2 * TBAL.span - h.x; h.dir = 1; }
     // 落ちているせんべい
+    this.stepWind(dt);
+    this.stepNibbler(dt);
+    if (this.phase !== 'running') return;
     const f = this.falling;
     if (f) {
+      f.x += this.windSpeed * dt;
       f.vy += TBAL.g * dt; f.y -= f.vy * dt;
       if (f.y <= 0) { this.falling = null; this.land(f.x, f.big); }
     }
@@ -219,7 +252,60 @@ export class TowerRun {
     if (perfect) { lx = top.x; this.perfects++; this.perfectRun++; } else this.perfectRun = 0;
     this.stack.push({ x: lx, r, perfect });
     this.events.push({ kind: perfect ? 'perfect' : 'land', n: this.stack.length, x: lx });
-    // 崩れるか: 下の段から見て、上の重心がふちの外へ出たら、そこから上が落ちる
+    if (this.checkCollapse()) return;
+    if (this.perfectRun >= TBAL.bigAfter) {
+      this.perfectRun = 0;
+      this.hold.big = true;
+      this.events.push({ kind: 'big' });
+    }
+  }
+
+  /** 風: 予告(矢印)のあとに ふく */
+  private stepWind(dt: number) {
+    const w = this.level.wind;
+    if (!w || this.t < w.from) return;
+    if (this.windLeft > 0) {
+      this.windLeft -= dt;
+      if (this.windLeft <= 0) {
+        if (this.windComing) { this.wind = this.windComing; this.windComing = 0; this.windLeft = w.dur; this.events.push({ kind: 'wind', n: this.wind }); }
+        else { this.wind = 0; this.windLeft = 0; this.events.push({ kind: 'windEnd' }); }
+      }
+      return;
+    }
+    this.nextWind -= dt;
+    if (this.nextWind > 0) return;
+    this.nextWind = w.every;
+    this.windComing = (Math.floor(this.t / w.every) % 2 ? 1 : -1);
+    this.windLeft = TBAL.windWarn;
+    this.events.push({ kind: 'windWarn', n: this.windComing });
+  }
+  /** タワーの いちばん下を 食べに来る鹿: 歩いてくる → ねらう(予告) → 1段ずつ 食べる。タップで 逃げる */
+  private stepNibbler(dt: number) {
+    const list = this.level.nibblers ?? [];
+    if (!this.nibbler && this.nibIndex < list.length && this.t >= list[this.nibIndex].t) {
+      const a = list[this.nibIndex++];
+      this.nibbler = { id: this.nextId++, side: a.side, phase: 'walk', t: 0, bites: 0 };
+      this.events.push({ kind: 'nibbler', deer: this.nibbler.id });
+    }
+    const b = this.nibbler;
+    if (!b) return;
+    b.t += dt;
+    if (b.phase === 'walk' && b.t >= TBAL.nibWalk) { b.phase = 'aim'; b.t = 0; this.events.push({ kind: 'nibAim', deer: b.id }); }
+    else if (b.phase === 'aim' && b.t >= TBAL.nibAim) { b.phase = 'eat'; b.t = TBAL.nibBite; }
+    else if (b.phase === 'eat' && b.t >= TBAL.nibBite) {
+      b.t = 0;
+      if (b.bites >= TBAL.nibBites || !this.stack.length) { b.phase = 'flee'; this.events.push({ kind: 'nibLeave', deer: b.id }); return; }
+      // いちばん下の段を 食べる(上の段は 1段 下がる)
+      const [l] = this.stack.splice(0, 1);
+      b.bites++; this.eaten++;
+      this.events.push({ kind: 'nibble', deer: b.id, fallen: [l], n: this.stack.length });
+      // 1段目を 食べられたら ♥−1(焼く面の くいしんぼう鹿と 同じ)
+      if (b.bites === 1) this.loseHeart('nibbled');
+      if (this.phase === 'running') this.checkCollapse();
+    } else if (b.phase === 'flee' && b.t >= TBAL.nibFlee) { this.nibbler = null; this.events.push({ kind: 'nibLeave', deer: b.id }); }
+  }
+  /** 崩れるか: 下の段から見て、上の重心がふちの外へ出たら、そこから上が落ちる(♥−1) */
+  private checkCollapse(): boolean {
     for (let i = -1; i < this.stack.length - 1; i++) {
       const base = i < 0 ? { x: 0, r: TBAL.plateR } : this.stack[i];
       if (Math.abs(this.com(this.stack, i + 1) - base.x) > base.r) {
@@ -228,14 +314,10 @@ export class TowerRun {
         this.busy = TBAL.collapseT;
         this.events.push({ kind: 'collapse', n: i + 1, fallen });
         this.loseHeart('collapse');
-        return;
+        return true;
       }
     }
-    if (this.perfectRun >= TBAL.bigAfter) {
-      this.perfectRun = 0;
-      this.hold.big = true;
-      this.events.push({ kind: 'big' });
-    }
+    return false;
   }
 
   private stepDeer(d: Deer, dt: number) {

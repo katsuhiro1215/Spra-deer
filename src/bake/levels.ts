@@ -72,6 +72,10 @@ export type TowerLevel = W2Common & {
   swing: { speed: number; accel: number };
   /** プレミアムコイン: n 段以上のタワーをとどける */
   premiumHeight: number;
+  /** 風(2-6 から): from 秒から、every 秒ごとに dur 秒ふく。落ちている せんべいが 横へ 流される(force m/秒) */
+  wind?: { from: number; every: number; dur: number; force: number };
+  /** タワーの いちばん下を 食べに来る鹿(2-6 から): 来る時刻と 側(−1=左・1=右)。タップで おいはらう */
+  nibblers?: { t: number; side: -1 | 1 }[];
   notes?: { t: number; text: string }[];
 };
 
@@ -217,6 +221,28 @@ export const LEVEL_2_5: BakeLevel = {
   ],
 };
 
+export const LEVEL_2_6: TowerLevel = {
+  mode: 'tower',
+  id: '2-6', title: 'ぐらぐらタワー', summary: '興福寺の 五重塔の 前で。風と、下を 食べる鹿',
+  intro: '五重塔の 前に お店を 出すよ！ 風と、くいしんぼうに 気をつけて',
+  scene: { place: 'kofukuji', landmark: { img: `${LANDMARK}/kofukuji-pagoda.webp`, w: 3.6, h: 6.3, x: -3.2, z: -9 } },
+  helpers: ['piko'],
+  time: 110, goal: 6,
+  orders: [
+    { kind: 'fawn', want: 4 }, { kind: 'doe', want: 5 }, { kind: 'fawn', want: 5 }, { kind: 'stag', want: 7 }, { kind: 'doe', want: 6 }, { kind: 'stag', want: 8 },
+    { kind: 'doe', want: 6 }, { kind: 'stag', want: 8 }, { kind: 'fawn', want: 5 },
+  ],
+  patience: 32,
+  swing: { speed: 0.9, accel: 0.07 },
+  premiumHeight: 12,
+  wind: { from: 10, every: 9, dur: 3, force: 1.1 },
+  nibblers: [{ t: 18, side: -1 }, { t: 34, side: 1 }, { t: 50, side: -1 }, { t: 64, side: 1 }, { t: 78, side: -1 }, { t: 92, side: 1 }],
+  notes: [
+    { t: 8, text: '風が ふくと、落ちる せんべいが 流される！ 矢印の 反対に 少し ずらして 落とそう(Piko が 風を やわらげてくれる)' },
+    { t: 17, text: 'タワーの 下を 食べに 鹿が 来た！ 鹿を タップで おいはらおう' },
+  ],
+};
+
 export const LEVEL_2_8: BakeLevel = {
   id: '2-8', title: '鹿の 団体さん', summary: '夜の 燈花会で。団体さんの 大きな注文と、強火・弱火の 鉄板',
   intro: '夜の 燈花会に お店を 出すよ！ 暗いので 焼き色を よく見て',
@@ -244,7 +270,7 @@ export const LEVEL_2_8: BakeLevel = {
   ],
 };
 
-export const BAKE_LEVELS: W2Level[] = [LEVEL_2_1, LEVEL_2_2, LEVEL_2_3, LEVEL_2_4, LEVEL_2_5, LEVEL_2_8];
+export const BAKE_LEVELS: W2Level[] = [LEVEL_2_1, LEVEL_2_2, LEVEL_2_3, LEVEL_2_4, LEVEL_2_5, LEVEL_2_6, LEVEL_2_8];
 export const bakeById = (id: string): W2Level | undefined => BAKE_LEVELS.find(l => l.id === id);
 export const isTower = (l: W2Level): l is TowerLevel => l.mode === 'tower';
 export const isToss = (l: W2Level): l is TossLevel => l.mode === 'toss';

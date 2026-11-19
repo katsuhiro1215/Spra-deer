@@ -6,6 +6,7 @@ import { RunnerAudio } from '../runner/audio.ts';
 import { BAKE_LEVELS, DEER_NAME, type TowerLevel } from './levels.ts';
 import { TBAL, TowerRun, type TowerEvent } from './tower.ts';
 import { TowerView } from './towerView.ts';
+import { HELPER_TEXT, mountHelpers } from './helpers.ts';
 
 const STEP = 1 / 120;
 const BAKE_BGM = { url: '/assets/audio/play.mp3', loopStart: 0, loopEnd: 1e4, volume: 0.32 };
@@ -13,6 +14,7 @@ const FAIL_TEXT: Record<string, [string, string]> = {
   collapse: ['タワーが 崩れちゃった…', 'まん中に 積むと 安定する。ぐらぐら してきたら、早めに「おとどけ」'],
   angry: ['鹿を 待たせすぎた…', '注文の 高さまで 積んだら、すぐ「おとどけ」できるよ'],
   time: ['時間ぎれ…', '注文の 高さまで 積んだら「おとどけ」しよう'],
+  nibbled: ['タワーの 下を 食べられちゃった…', '鹿が 来たら、タップで おいはらおう'],
 };
 type Pose = 'idle' | 'hooray' | 'trouble' | 'wave';
 
@@ -40,7 +42,13 @@ export function startTower(root: HTMLElement, level: TowerLevel): () => void {
     '<li><b>おとどけ</b> 注文の 高さまで 積んだら。もっと積むと ごほうびが ふえる</li>',
     '<li><b>♥</b> 崩す・待たせすぎで へる</li>',
   ].join('');
-  q('keys').textContent = 'キーボード: スペース = 落とす/Enter = おとどけ';
+  q('keys').textContent = 'キーボード: スペース = 落とす/Enter = おとどけ' + (level.nibblers?.length ? '/S = おいはらう' : '');
+  const helpers = mountHelpers(root, level.helpers);
+  const howExtra: string[] = [];
+  if (level.wind) howExtra.push('<li><b>風</b> 落ちる せんべいが 流される。矢印の 反対に ずらそう</li>');
+  if (level.nibblers?.length) howExtra.push('<li><b>いたずら</b> 下を 食べる鹿は タップで おいはらう(食べられると ♥が へる)</li>');
+  for (const id of level.helpers ?? []) { const t = HELPER_TEXT[id]; if (t) howExtra.push(`<li><b>なかま</b> ${t}</li>`); }
+  q('how').insertAdjacentHTML('beforeend', howExtra.join(''));
   q('go').textContent = 'タワーを つくる';
   q('r-l1').textContent = 'とどけた タワー';
   q('r-l2').textContent = 'いちばん 高い タワー';
@@ -77,6 +85,11 @@ export function startTower(root: HTMLElement, level: TowerLevel): () => void {
       case 'land': noise(0.08, 0.3, 'lowpass', 900); tone(220 + n * 22, 200 + n * 22, 0.1, 'triangle', 0.06); break;
       case 'perfect': noise(0.08, 0.3, 'lowpass', 900); tone(523 * Math.pow(2, Math.min(n, 18) / 12), 523 * Math.pow(2, Math.min(n, 18) / 12), 0.2, 'sine', 0.07); break;
       case 'miss': tone(500, 120, 0.5, 'triangle', 0.07); break;
+      case 'windWarn': noise(1.6, 0.12, 'bandpass', 500, 0, 1.2); break;
+      case 'nibbler': [0, 0.18, 0.36, 0.54].forEach(d => tone(520, 480, 0.06, 'triangle', 0.05, d)); break;
+      case 'nibAim': tone(880, 880, 0.1, 'square', 0.04); tone(880, 880, 0.1, 'square', 0.04, 0.16); break;
+      case 'nibble': noise(0.09, 0.35, 'bandpass', 3000, 0.1, 1.2); noise(0.08, 0.3, 'bandpass', 2500, 0.2, 1.2); break;
+      case 'nibShoo': tone(500, 1400, 0.25, 'sine', 0.07); break;
       case 'collapse': noise(0.7, 0.45, 'lowpass', 700); [0, 0.08, 0.17, 0.27].forEach(d => noise(0.07, 0.25, 'bandpass', 1200 + Math.random() * 800, d)); tone(200, 50, 0.7, 'sawtooth', 0.06); break;
       case 'big': [784, 988, 1175].forEach((f, i) => tone(f, f, 0.16, 'sine', 0.05, i * 0.06)); break;
       case 'deliver': [523, 659, 784, 1047].forEach((f, i) => tone(f, f, 0.16, 'triangle', 0.06, 0.07 * i)); break;
@@ -114,7 +127,11 @@ export function startTower(root: HTMLElement, level: TowerLevel): () => void {
   };
   const alertText = (): [string, string] => {
     if (run.phase !== 'running') return ['', ''];
-    const d = run.customer, n = run.height, st = run.stability();
+    const d = run.customer, n = run.height, st = run.stability(), nb = run.nibbler;
+    if (nb && (nb.phase === 'aim' || nb.phase === 'eat')) return ['下を 食べる鹿を タップ！', 'red'];
+    if (nb && nb.phase === 'walk') return ['鹿が タワーの 下を ねらってる！', 'yellow'];
+    if (run.windComing) return [run.windComing > 0 ? '風が くる！ → → →' : '風が くる！ ← ← ←', 'yellow'];
+    if (run.wind) return [run.wind > 0 ? '風 → → →  左に ずらして！' : '風 ← ← ←  右に ずらして！', 'yellow'];
     if (d && d.phase === 'wait' && d.waited / d.patience > 0.7) return n >= d.want ? ['鹿が 待ちくたびれてる！ おとどけ！', 'red'] : ['鹿が 待ちくたびれてる！ いそいで！', 'yellow'];
     if (n >= 3 && st < 0.25) return ['ぐらぐら！ あぶない！', 'red'];
     if (run.hold.big) return ['大判せんべい！ 大きくて 安定するよ', 'gold'];
@@ -232,13 +249,21 @@ export function startTower(root: HTMLElement, level: TowerLevel): () => void {
     if ((ev.target as HTMLElement).closest('[data-ks="deliver"]')) { ev.preventDefault(); run.deliver(); return; }
     if ((ev.target as HTMLElement).closest('button')) return;
     ev.preventDefault();
-    if (run.phase === 'running') run.drop();
+    if (run.phase !== 'running') return;
+    // 下を 食べに来た鹿の 近くを タップしたら、おいはらう(それ以外は 落とす)
+    const nb = run.nibbler, at = view.sneakAt;
+    if (nb && nb.phase !== 'flee' && at) {
+      const r = q('stage').getBoundingClientRect(), p = view.toScreen(at.clone().setY(at.y + 0.5));
+      if (Math.hypot(ev.clientX - r.left - p.x, ev.clientY - r.top - p.y) < 80) { run.shoo(); return; }
+    }
+    run.drop();
   };
   frameEl.addEventListener('pointerdown', onDown);
   const kd = (ev: KeyboardEvent) => {
     if (run.phase !== 'running') return;
     if (ev.code === 'Space') { ev.preventDefault(); if (!ev.repeat) run.drop(); }
     else if (ev.code === 'Enter' || ev.code === 'KeyD') { ev.preventDefault(); run.deliver(); }
+    else if (ev.code === 'KeyS') { ev.preventDefault(); run.shoo(); }
   };
   window.addEventListener('keydown', kd);
   const onHidden = () => { if (document.hidden) audio.suspend(); else audio.resume(); };
@@ -270,6 +295,11 @@ export function startTower(root: HTMLElement, level: TowerLevel): () => void {
       }
       case 'angry': react('trouble', 'ごめんね…', 1600); toast('鹿が おこって 帰っちゃった…', 2000); break;
       case 'premium': toast('◆ プレミアムコイン！！ タワー名人だ！', 3200); break;
+      case 'windWarn': hint('wind', '風が くるよ！ 矢印の 向きに 流される', 2400); if (run.level.helpers?.includes('piko')) helpers.say('piko', 'ふーっ！ 風よ よわまれ！', 1500); break;
+      case 'nibbler': hint('nibbler', 'タワーの 下を 食べに 鹿が 来た！ タップで おいはらおう', 3000); break;
+      case 'nibAim': react('trouble', 'あっ！ 下は だめ！', 1000); break;
+      case 'nibble': react('trouble', '下を 食べられた〜！', 1400); toast('タワーの 下を 食べられた！', 1500); break;
+      case 'nibShoo': react('wave', 'じゅんばんに ならんでね！', 1200); break;
       case 'clear': toast('目標たっせい！ タワー だいせいこう！', 3000); react('hooray', 'やったね！', 4000); break;
       case 'fail': react('trouble', '', 4000); break;
     }
@@ -310,6 +340,7 @@ export function startTower(root: HTMLElement, level: TowerLevel): () => void {
     delete (window as unknown as { __bake?: unknown }).__bake;
     audio.close();
     view.dispose();
+    helpers.dispose();
     elLabels.replaceChildren();
     root.classList.remove('bk-mode-tower');
   };

@@ -762,3 +762,10 @@
   padding: 3px 7px;
   letter-spacing: -0.02em;
 }
+
+/* 積む面・配る面: 右下は「おとどけ」ボタン・せんべいの束があるので、なかまは Spra の右どなりに */
+.bk-mode-tower .bk-helpers,
+.bk-mode-toss .bk-helpers {
+  right: auto;
+  left: 104px;
+}

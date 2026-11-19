@@ -410,7 +410,8 @@ export class BakeView {
     for (const kind of ['fawn', 'doe', 'stag'] as const) for (const d of ['l', 'r']) for (let i = 0; i < 4; i++) this.deerTex[`${kind}_${d}_${i}`] = loadTex(`${ASSET}/deer-walk/${kind}_${d}_${i}.png`);
     for (const k of ['stag_front', 'stag_wink']) this.deerTex[k] = loadTex(`${ASSET}/bake/${k}.png`);
     this.disposables.push(...Object.values(this.deerTex));
-    if (!this.tower && this.level.sneaks?.length) {
+    // くいしんぼう鹿(焼く面)・タワーの下を 食べる鹿(積む面)
+    if ((!this.tower && this.level.sneaks?.length) || (this.level as unknown as { nibblers?: unknown[] }).nibblers?.length) {
       // いたずら顔の絵は、左を向いている。左から来るときは左右を反転する
       const l = loadTex(`${ASSET}/bake/stag_sneak.png`), r = l.clone();
       r.repeat.x = -1; r.offset.x = 1; r.needsUpdate = true;
