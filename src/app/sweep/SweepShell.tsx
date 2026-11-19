@@ -69,6 +69,9 @@ export function SweepShell() {
                 <i data-ks="broom-bar" />
               </i>
             </span>
+            <span className="sw-team" aria-label="なかまの人数">
+              <i className="sw-team-icon" />×<b data-ks="team">1</b>
+            </span>
             <span className="sw-flowers">
               ✿ <b data-ks="flowers">0</b>
             </span>
@@ -100,6 +103,9 @@ export function SweepShell() {
                 <b>よごれ</b> 掃きのこして 通りすぎると ふえる。100%で おしまい
               </li>
               <li>
+                <b>なかま</b> ゲート・たるで ふえる。走ってくる鹿・赤いゲートで へる
+              </li>
+              <li>
                 <b>✿</b> 掃除すると お花が咲いて、よごれが へる
               </li>
             </ul>
@@ -128,6 +134,7 @@ export function SweepShell() {
               <div><dt>掃除した うんこ</dt><dd data-ks="r-cleaned" /></div>
               <div><dt>咲いた お花</dt><dd data-ks="r-flowers" /></div>
               <div><dt>ほうき</dt><dd data-ks="r-broom" /></div>
+              <div><dt>なかま</dt><dd data-ks="r-team" /></div>
               <div><dt>きろく</dt><dd data-ks="r-time" /></div>
               <div><dt>ベスト</dt><dd data-ks="r-best" /></div>
             </dl>

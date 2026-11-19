@@ -1,12 +1,12 @@
 // WORLD 3 大掃除(設計書 32章): 掃く・固さ・通りすぎ(よごれ)・立ち止まる・ほうきが育つ・お花・大仏さまの目・クリアと失敗 と、3-1 のバランス
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { SweepRun, WBAL, type Poop } from "../src/sweep/sim.ts";
+import { SweepRun, WBAL, applyGate, type Poop } from "../src/sweep/sim.ts";
 import { LEVEL_3_1, type SweepLevel, type PoopKind } from "../src/sweep/levels.ts";
 import { driveSweep } from "./sweepbot.ts";
 
 /** 鹿の来ない面(うんこは手で置く) */
-const quiet = (extra: Partial<SweepLevel> = {}): SweepLevel => ({ ...LEVEL_3_1, notes: [], buddha: undefined, deer: { start: 0, addEvery: 999, max: 0, kinds: ["doe"] }, ...extra });
+const quiet = (extra: Partial<SweepLevel> = {}): SweepLevel => ({ ...LEVEL_3_1, notes: [], buddha: undefined, gates: [], barrels: [], chargers: [], deer: { start: 0, addEvery: 999, max: 0, kinds: ["doe"] }, ...extra });
 const start = (lv = quiet()) => { const r = new SweepRun(lv, { seed: 1 }); r.start(); return r; };
 let nid = 1000;
 const put = (r: SweepRun, ahead: number, x: number, kind: PoopKind = "small", hard = false): Poop => {
@@ -132,4 +132,49 @@ test("3-1 のバランス: うまく動けば ほぼクリア。動かないと�
   assert.ok(good >= 7, `うまい ${good}/8`);
   assert.ok(human >= 6, `ふつう ${human}/8`);
   assert.equal(idle, 0, "動かないとクリアできない");
+});
+
+test("ゲート: 通った側の数字で 人数が かわる(+・−・×)。1人より へらず、いちばん多い人数より ふえない", () => {
+  assert.equal(applyGate(3, "+4"), 7);
+  assert.equal(applyGate(3, "-5"), 1);
+  assert.equal(applyGate(5, "x2"), 10);
+  assert.equal(applyGate(20, "x2"), WBAL.teamMax);
+  const r = start(quiet({ gates: [{ s: 3, left: "-2", right: "+4" }, { s: 6, left: "x2", right: "+1" }] }));
+  r.steer(1); wait(r, 2);
+  assert.equal(r.team, 5, "右(+4)を通った");
+  r.steer(-1); wait(r, 2);
+  assert.equal(r.team, 10, "左(×2)を通った");
+});
+
+test("なかま: みんな前で ほうきを振る。範囲が重なると、1回で たくさん掃ける", () => {
+  const solo = start(), crew = start();
+  crew.team = 9;
+  for (const r of [solo, crew]) { put(r, 0.6, 0, "large"); put(r, 0.9, -1.2, "medium"); put(r, 0.9, 1.2, "medium"); }
+  wait(solo, 0.3); wait(crew, 0.3);
+  const left = (r: SweepRun) => r.poops.reduce((n, p) => n + p.hp, 0);
+  assert.ok(left(crew) < left(solo) - 4, `なかまが いると たくさん へる(${left(crew)} < ${left(solo)})`);
+  assert.equal(crew.members().length, 9);
+  assert.ok(crew.members().every(m => Math.abs(m.x) <= WBAL.half), "参道の中に並ぶ");
+});
+
+test("たる: 掃いて開けると なかまが ふえる。通りすぎると もう開けられない", () => {
+  const r = start(quiet({ barrels: [{ s: 1.2, x: 0, hp: 2, n: 4 }, { s: 3, x: 2.2, hp: 99, n: 9 }] }));
+  wait(r, 1.6);
+  assert.equal(r.team, 5);
+  assert.ok(r.drainEvents().some(e => e.kind === "barrel"));
+  wait(r, 3);
+  assert.equal(r.barrels.length, 0, "通りすぎた たるは 消える");
+  assert.equal(r.team, 5);
+});
+
+test("走ってくる鹿: ぶつかった なかまを はじき飛ばす(1頭で5人まで)。よければ へらない", () => {
+  const hit = start(quiet({ chargers: [{ s: 20, x: 0 }] }));
+  hit.team = 12;
+  wait(hit, 6);
+  assert.ok(hit.team < 12 && hit.team >= 12 - WBAL.chargeMaxHits - WBAL.chargeLeaderLoss, `へった(${hit.team})`);
+  assert.ok(hit.drainEvents().some(e => e.kind === "bump"));
+  const miss = start(quiet({ chargers: [{ s: 20, x: 2.2 }] }));
+  miss.team = 3; miss.steer(-2);
+  wait(miss, 6);
+  assert.equal(miss.team, 3, "よけたら へらない");
 });

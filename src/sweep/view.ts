@@ -1,14 +1,16 @@
-// WORLD 3「奈良公園、大掃除！」の描画(three.js)。参道・木・灯籠・大仏さま・Spra・ほうき・うんこ・鹿・お花。
+// WORLD 3「奈良公園、大掃除！」の描画(three.js)。参道・木・灯籠・大仏さま・Spra となかま・ほうき・うんこ・鹿・お花・ゲート・たる・走ってくる鹿。
 // ルールは sim.ts。ここは、その状態を絵にするだけ。道のり s は奥(−z)へのびる。Spra は z=0 にいて、世界のほうが手前へ流れる。
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { WBAL, type Poop, type SweepDeer, type SweepEvent, type SweepRun } from './sim.ts';
-import type { DeerKind, PoopKind } from './levels.ts';
+import type { DeerKind, PoopKind, SweepLevel } from './levels.ts';
 
 const ASSET = '/assets';
 const DEER_H: Record<DeerKind, number> = { fawn: 1.3, doe: 1.45, stag: 1.6 };
 const POOP_SIZE: Record<PoopKind, number> = { small: 0.2, medium: 0.3, large: 0.42 };
 const SPRA_H = 1.05;
+/** なかまの Spra の大きさ(先頭の何倍) */
+const HELPER = 0.72;
 /** 道ばたの木・灯籠を置く間(m) */
 const PROP_GAP = 5;
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
@@ -46,6 +48,9 @@ function loadTex(url: string): THREE.Texture {
 type Particle = { s: THREE.Sprite; v: THREE.Vector3; life: number; max: number; grow: number; spin: number; gravity: number; base: number };
 type DeerSprite = { s: THREE.Sprite; shadow: THREE.Mesh };
 type PoopMesh = { g: THREE.Group; pop: number; wobble: number };
+type Helper = { s: THREE.Sprite; broom: THREE.Group; zone: THREE.Mesh; shadow: THREE.Mesh; pop: number };
+type GateObj = { g: THREE.Group; s: number; panels: THREE.Mesh[]; i: number };
+type Tumbler = { s: THREE.Sprite; v: THREE.Vector3; spin: number; life: number };
 
 export class SweepView {
   private host: HTMLElement;
@@ -82,10 +87,19 @@ export class SweepView {
   private pmat: Record<'soft' | 'star' | 'crumb' | 'petal', THREE.SpriteMaterial>;
   private tmpV = new THREE.Vector3();
   private length: number;
+  private level: SweepLevel;
+  private helpers: Helper[] = [];
+  private shownTeam = 1;
+  private gates: GateObj[] = [];
+  private barrelObjs = new Map<number, { g: THREE.Group; shake: number }>();
+  private chargerSprites = new Map<number, { s: THREE.Sprite; shadow: THREE.Mesh }>();
+  private stagFront: THREE.Texture;
+  private tumblers: Tumbler[] = [];
 
-  constructor(host: HTMLElement, length: number) {
+  constructor(host: HTMLElement, level: SweepLevel) {
     this.host = host;
-    this.length = length;
+    this.level = level;
+    this.length = level.length;
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -179,6 +193,10 @@ export class SweepView {
     this.poopGeo = [new THREE.TorusGeometry(0.62, 0.32, 10, 24), new THREE.TorusGeometry(0.42, 0.27, 10, 22), new THREE.ConeGeometry(0.34, 0.5, 14)];
     this.disposables.push(...this.poopGeo, this.poopMat.normal, this.poopMat.hard);
 
+    this.buildHelpers();
+    this.buildGates();
+    this.stagFront = loadTex(`${ASSET}/bake/stag_front.png`);
+    this.disposables.push(this.stagFront);
     this.loadDeer();
     this.makeFlowers();
     this.pmat = this.makeParticleMats();
@@ -231,6 +249,54 @@ export class SweepView {
         this.scene.add(obj);
       }
     }
+  }
+
+  /** なかまの Spra(いちばん多い人数ぶん、はじめに作って、人数だけ見せる) */
+  private buildHelpers(): void {
+    for (let i = 0; i < WBAL.teamMax - 1; i++) {
+      const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.spraTex.l[0], transparent: true, alphaTest: 0.1 }));
+      s.center.set(0.5, 0.02); s.visible = false; s.renderOrder = 3;
+      const broom = this.broom.clone();
+      broom.scale.setScalar(HELPER * 0.75); broom.visible = false;
+      const zone = new THREE.Mesh(this.zone.geometry, new THREE.MeshBasicMaterial({ color: '#fff6c8', transparent: true, opacity: 0.1, depthWrite: false }));
+      zone.rotation.x = -Math.PI / 2; zone.renderOrder = 1; zone.visible = false;
+      const shadow = new THREE.Mesh(new THREE.CircleGeometry(0.24, 16), new THREE.MeshBasicMaterial({ color: '#000000', transparent: true, opacity: 0.18, depthWrite: false }));
+      shadow.rotation.x = -Math.PI / 2; shadow.visible = false;
+      this.scene.add(s, broom, zone, shadow);
+      this.helpers.push({ s, broom, zone, shadow, pop: 1 });
+    }
+  }
+  /** ゲート: 参道を横ぎる門。左右に数字の板(+ は青、× は金、− は赤) */
+  private buildGates(): void {
+    const postMat = new THREE.MeshStandardMaterial({ color: '#c8302a', roughness: 0.6 });
+    const panelTex = (label: string) => canvasTex(256, 128, g => {
+      const bad = label[0] === '-', mul = label[0] === 'x';
+      const grd = g.createLinearGradient(0, 0, 0, 128);
+      grd.addColorStop(0, bad ? '#ff6a5a' : mul ? '#ffd84a' : '#5fb8ff'); grd.addColorStop(1, bad ? '#c8302a' : mul ? '#e09a10' : '#1e78dc');
+      g.fillStyle = grd; g.beginPath(); g.roundRect(6, 6, 244, 116, 20); g.fill();
+      g.strokeStyle = 'rgba(255,255,255,0.9)'; g.lineWidth = 8; g.stroke();
+      g.fillStyle = mul ? '#5a3200' : '#ffffff';
+      g.font = 'bold 76px "Zen Maru Gothic", "M PLUS Rounded 1c", sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.fillText(label.replace('x', '×').replace('-', '−'), 128, 68);
+    });
+    (this.level.gates ?? []).forEach((gd, i) => {
+      const g = new THREE.Group();
+      const panels = [gd.left, gd.right].map((label, k) => {
+        const tex = panelTex(label);
+        this.disposables.push(tex);
+        const m = new THREE.Mesh(new THREE.PlaneGeometry(WBAL.half - 0.15, 1.0), new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0.92, side: THREE.DoubleSide, depthWrite: false }));
+        m.position.set((k ? 1 : -1) * WBAL.half / 2, 1.55, 0); m.renderOrder = 4;
+        g.add(m);
+        return m;
+      });
+      for (const x of [-WBAL.half - 0.1, 0, WBAL.half + 0.1]) {
+        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.08, 2.1, 10), postMat);
+        post.position.set(x, 1.05, 0); post.castShadow = true;
+        g.add(post);
+      }
+      this.scene.add(g);
+      this.gates.push({ g, s: gd.s, panels, i });
+    });
   }
 
   private loadDeer(): void {
@@ -362,6 +428,43 @@ export class SweepView {
       case 'glow':
         this.shake = Math.max(this.shake, 0.5);
         break;
+      case 'gate': {
+        const gt = this.gates[e.id!];
+        const at = new THREE.Vector3((e.x ?? 1) * WBAL.half / 2, 1.5, -0.3);
+        if (gt) gt.panels[(e.x ?? 1) < 0 ? 0 : 1].scale.setScalar(1.3);
+        this.emit((e.n ?? 0) >= 0 ? 'star' : 'soft', at, { n: (e.n ?? 0) >= 0 ? 26 : 10, spread: 1.6, vr: 3, size: 0.22, life: 0.9, gravity: 2, color: (e.n ?? 0) >= 0 ? undefined : '#ff8a7a' });
+        if ((e.n ?? 0) < 0) this.shake = Math.max(this.shake, 0.4);
+        break;
+      }
+      case 'barrelHit': {
+        const b = this.barrelObjs.get(e.id!);
+        if (b) b.shake = 0.2;
+        if (p) this.emit('crumb', p.setY(0.6), { n: 4, spread: 0.3, vr: 1.5, size: 0.07, life: 0.4, gravity: 5, color: '#a8743a' });
+        break;
+      }
+      case 'barrel':
+        if (!p) break;
+        this.emit('crumb', p.clone().setY(0.5), { n: 18, spread: 0.5, vr: 3, size: 0.1, life: 0.7, gravity: 6, color: '#a8743a' });
+        this.emit('star', p.setY(0.9), { n: 22, spread: 0.6, vr: 2.6, size: 0.2, life: 0.9, gravity: 2 });
+        break;
+      case 'bump': {
+        // はじき飛ばされた なかま(先頭にぶつかったときは、まわりの なかま)
+        if (!p) break;
+        for (let k = 0; k < (e.n ?? 1); k++) {
+          const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.spraTex.l[0], transparent: true, alphaTest: 0.1 }));
+          s.center.set(0.5, 0.5);
+          const img = this.spraTex.l[0].image as { width?: number; height?: number } | undefined;
+          const aspect = img?.width && img.height ? img.width / img.height : 0.6;
+          s.scale.set(SPRA_H * HELPER * aspect, SPRA_H * HELPER, 1);
+          s.position.copy(p).setY(0.5).add(new THREE.Vector3(k * 0.3, 0, 0));
+          this.scene.add(s);
+          const side = (e.x ?? 0) >= 0 ? 1 : -1;
+          this.tumblers.push({ s, v: new THREE.Vector3(side * (2.5 + Math.random() * 1.5), 4 + Math.random() * 1.5, 1.2), spin: side * (8 + Math.random() * 4), life: 0 });
+        }
+        this.emit('soft', p.setY(0.4), { n: 6, spread: 0.4, v: new THREE.Vector3(0, 0.6, 0), vr: 1, size: 0.4, life: 0.6, grow: 1.2, color: '#e8dcc4', opacity: 0.8 });
+        this.shake = Math.max(this.shake, e.hard ? 0.6 : 0.3);
+        break;
+      }
       case 'clear':
         this.emit('petal', new THREE.Vector3(run.x, 2, -2), { n: 60, spread: 4, v: new THREE.Vector3(0, -0.2, 0), vr: 1.5, size: 0.14, life: 2.4, gravity: 0.4, color: '#ff9fbf' });
         break;
@@ -420,6 +523,10 @@ export class SweepView {
       if (Math.random() < dt * 20) this.emit('soft', new THREE.Vector3(run.x, 0.2, -st.reach * 0.45), { n: 1, spread: st.width * 0.7, v: new THREE.Vector3(0, 1.4, 0), vr: 1.2, size: 0.3, life: 0.5, grow: 1, opacity: 0.4 });
     }
 
+    this.paintHelpers(run, dt, frame, sw);
+    this.paintGates(run, dt);
+    this.paintBarrels(run, dt);
+    this.paintChargers(run);
     this.paintPoops(run, dt);
     this.paintDeer(run.deer, run);
     this.paintFlowers(run);
@@ -428,6 +535,106 @@ export class SweepView {
     this.camX += (run.x * 0.55 - this.camX) * Math.min(1, dt * 4);
     this.aim();
     this.finishFrame(dt);
+  }
+
+  private paintHelpers(run: SweepRun, dt: number, frame: number, sw: number): void {
+    const ms = run.members(), st = run.stats;
+    if (run.team > this.shownTeam) for (let i = this.shownTeam - 1; i < run.team - 1; i++) if (this.helpers[i]) this.helpers[i].pop = 0;
+    this.shownTeam = run.team;
+    this.helpers.forEach((h, i) => {
+      const m = ms[i + 1], on = !!m;
+      h.s.visible = h.broom.visible = h.shadow.visible = h.zone.visible = on;
+      if (!m) return;
+      h.pop = Math.min(1, h.pop + dt / 0.35);
+      const k = ease(h.pop), bounce = 1 + Math.sin(Math.min(1, h.pop) * Math.PI) * 0.35;
+      const tex = this.spraTex[this.spraDir][(frame + i) % 3], mat = h.s.material;
+      if (mat.map !== tex) { mat.map = tex; mat.needsUpdate = true; }
+      const img = tex.image as { width?: number; height?: number } | undefined;
+      const aspect = img?.width && img.height ? img.width / img.height : 0.6, hh = SPRA_H * HELPER * k * bounce;
+      h.s.scale.set(hh * aspect, hh, 1);
+      const z = -m.a + 0.25, bob = run.pace > 0.5 ? Math.abs(Math.sin(this.time * 9 + i)) * 0.03 : 0;
+      h.s.position.set(m.x, bob + (1 - k) * 0.6, z);
+      h.shadow.position.set(m.x, 0.012, z);
+      h.broom.position.set(m.x + 0.22, 0, z - 0.3);
+      h.broom.rotation.y = -0.6 + sw * 1.4 * (i % 2 ? 1 : 0.85);
+      h.broom.visible = st.level < 4;
+      const reach = st.reach * WBAL.helperReach;
+      h.zone.position.set(m.x, 0.021, -m.a - reach / 2);
+      h.zone.scale.set(WBAL.helperWidth, reach, 1);
+    });
+    // はじき飛ばされた なかま
+    this.tumblers = this.tumblers.filter(t => {
+      t.life += dt;
+      t.v.y -= 12 * dt;
+      t.s.position.addScaledVector(t.v, dt);
+      t.s.material.rotation += t.spin * dt;
+      t.s.material.opacity = Math.max(0, 1 - t.life / 1.1);
+      if (t.life > 1.1) { this.scene.remove(t.s); t.s.material.dispose(); return false; }
+      return true;
+    });
+  }
+  private paintGates(run: SweepRun, dt: number): void {
+    for (const gt of this.gates) {
+      const z = -(gt.s - run.d);
+      gt.g.visible = z < 4 && z > -60;
+      gt.g.position.set(0, 0, z);
+      // 通ったあとは、えらばなかった側を うすく
+      const passed = run.gateIndex > gt.i;
+      gt.panels.forEach(pn => {
+        pn.scale.setScalar(Math.max(1, pn.scale.x - dt * 1.2));
+        (pn.material as THREE.MeshBasicMaterial).opacity = passed && pn.scale.x <= 1.0001 ? 0.35 : 0.92;
+      });
+    }
+  }
+  private paintBarrels(run: SweepRun, dt: number): void {
+    const alive = new Set<number>();
+    for (const b of run.barrels) {
+      alive.add(b.id);
+      let o = this.barrelObjs.get(b.id);
+      if (!o) {
+        const g = new THREE.Group();
+        const wood = new THREE.MeshStandardMaterial({ color: '#b07a45', roughness: 0.7 }), band = new THREE.MeshStandardMaterial({ color: '#4a4a52', metalness: 0.6, roughness: 0.4 });
+        const body = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.72, 20), wood);
+        body.position.y = 0.36; body.castShadow = true;
+        g.add(body);
+        for (const y of [0.14, 0.58]) { const r = new THREE.Mesh(new THREE.TorusGeometry(0.345, 0.025, 6, 24), band); r.rotation.x = Math.PI / 2; r.position.y = y; g.add(r); }
+        // ふたの上に、なかまの Spra の顔(中にいる)
+        const peek = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.spraTex.l[1], transparent: true, alphaTest: 0.1 }));
+        peek.center.set(0.5, 0); peek.scale.set(0.3, 0.5, 1); peek.position.y = 0.6;
+        g.add(peek);
+        this.scene.add(g);
+        o = { g, shake: 0 };
+        this.barrelObjs.set(b.id, o);
+      }
+      o.shake = Math.max(0, o.shake - dt);
+      o.g.position.copy(this.at(run, b.s, b.x)).add(new THREE.Vector3(Math.sin(this.time * 60) * o.shake * 0.15, 0, 0));
+      o.g.scale.setScalar(0.85 + 0.15 * (b.hp / b.maxHp));
+    }
+    for (const [id, o] of this.barrelObjs) if (!alive.has(id)) { this.scene.remove(o.g); this.barrelObjs.delete(id); }
+  }
+  private paintChargers(run: SweepRun): void {
+    const alive = new Set<number>();
+    for (const c of run.chargers) {
+      alive.add(c.id);
+      let o = this.chargerSprites.get(c.id);
+      if (!o) {
+        const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.stagFront, transparent: true, alphaTest: 0.08 }));
+        s.center.set(0.5, 0.02);
+        const shadow = new THREE.Mesh(new THREE.CircleGeometry(0.4, 20), new THREE.MeshBasicMaterial({ color: '#000000', transparent: true, opacity: 0.2, depthWrite: false }));
+        shadow.rotation.x = -Math.PI / 2;
+        this.scene.add(s, shadow);
+        o = { s, shadow };
+        this.chargerSprites.set(c.id, o);
+      }
+      const img = this.stagFront.image as { width?: number; height?: number } | undefined;
+      const aspect = img?.width && img.height ? img.width / img.height : 0.74;
+      o.s.scale.set(1.45 * aspect, 1.45, 1);
+      const pos = this.at(run, c.s, c.x, Math.abs(Math.sin(this.time * 14 + c.id)) * 0.18);
+      o.s.position.copy(pos);
+      o.shadow.position.set(pos.x, 0.012, pos.z);
+      if (Math.random() < 0.3) this.emit('soft', pos.clone().setY(0.1), { n: 1, spread: 0.4, v: new THREE.Vector3(0, 0.3, 1), vr: 0.4, size: 0.3, life: 0.5, grow: 1, color: '#e0d2b4', opacity: 0.6 });
+    }
+    for (const [id, o] of this.chargerSprites) if (!alive.has(id)) { this.scene.remove(o.s, o.shadow); o.s.material.dispose(); this.chargerSprites.delete(id); }
   }
 
   private paintPoops(run: SweepRun, dt: number): void {
@@ -544,7 +751,16 @@ export class SweepView {
     this.flowerSprites.clear();
     for (const p of this.particles) { this.scene.remove(p.s); p.s.material.dispose(); }
     this.particles = [];
+    for (const o of this.barrelObjs.values()) this.scene.remove(o.g);
+    this.barrelObjs.clear();
+    for (const o of this.chargerSprites.values()) { this.scene.remove(o.s, o.shadow); o.s.material.dispose(); }
+    this.chargerSprites.clear();
+    for (const t of this.tumblers) { this.scene.remove(t.s); t.s.material.dispose(); }
+    this.tumblers = [];
+    this.shownTeam = 1;
   }
+  /** 画面の位置(たる・走ってくる鹿のふきだし用) */
+  barrelTop(run: SweepRun, s: number, x: number): THREE.Vector3 { return this.at(run, s, x, 1.25); }
 
   dispose(): void {
     this.ro.disconnect();

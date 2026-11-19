@@ -3,7 +3,11 @@
 // ほうきは自動で振られ、Spra の前の範囲のうんこを掃く。うんこは大きいほど固い(何回も掃く)。足もとにうんこがある間は、立ち止まって掃く(ふまない)。
 // 掃ききれずに通りすぎたうんこは「よごれ」になる(のこっていた分だけ)。よごれ 100% で失敗。大仏さまに着けばクリア。
 // 掃除したうんこは肥料になって、道ばたにお花が咲く(よごれが少し減る)。点数がたまると、ほうきが育つ(ワイド → つよい → 竜巻)。
+// 仲間の Spra(チーム): ゲート(+3・×2 など)を通る・おてつだいの たるを掃いて開けると ふえる。赤いゲート・走ってくる鹿で へる。
+// 仲間も みんな前でほうきを振る(範囲が重なると、たくさん掃ける)。先頭の Spra は いなくならない。
 import type { DeerKind, PoopKind, SweepLevel } from './levels.ts';
+
+const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
 export const WBAL = {
   /** 参道の幅の半分・Spra が動ける幅の半分(m)・左右に動く速さ(m/秒) */
@@ -45,7 +49,45 @@ export const WBAL = {
   hardScore: 2,
   /** 大仏さまの目は、近づいてから この秒数のあとに、はじめて光る */
   buddhaFirst: 4,
+  /** チーム: いちばん多い人数・仲間の間(m)・仲間のほうきの幅・届き(先頭の何倍)・1回で掃ける数 */
+  teamMax: 24,
+  gap: 0.5,
+  helperWidth: 0.8,
+  helperReach: 0.85,
+  helperTargets: 2,
+  /** 走ってくる鹿: 出てくる所(先、m)・速さ(m/秒)・ぶつかる幅・1頭で はじき飛ばす いちばん多い人数・先頭にぶつかったとき へる人数 */
+  chargeAppear: 16,
+  chargeSpeed: 3.4,
+  chargeHitX: 0.42,
+  chargeHitZ: 0.35,
+  chargeMaxHits: 5,
+  chargeLeaderLoss: 2,
 };
+
+/** 仲間の並ぶ所(先頭からの 横 dx・前 da)。先頭のまわりの、前と横から うまっていく */
+export const SLOTS: { dx: number; da: number }[] = (() => {
+  const out: { dx: number; da: number; score: number }[] = [];
+  for (let row = -2; row <= 4; row++) {
+    const da = row * WBAL.gap * 0.85, shift = row % 2 ? WBAL.gap / 2 : 0;
+    for (let c = -6; c <= 6; c++) {
+      const dx = c * WBAL.gap + shift;
+      if (Math.abs(dx) < 1e-9 && row === 0) continue;
+      // 前(da>0)と横を先に。うしろは あと
+      out.push({ dx, da, score: Math.abs(dx) * 0.9 + Math.abs(da) * 1.2 + (da < 0 ? 0.6 : 0) });
+    }
+  }
+  return out.sort((a, b) => a.score - b.score).slice(0, WBAL.teamMax - 1).map(({ dx, da }) => ({ dx, da }));
+})();
+
+export type Barrel = { id: number; s: number; x: number; hp: number; maxHp: number; n: number };
+export type Charger = { id: number; s: number; x: number; hits: number; hitLeader: boolean; cool: number };
+export type Member = { x: number; a: number; leader: boolean };
+/** ゲートの数字('+3'・'-4'・'x2')を、通ったあとの人数にする */
+export function applyGate(team: number, g: string): number {
+  const n = Number(g.slice(1));
+  const v = g[0] === '+' ? team + n : g[0] === '-' ? team - n : g[0] === 'x' ? team * n : team;
+  return clamp(Math.round(v), 1, WBAL.teamMax);
+}
 
 export type Poop = { id: number; kind: PoopKind; s: number; x: number; hp: number; maxHp: number; hard: boolean; t: number };
 export type SweepDeer = {
@@ -59,11 +101,9 @@ export type SweepDeer = {
 };
 export type Flower = { id: number; s: number; x: number; hue: number; t: number };
 export type SweepEvent = {
-  kind: 'drop' | 'sweep' | 'hit' | 'clean' | 'miss' | 'level' | 'flower' | 'warn' | 'glow' | 'clear' | 'fail' | 'combo';
+  kind: 'drop' | 'sweep' | 'hit' | 'clean' | 'miss' | 'level' | 'flower' | 'warn' | 'glow' | 'clear' | 'fail' | 'combo' | 'gate' | 'barrelHit' | 'barrel' | 'charge' | 'bump';
   id?: number; x?: number; s?: number; n?: number; hard?: boolean; poop?: PoopKind;
 };
-
-const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
 function mulberry(seed: number) {
   let a = seed >>> 0;
@@ -102,6 +142,14 @@ export class SweepRun {
   /** 大仏さまの目: 寝ている・光りそう・光っている */
   buddha: 'sleep' | 'warn' | 'glow' = 'sleep';
   buddhaLeft = 0;
+  /** チームの人数(先頭の Spra をふくむ) */
+  team = 1;
+  bestTeam = 1;
+  /** 通ったゲートの数(次のゲートの番号) */
+  gateIndex = 0;
+  barrels: Barrel[] = [];
+  chargers: Charger[] = [];
+  private chargeIndex = 0;
   poops: Poop[] = [];
   deer: SweepDeer[] = [];
   flowers: Flower[] = [];
@@ -117,6 +165,7 @@ export class SweepRun {
     this.level = level;
     this.premiumOn = opts.premium ?? true;
     this.rng = opts.seed === undefined ? Math.random : mulberry(opts.seed);
+    this.barrels = (level.barrels ?? []).map(b => ({ id: this.nextId++, s: b.s, x: b.x, hp: b.hp, maxHp: b.hp, n: b.n }));
   }
   start() { if (this.phase === 'ready') this.phase = 'running'; }
   drainEvents(): SweepEvent[] { const e = this.events; this.events = []; return e; }
@@ -128,10 +177,25 @@ export class SweepRun {
   /** 次のほうきまでの点数(いちばん上なら null) */
   get nextBroomAt(): number | null { return WBAL.brooms[this.broom + 1]?.threshold ?? null; }
   ahead(s: number) { return s - this.d; }
-  /** うんこが、いまのほうきの範囲にあるか */
+  /** チームのみんなの位置(参道の中に おさまるように、横は つめる)。いちばん目が先頭 */
+  members(): Member[] {
+    const out: Member[] = [{ x: this.x, a: 0, leader: true }];
+    for (let i = 0; i < this.team - 1; i++) {
+      const sl = SLOTS[i];
+      out.push({ x: clamp(this.x + sl.dx, -WBAL.half + 0.25, WBAL.half - 0.25), a: sl.da, leader: false });
+    }
+    return out;
+  }
+  /** (x, 先 a, 半径 r)のものが、その人のほうきの範囲にあるか */
+  private zoneHas(m: Member, x: number, a: number, r: number): boolean {
+    const st = this.stats, w = m.leader ? st.width : WBAL.helperWidth, reach = m.leader ? st.reach : st.reach * WBAL.helperReach;
+    const rel = a - m.a;
+    return rel >= -0.1 && rel <= reach && Math.abs(x - m.x) <= w / 2 + r;
+  }
+  /** うんこが、だれかの ほうきの範囲にあるか */
   inReach(p: Poop): boolean {
-    const a = this.ahead(p.s), st = this.stats, r = WBAL.poop[p.kind].r;
-    return a >= -0.1 && a <= st.reach && Math.abs(p.x - this.x) <= st.width / 2 + r;
+    const a = this.ahead(p.s), r = WBAL.poop[p.kind].r;
+    return this.members().some(m => this.zoneHas(m, p.x, a, r));
   }
 
   /** 左右の位置のねらい(指・キー)。参道の外へは出ない */
@@ -144,11 +208,17 @@ export class SweepRun {
     const dx = this.targetX - this.x;
     this.x += Math.sign(dx) * Math.min(Math.abs(dx), WBAL.moveSpeed * dt);
     // 歩く(掃いている間は、ゆっくり)
-    const busy = this.poops.some(p => { const a = this.ahead(p.s); return a >= -0.1 && a <= WBAL.footAhead && Math.abs(p.x - this.x) <= WBAL.footX + WBAL.poop[p.kind].r; });
+    const atFoot = (s: number, x: number, r: number) => { const a = this.ahead(s); return a >= -0.1 && a <= WBAL.footAhead && Math.abs(x - this.x) <= WBAL.footX + r; };
+    // たるも、足もとにあれば 立ち止まって開ける(通りぬけない)
+    const busy = this.poops.some(p => atFoot(p.s, p.x, WBAL.poop[p.kind].r)) || this.barrels.some(b => atFoot(b.s, b.x, 0.35));
     this.pace = this.level.speed * (busy ? WBAL.slow : 1);
     this.d += this.pace * dt;
     this.stepBuddha();
     this.stepDeer(dt);
+    this.stepGates();
+    this.stepChargers(dt);
+    // 通りすぎた たるは、もう開けられない
+    this.barrels = this.barrels.filter(b => this.ahead(b.s) >= WBAL.passAt - 1);
     for (const p of this.poops) p.t += dt;
     for (const f of this.flowers) f.t += dt;
     // 通りすぎたうんこ: のこっていた分が、よごれになる
@@ -176,14 +246,30 @@ export class SweepRun {
     this.events.push({ kind: phase === 'cleared' ? 'clear' : 'fail' });
   }
 
-  /** ほうきを振る: 前の範囲のうんこを、近い順に掃く */
+  /** ほうきを振る: みんなが、それぞれの前の範囲のうんこ(と たる)を、近い順に掃く。範囲が重なると、何回も当たる */
   private sweep() {
     const st = this.stats;
     this.events.push({ kind: 'sweep', x: this.x, n: st.level });
-    const hits = this.poops.filter(p => this.inReach(p)).sort((a, b) => this.ahead(a.s) - this.ahead(b.s)).slice(0, st.targets);
+    const power = new Map<Poop, number>(), barrelPow = new Map<Barrel, number>();
+    for (const m of this.members()) {
+      const cap = m.leader ? st.targets : WBAL.helperTargets;
+      const near = this.poops.filter(p => this.zoneHas(m, p.x, this.ahead(p.s), WBAL.poop[p.kind].r)).sort((a, b) => this.ahead(a.s) - this.ahead(b.s)).slice(0, cap);
+      for (const p of near) power.set(p, (power.get(p) ?? 0) + st.power);
+      if (near.length < cap) for (const b of this.barrels) if (this.zoneHas(m, b.x, this.ahead(b.s), 0.35)) barrelPow.set(b, (barrelPow.get(b) ?? 0) + st.power);
+    }
+    for (const [b, pw] of barrelPow) {
+      b.hp = Math.max(0, b.hp - pw);
+      if (b.hp > 0) { this.events.push({ kind: 'barrelHit', id: b.id, x: b.x, s: b.s, n: b.hp }); continue; }
+      this.barrels.splice(this.barrels.indexOf(b), 1);
+      const before = this.team;
+      this.team = Math.min(WBAL.teamMax, this.team + b.n);
+      this.bestTeam = Math.max(this.bestTeam, this.team);
+      this.events.push({ kind: 'barrel', id: b.id, x: b.x, s: b.s, n: this.team - before });
+    }
+    const hits = [...power.keys()];
     let flowers = 0;
     for (const p of hits) {
-      p.hp = Math.max(0, p.hp - st.power);
+      p.hp = Math.max(0, p.hp - power.get(p)!);
       if (p.hp > 0) { this.events.push({ kind: 'hit', id: p.id, x: p.x, s: p.s, n: p.hp }); continue; }
       const score = WBAL.poop[p.kind].score * (p.hard ? WBAL.hardScore : 1);
       this.score += score; this.cleaned++;
@@ -200,6 +286,50 @@ export class SweepRun {
     while (this.broom < WBAL.brooms.length - 1 && this.score >= WBAL.brooms[this.broom + 1].threshold) this.broom++;
     if (this.broom !== old) { this.cooldown = Math.min(this.cooldown, 0.2); this.events.push({ kind: 'level', n: this.stats.level }); }
   }
+  /** ゲート: 先頭の Spra が通った側の数字で、人数が かわる */
+  private stepGates() {
+    const gs = this.level.gates ?? [];
+    while (this.gateIndex < gs.length && this.d >= gs[this.gateIndex].s) {
+      const g = gs[this.gateIndex++], side = this.x < 0 ? g.left : g.right, before = this.team;
+      this.team = applyGate(this.team, side);
+      this.bestTeam = Math.max(this.bestTeam, this.team);
+      this.events.push({ kind: 'gate', x: this.x < 0 ? -1 : 1, s: g.s, n: this.team - before, id: this.gateIndex - 1 });
+    }
+  }
+  /** 走ってくる鹿: 先から来て、ぶつかった仲間を はじき飛ばす(1頭で5人まで)。先頭にぶつかると 2人へる */
+  private stepChargers(dt: number) {
+    const cs = this.level.chargers ?? [];
+    while (this.chargeIndex < cs.length && this.d >= cs[this.chargeIndex].s - WBAL.chargeAppear) {
+      const c = cs[this.chargeIndex++];
+      const ch: Charger = { id: this.nextId++, s: this.d + WBAL.chargeAppear, x: c.x, hits: 0, hitLeader: false, cool: 0 };
+      this.chargers.push(ch);
+      this.events.push({ kind: 'charge', id: ch.id, x: ch.x, s: ch.s });
+    }
+    for (const c of [...this.chargers]) {
+      c.s -= WBAL.chargeSpeed * dt;
+      c.cool = Math.max(0, c.cool - dt);
+      if (this.ahead(c.s) < -3) { this.chargers.splice(this.chargers.indexOf(c), 1); continue; }
+      if (c.cool > 0) continue;
+      for (const m of this.members()) {
+        if (Math.abs(this.ahead(c.s) - m.a) > WBAL.chargeHitZ || Math.abs(c.x - m.x) > WBAL.chargeHitX) continue;
+        if (m.leader) {
+          if (c.hitLeader) continue;
+          c.hitLeader = true;
+          const lost = Math.min(this.team - 1, WBAL.chargeLeaderLoss);
+          this.team -= lost;
+          this.events.push({ kind: 'bump', id: c.id, x: m.x, s: this.d + m.a, n: lost, hard: true });
+        } else {
+          if (c.hits >= WBAL.chargeMaxHits) continue;
+          c.hits++;
+          this.team = Math.max(1, this.team - 1);
+          this.events.push({ kind: 'bump', id: c.id, x: m.x, s: this.d + m.a, n: 1 });
+        }
+        c.cool = 0.12;
+        break;
+      }
+    }
+  }
+
   /** 道ばたに、お花が咲く(よごれが少し減る)。Spra の少し先に咲くので、近づきながら見える */
   private bloom() {
     const side = this.flowers.length % 2 ? 1 : -1;

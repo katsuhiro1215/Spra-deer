@@ -1,4 +1,4 @@
-// WORLD 3「奈良公園、大掃除！」の組み立て: 指で左右・HUD・うんこの数字・音・ループ・記録。
+// WORLD 3「奈良公園、大掃除！」の組み立て: 指で左右・HUD・うんこ/たるの数字・走ってくる鹿の「！」・音・ループ・記録。
 import { Progress } from '../progress.ts';
 import { Wallet, clearRewards, waitText, STAMINA_MAX, STAMINA_FAIL } from '../wallet.ts';
 import { RunnerAudio } from '../runner/audio.ts';
@@ -18,7 +18,7 @@ export function startSweep(root: HTMLElement, level: SweepLevel): () => void {
   const premiumTaken = wallet.hasPremium(level.id);
   const newRun = () => new SweepRun(level, { premium: !premiumTaken });
   const stage = q('stage');
-  const view = new SweepView(stage, level.length);
+  const view = new SweepView(stage, level);
   const nextLevel = SWEEP_LEVELS[SWEEP_LEVELS.findIndex(l => l.id === level.id) + 1];
   let run = newRun();
   let charged = false, recorded = false;
@@ -73,6 +73,14 @@ export function startSweep(root: HTMLElement, level: SweepLevel): () => void {
       case 'flower': [880, 1109, 1319].forEach((f, i) => tone(f, f, 0.12, 'sine', 0.05, i * 0.05)); break;
       case 'level': [523, 659, 784, 1047, 1319].forEach((f, i) => tone(f, f, 0.18, 'triangle', 0.07, i * 0.07)); break;
       case 'combo': tone(988, 1319, 0.15, 'sine', 0.05); break;
+      case 'gate':
+        if ((e.n ?? 0) > 0) [659, 784, 988, 1319].forEach((f, i) => tone(f, f, 0.13, 'triangle', 0.07, i * 0.06));
+        else if ((e.n ?? 0) < 0) { tone(400, 160, 0.4, 'sawtooth', 0.05); noise(0.3, 0.15, 'lowpass', 500); }
+        break;
+      case 'barrelHit': noise(0.06, 0.2, 'bandpass', 900, 0, 2); break;
+      case 'barrel': noise(0.25, 0.3, 'bandpass', 700, 0, 1, 2000); [784, 988, 1175, 1568].forEach((f, i) => tone(f, f, 0.12, 'sine', 0.06, 0.05 + i * 0.05)); break;
+      case 'charge': tone(900, 600, 0.15, 'square', 0.04); tone(900, 600, 0.15, 'square', 0.04, 0.2); break;
+      case 'bump': tone(300, 900, 0.18, 'sine', 0.07); noise(0.1, 0.2, 'lowpass', 800); break;
       case 'warn': [0, 0.4, 0.8].forEach(d => tone(1320, 1240, 0.3, 'sine', 0.05, d)); break;
       case 'glow': tone(110, 80, 1.2, 'sawtooth', 0.05); noise(0.9, 0.12, 'lowpass', 300); break;
       case 'clear': audio.stopMusic(); audio.jingle('clear'); break;
@@ -83,7 +91,7 @@ export function startSweep(root: HTMLElement, level: SweepLevel): () => void {
   // ---- 画面の表示 ----
   const elCoins = q('coins'), elGold = q('gold'), elDirt = q('dirt'), elDirtBox = q('dirt-box'), elDirtBar = q('dirt-bar');
   const elRoadBar = q('road-bar'), elRoadSpra = q('road-spra'), elBroom = q('broom'), elBroomLv = q('broom-lv'), elBroomName = q('broom-name'), elBroomBar = q('broom-bar');
-  const elBuddha = q('buddha'), elFlowers = q('flowers'), elCombo = q('combo'), elAlert = q('alert'), elToast = q('toast'), elStart = q('start'), elResult = q('result'), elLabels = q('labels');
+  const elTeam = q('team'), elBuddha = q('buddha'), elFlowers = q('flowers'), elCombo = q('combo'), elAlert = q('alert'), elToast = q('toast'), elStart = q('start'), elResult = q('result'), elLabels = q('labels');
   let toastTimer = 0;
   const toast = (msg: string, ms = 2400) => {
     elToast.textContent = msg; elToast.classList.add('on');
@@ -114,6 +122,31 @@ export function startSweep(root: HTMLElement, level: SweepLevel): () => void {
       if (el.textContent !== txt) el.textContent = txt;
       if (p.hard) el.dataset.hard = ''; else delete el.dataset.hard;
     }
+    // たる(のこりの回数と、出てくる人数)・走ってくる鹿の「！」も、同じしくみで出す
+    if (running) {
+      for (const b of run.barrels) {
+        const a = run.ahead(b.s);
+        if (a > 18 || a < -0.5) continue;
+        const key = -b.id;
+        seen.add(key);
+        let el = hpTags.get(key);
+        if (!el) { el = document.createElement('div'); el.className = 'sw-hp sw-barrel-tag'; elLabels.append(el); hpTags.set(key, el); }
+        const at = view.toScreen(view.barrelTop(run, b.s, b.x));
+        el.style.transform = `translate(${at.x}px, ${at.y}px) translate(-50%, -100%)`;
+        const txt = `なかま+${b.n}　${b.hp}`;
+        if (el.textContent !== txt) el.textContent = txt;
+      }
+      for (const c of run.chargers) {
+        const a = run.ahead(c.s);
+        if (a < 0.5) continue;
+        const key = -1e6 - c.id;
+        seen.add(key);
+        let el = hpTags.get(key);
+        if (!el) { el = document.createElement('div'); el.className = 'sw-hp sw-charge-tag'; el.textContent = '！'; elLabels.append(el); hpTags.set(key, el); }
+        const at = view.toScreen(view.at(run, c.s, c.x, 1.7));
+        el.style.transform = `translate(${at.x}px, ${at.y}px) translate(-50%, -100%)`;
+      }
+    }
     for (const [id, el] of hpTags) if (!seen.has(id)) { el.remove(); hpTags.delete(id); }
   };
   const alertText = (): [string, string] => {
@@ -136,11 +169,13 @@ export function startSweep(root: HTMLElement, level: SweepLevel): () => void {
     elRoadSpra.style.left = `${k}%`;
     const st = run.stats, next = run.nextBroomAt;
     elBroomLv.textContent = `Lv${st.level}`;
-    if (elBroomName.textContent !== st.name) elBroomName.textContent = st.name;
+    // 名前は、育ったときの一言で出す(ここは「ほうき」だけ。横の幅が せまいので)
+    if (elBroomName.textContent !== 'ほうき') elBroomName.textContent = 'ほうき';
     elBroom.dataset.lv = String(st.level);
     elBroomBar.style.width = next === null ? '100%' : `${Math.min(100, ((run.score - st.threshold) / (next - st.threshold)) * 100)}%`;
     if (st.level !== lastLv) { lastLv = st.level; elBroom.classList.remove('up'); void elBroom.offsetWidth; elBroom.classList.add('up'); }
     elFlowers.textContent = String(run.flowers.length);
+    elTeam.textContent = String(run.team);
     elCombo.hidden = run.combo < 3;
     if (run.combo >= 3) elCombo.textContent = `コンボ ×${run.combo}`;
     const [msg, tone_] = alertText();
@@ -190,6 +225,7 @@ export function startSweep(root: HTMLElement, level: SweepLevel): () => void {
     q('r-cleaned').textContent = `${run.cleaned} こ` + (run.maxCombo >= 5 ? `(コンボ ${run.maxCombo})` : '');
     q('r-flowers').textContent = `${run.flowers.length} こ`;
     q('r-broom').textContent = `Lv${run.stats.level} ${run.stats.name}`;
+    q('r-team').textContent = `${run.team} 人(いちばん多いとき ${run.bestTeam} 人)`;
     q('r-time').textContent = cleared ? `${run.t.toFixed(1)} 秒${newBest ? '(ベスト更新！)' : ''}` : '—';
     q('r-best').textContent = best === null ? '—' : `${best.toFixed(1)} 秒`;
     const next = q<HTMLAnchorElement>('next');
@@ -295,6 +331,16 @@ export function startSweep(root: HTMLElement, level: SweepLevel): () => void {
       case 'combo': pop(run.d + 1.2, run.x, 1.1, `${e.n} コンボ！`, 'gold'); break;
       case 'warn': hint('warn', '大仏さまの目が 光ると、落ちた うんこが 硬くなる！', 3000); break;
       case 'clear': toast('大仏さまに 着いた！ 参道が ぴかぴか！', 3000); break;
+      case 'gate': {
+        const n = e.n ?? 0;
+        pop(run.d + 1.2, run.x, 1.6, n > 0 ? `なかま +${n}！` : n < 0 ? `なかま ${n}…` : 'そのまま', n > 0 ? 'big' : 'miss');
+        if (n > 0) hint('gate', '仲間の Spra も、前で ほうきを ふるよ！ 範囲が 重なると たくさん 掃ける', 3200);
+        if (n < 0) hint('gateBad', '赤い ゲートは 仲間が へる。数字を 見て えらぼう', 2800);
+        break;
+      }
+      case 'barrel': pop(e.s!, e.x!, 1.2, `なかま +${e.n}！`, 'big'); break;
+      case 'charge': hint('charge', '鹿が 走ってくる！ ぶつかった 仲間は はじき飛ばされる。よけて！', 2800); break;
+      case 'bump': pop(e.s!, e.x!, 1.2, `−${e.n}`, 'miss'); break;
     }
   };
 

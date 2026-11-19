@@ -389,3 +389,38 @@
     translate: 2px 0;
   }
 }
+
+/* なかまの人数 */
+.sw-team {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 10px 2px 6px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #5fb8ff, #1e78dc);
+  font-weight: 900;
+  font-size: 13px;
+}
+.sw-team b {
+  font-size: 17px;
+}
+.sw-team-icon {
+  width: 20px;
+  height: 22px;
+  background: url('/assets/spru-walk/down_0.png') center / contain no-repeat;
+}
+/* たるの札・走ってくる鹿の「！」 */
+.sw-barrel-tag {
+  background: linear-gradient(180deg, #8fd0ff, #3a8ee0);
+  color: #fff;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.sw-charge-tag {
+  min-width: 28px;
+  background: #d8342c;
+  color: #fff;
+  font-size: 18px;
+  line-height: 26px;
+  animation: sw-pulse 0.2s ease-in-out infinite alternate;
+}

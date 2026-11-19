@@ -1,6 +1,7 @@
 // WORLD 3 大掃除を、決まったやり方で遊ぶボット(テストとバランスの確認用)。
-// 少し先までのうんこを見て、ほうきの幅に いちばん多く(よごれの多い順に)入る位置へ動く。人の反応のおくれと、位置のずれを入れる。
-import { SweepRun, WBAL } from '../src/sweep/sim.ts';
+// 少し先までのうんこを見て、チームのほうきに いちばん多く(よごれの多い順に)入る位置へ動く。
+// ゲートは人数が多くなる側へ(gateMiss の割合で まちがえる)、走ってくる鹿は よける(dodge)。人の反応のおくれと、位置のずれを入れる。
+import { SweepRun, WBAL, SLOTS, applyGate } from '../src/sweep/sim.ts';
 import type { SweepLevel } from '../src/sweep/levels.ts';
 
 export type SweepPolicy = {
@@ -13,30 +14,54 @@ export type SweepPolicy = {
   seed?: number;
   /** 動かない(まん中に立ったまま) */
   idle?: boolean;
+  /** ゲートで まちがえる割合(0〜1) */
+  gateMiss?: number;
+  /** 走ってくる鹿を よけるか */
+  dodge?: boolean;
+  /** たるを ねらうか */
+  barrels?: boolean;
 };
 
 export function driveSweep(level: SweepLevel, policy: SweepPolicy = {}, dt = 1 / 60): SweepRun {
-  const { look = 4, every = 0.35, err = 0, seed = 1, idle = false } = policy;
+  const { look = 4, every = 0.35, err = 0, seed = 1, idle = false, gateMiss = 0, dodge = true, barrels = true } = policy;
   let a = (seed * 7919) >>> 0;
   const rnd = () => { a = (a + 0x6d2b79f5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
   const run = new SweepRun(level, { seed });
   run.start();
   let wait = 0;
+  const gateWrong = new Map<number, boolean>();
   while (run.phase === 'running' && run.t < 600) {
     wait -= dt;
     if (!idle && wait <= 0) {
       wait = every;
-      const w = run.stats.width;
-      const cand = run.poops.filter(p => { const ah = run.ahead(p.s); return ah > -0.1 && ah < look; });
-      let best = run.x, bestV = -1;
-      for (let x = -WBAL.reachX; x <= WBAL.reachX + 1e-9; x += 0.15) {
-        let v = 0;
-        for (const p of cand) if (Math.abs(p.x - x) <= w / 2 + WBAL.poop[p.kind].r) v += (p.hp / p.maxHp) * WBAL.poop[p.kind].pollution / (1 + run.ahead(p.s));
-        // 今の位置の近くを少しだけ好む(行ったり来たりしない)
-        v -= Math.abs(x - run.x) * 0.02;
-        if (v > bestV) { bestV = v; best = x; }
+      const st = run.stats, gates = level.gates ?? [], g = gates[run.gateIndex];
+      let target: number | null = null;
+      // ゲートが近いなら、人数が多くなる側へ
+      if (g && g.s - run.d < 5) {
+        if (!gateWrong.has(run.gateIndex)) gateWrong.set(run.gateIndex, rnd() < gateMiss);
+        const left = applyGate(run.team, g.left), right = applyGate(run.team, g.right);
+        let side = left >= right ? -1 : 1;
+        if (gateWrong.get(run.gateIndex)) side = -side;
+        target = side * 1.4;
       }
-      run.steer(best + (rnd() * 2 - 1) * err);
+      if (target === null) {
+        let best = run.x, bestV = -Infinity;
+        for (let x = -WBAL.reachX; x <= WBAL.reachX + 1e-9; x += 0.15) {
+          const ms = [{ x, a: 0, w: st.width }, ...SLOTS.slice(0, run.team - 1).map(sl => ({ x: Math.max(-WBAL.half + 0.25, Math.min(WBAL.half - 0.25, x + sl.dx)), a: sl.da, w: WBAL.helperWidth }))];
+          let v = 0;
+          for (const p of run.poops) {
+            const ah = run.ahead(p.s);
+            if (ah < -0.1 || ah > look) continue;
+            if (ms.some(m => Math.abs(p.x - m.x) <= m.w / 2 + WBAL.poop[p.kind].r)) v += (p.hp / p.maxHp) * WBAL.poop[p.kind].pollution / (1 + ah);
+          }
+          if (barrels) for (const b of run.barrels) { const ah = run.ahead(b.s); if (ah > -0.1 && ah < look + 3 && ms.some(m => Math.abs(b.x - m.x) <= m.w / 2 + 0.35)) v += 4; }
+          if (dodge) for (const c of run.chargers) { const ah = run.ahead(c.s); if (ah > -0.5 && ah < 8) v -= ms.filter(m => Math.abs(c.x - m.x) < WBAL.chargeHitX + 0.1).length * 3; }
+          v -= Math.abs(x - run.x) * 0.02;
+          if (v > bestV) { bestV = v; best = x; }
+        }
+        target = best;
+      }
+      run.steer(target + (rnd() * 2 - 1) * err);
     }
     run.step(dt);
     run.drainEvents();
