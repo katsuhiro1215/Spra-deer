@@ -769,3 +769,11 @@
   right: auto;
   left: 104px;
 }
+
+/* Spra の ひとことは、なかまより 手前に */
+.bk-helpers {
+  z-index: 2;
+}
+.bk-spra {
+  z-index: 3;
+}

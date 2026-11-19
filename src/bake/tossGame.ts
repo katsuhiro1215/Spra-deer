@@ -6,6 +6,7 @@ import { RunnerAudio } from '../runner/audio.ts';
 import { BAKE_LEVELS, DEER_NAME, type TossLevel } from './levels.ts';
 import { SBAL, TossRun, type TossEvent } from './toss.ts';
 import { TossView } from './tossView.ts';
+import { applyCarry, carryOf, type RelayCtx } from './relay.ts';
 import { HELPER_TEXT, mountHelpers } from './helpers.ts';
 
 const STEP = 1 / 120;
@@ -19,25 +20,28 @@ const FAIL_TEXT: Record<string, [string, string]> = {
 };
 type Pose = 'idle' | 'hooray' | 'trouble' | 'wave';
 
-export function startToss(root: HTMLElement, level: TossLevel): () => void {
+export function startToss(root: HTMLElement, level: TossLevel, relay?: RelayCtx): () => void {
   const q = <T extends HTMLElement>(k: string) => root.querySelector<T>(`[data-ks="${k}"]`)!;
   root.classList.add('bk-mode-toss');
   const wallet = new Wallet();
   const progress = new Progress();
-  const premiumTaken = wallet.hasPremium(level.id);
-  const newRun = () => new TossRun(level, { premium: !premiumTaken });
+  // リレー面(2-9・2-10)では、記録と コインは その面の番号で つける
+  const rid = relay?.id ?? level.id;
+  const premiumTaken = wallet.hasPremium(rid);
+  const newRun = () => applyCarry(new TossRun(level, { premium: !premiumTaken }), relay);
   const stage = q('stage');
   const view = new TossView(stage, level);
-  const nextLevel = BAKE_LEVELS[BAKE_LEVELS.findIndex(l => l.id === level.id) + 1];
+  const nextLevel = BAKE_LEVELS[BAKE_LEVELS.findIndex(l => l.id === rid) + 1];
   let run = newRun();
   let charged = false, recorded = false;
   const bundles = level.senbei % 10 === 0 ? `${level.senbei / 10}束(${level.senbei}まい)` : `${level.senbei}まい`;
 
-  q('lv-id').textContent = `面 ${level.id}`;
-  q('lv-title').textContent = level.title;
+  q('lv-id').textContent = `面 ${rid}`;
+  q('lv-title').textContent = relay ? `${relay.title}(${relay.part + 1}/${relay.parts})` : level.title;
   q('goal').textContent = `/ ${level.goal}頭`;
-  q('s-title').textContent = level.title;
+  q('s-title').textContent = relay ? relay.title : level.title;
   q('s-lead').textContent = `${level.summary}。せんべい ${bundles}で、鹿 ${level.goal}頭を まんぞく させよう！`;
+  if (relay) q('s-lead').textContent = `${relay.summary}。まずは: ${q('s-lead').textContent}`;
   q('s-prem').textContent = premiumTaken ? '◆ この面の プレミアムコインは 取ったよ' : `◆「ぴったり」を ${level.premiumStreak}回 続けると…？`;
   q('how').innerHTML = [
     '<li><b>なぞる</b> 鹿のほうへ 指を すべらせて、はなすと 投げる</li>',
@@ -205,9 +209,9 @@ export function startToss(root: HTMLElement, level: TossLevel): () => void {
     let newBest = false;
     if (cleared && !recorded) {
       recorded = true;
-      newBest = progress.clear(level.id, run.t);
-      const got = clearRewards(wallet, level.id, { silver: run.coins, gold: run.gold, star3: stars === 3 });
-      const prem = run.premium && wallet.takePremium(level.id);
+      newBest = progress.clear(rid, (relay?.carry?.t ?? 0) + run.t);
+      const got = clearRewards(wallet, rid, { silver: run.coins, gold: run.gold, star3: stars === 3 });
+      const prem = run.premium && wallet.takePremium(rid);
       q('r-reward').textContent = `+${got.silver} シルバー` + (got.gold ? `　+${got.gold} ゴールド` : '') + (prem ? '　+1 プレミアム！' : '');
       q('r-reward').classList.remove('lose');
     }
@@ -217,7 +221,7 @@ export function startToss(root: HTMLElement, level: TossLevel): () => void {
       q('r-reward').classList.add('lose');
     }
     paintStamina();
-    const best = progress.get(level.id).best, why = FAIL_TEXT[run.reason ?? ''];
+    const best = progress.get(rid).best, why = FAIL_TEXT[run.reason ?? ''];
     q('r-title').textContent = cleared ? 'くばり おわり！ だいせいこう！' : why?.[0] ?? 'ざんねん…';
     q('r-tip').textContent = cleared ? (run.stock ? `あまった せんべい ${run.stock}まいも コインに！` : '') : why?.[1] ?? '';
     q('r-stars').textContent = cleared ? '★'.repeat(stars) + '☆'.repeat(3 - stars) : '';
@@ -236,7 +240,7 @@ export function startToss(root: HTMLElement, level: TossLevel): () => void {
   let hinted = new Set<string>();
   const hint = (key: string, msg: string, ms = 3000) => { if (!hinted.has(key)) { hinted.add(key); toast(msg, ms); } };
   const begin = () => {
-    if (!wallet.canPlay()) { paintStamina(); toast(`体力が たりません(回復まで ${waitText(wallet.waitToPlay)})`, 3000); return; }
+    if ((!relay || relay.part === 0) && !wallet.canPlay()) { paintStamina(); toast(`体力が たりません(回復まで ${waitText(wallet.waitToPlay)})`, 3000); return; }
     charged = false; recorded = false;
     q('r-reward').textContent = '';
     audio.ensure(); ac = audio.ctx;
@@ -247,7 +251,7 @@ export function startToss(root: HTMLElement, level: TossLevel): () => void {
     drag = null; view.aiming = null;
     hinted = new Set();
     run.start();
-    progress.attempt(level.id);
+    if (!relay || relay.part === 0) progress.attempt(rid);
     elStart.classList.remove('on'); elResult.classList.remove('on');
     react('wave', 'せんべい いかが〜！', 1800);
     paintHud();
@@ -265,7 +269,7 @@ export function startToss(root: HTMLElement, level: TossLevel): () => void {
   q('snd-r').addEventListener('click', toggleSound);
   paintSound();
   q('go').addEventListener('click', () => begin());
-  q('retry').addEventListener('click', () => begin());
+  q('retry').addEventListener('click', () => (relay ? relay.restart() : begin()));
 
   // ---- 入力: なぞって、はなすと投げる ----
   // 画面で なぞった向きを、そのまま公園の向きにする(手の真下の地面から、なぞった向きの地面へ)。
@@ -388,7 +392,7 @@ export function startToss(root: HTMLElement, level: TossLevel): () => void {
     }
     if (run.phase !== prevPhase) {
       prevPhase = run.phase;
-      if (run.phase === 'cleared' || run.phase === 'failed') { drag = null; view.aiming = null; resultTimer = window.setTimeout(showResult, run.phase === 'cleared' ? 2400 : 1600); }
+      if (run.phase === 'cleared' || run.phase === 'failed') { drag = null; view.aiming = null; resultTimer = window.setTimeout(() => (relay && run.phase === 'cleared' && relay.part < relay.parts - 1 ? relay.next(carryOf(run, relay)) : showResult()), run.phase === 'cleared' ? 2400 : 1600); }
     }
     paintHud();
     view.renderToss(run, dt);
@@ -398,6 +402,8 @@ export function startToss(root: HTMLElement, level: TossLevel): () => void {
   paintStamina();
   raf = requestAnimationFrame(frame);
 
+  // リレーの 2つ目からは、すぐ はじめる(体力は はじめに 1回だけ)
+  if (relay && relay.part > 0) begin();
   (window as unknown as { __bake?: unknown }).__bake = { get run() { return run; }, level, view, audio };
 
   return () => {

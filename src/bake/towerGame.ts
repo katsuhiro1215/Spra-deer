@@ -6,6 +6,7 @@ import { RunnerAudio } from '../runner/audio.ts';
 import { BAKE_LEVELS, DEER_NAME, type TowerLevel } from './levels.ts';
 import { TBAL, TowerRun, type TowerEvent } from './tower.ts';
 import { TowerView } from './towerView.ts';
+import { applyCarry, carryOf, type RelayCtx } from './relay.ts';
 import { HELPER_TEXT, mountHelpers } from './helpers.ts';
 
 const STEP = 1 / 120;
@@ -18,23 +19,26 @@ const FAIL_TEXT: Record<string, [string, string]> = {
 };
 type Pose = 'idle' | 'hooray' | 'trouble' | 'wave';
 
-export function startTower(root: HTMLElement, level: TowerLevel): () => void {
+export function startTower(root: HTMLElement, level: TowerLevel, relay?: RelayCtx): () => void {
   const q = <T extends HTMLElement>(k: string) => root.querySelector<T>(`[data-ks="${k}"]`)!;
   root.classList.add('bk-mode-tower');
   const wallet = new Wallet();
   const progress = new Progress();
-  const premiumTaken = wallet.hasPremium(level.id);
-  const newRun = () => new TowerRun(level, { premium: !premiumTaken });
+  // リレー面(2-9・2-10)では、記録と コインは その面の番号で つける
+  const rid = relay?.id ?? level.id;
+  const premiumTaken = wallet.hasPremium(rid);
+  const newRun = () => applyCarry(new TowerRun(level, { premium: !premiumTaken }), relay);
   const view = new TowerView(q('stage'), level);
-  const nextLevel = BAKE_LEVELS[BAKE_LEVELS.findIndex(l => l.id === level.id) + 1];
+  const nextLevel = BAKE_LEVELS[BAKE_LEVELS.findIndex(l => l.id === rid) + 1];
   let run = newRun();
   let charged = false, recorded = false;
 
-  q('lv-id').textContent = `面 ${level.id}`;
-  q('lv-title').textContent = level.title;
+  q('lv-id').textContent = `面 ${rid}`;
+  q('lv-title').textContent = relay ? `${relay.title}(${relay.part + 1}/${relay.parts})` : level.title;
   q('goal').textContent = `/ ${level.goal}頭`;
-  q('s-title').textContent = level.title;
+  q('s-title').textContent = relay ? relay.title : level.title;
   q('s-lead').textContent = `${level.summary}。${level.time}秒で、鹿 ${level.goal}頭に タワーを とどけよう！`;
+  if (relay) q('s-lead').textContent = `${relay.summary}。まずは: ${q('s-lead').textContent}`;
   q('s-prem').textContent = premiumTaken ? '◆ この面の プレミアムコインは 取ったよ' : `◆ ${level.premiumHeight}段の タワーを とどけると…？`;
   q('how').innerHTML = [
     '<li><b>タップ</b> ゆれる せんべいを 落とす</li>',
@@ -182,9 +186,9 @@ export function startTower(root: HTMLElement, level: TowerLevel): () => void {
     let newBest = false;
     if (cleared && !recorded) {
       recorded = true;
-      newBest = progress.clear(level.id, run.t);
-      const got = clearRewards(wallet, level.id, { silver: run.coins, gold: run.gold, star3: stars === 3 });
-      const prem = run.premium && wallet.takePremium(level.id);
+      newBest = progress.clear(rid, (relay?.carry?.t ?? 0) + run.t);
+      const got = clearRewards(wallet, rid, { silver: run.coins, gold: run.gold, star3: stars === 3 });
+      const prem = run.premium && wallet.takePremium(rid);
       q('r-reward').textContent = `+${got.silver} シルバー` + (got.gold ? `　+${got.gold} ゴールド` : '') + (prem ? '　+1 プレミアム！' : '');
       q('r-reward').classList.remove('lose');
     }
@@ -194,7 +198,7 @@ export function startTower(root: HTMLElement, level: TowerLevel): () => void {
       q('r-reward').classList.add('lose');
     }
     paintStamina();
-    const best = progress.get(level.id).best, why = FAIL_TEXT[run.reason ?? ''];
+    const best = progress.get(rid).best, why = FAIL_TEXT[run.reason ?? ''];
     q('r-title').textContent = cleared ? 'タワー だいせいこう！' : why?.[0] ?? 'ざんねん…';
     q('r-tip').textContent = cleared ? '' : why?.[1] ?? '';
     q('r-stars').textContent = cleared ? '★'.repeat(stars) + '☆'.repeat(3 - stars) : '';
@@ -213,7 +217,7 @@ export function startTower(root: HTMLElement, level: TowerLevel): () => void {
   let hinted = new Set<string>();
   const hint = (key: string, msg: string, ms = 3000) => { if (!hinted.has(key)) { hinted.add(key); toast(msg, ms); } };
   const begin = () => {
-    if (!wallet.canPlay()) { paintStamina(); toast(`体力が たりません(回復まで ${waitText(wallet.waitToPlay)})`, 3000); return; }
+    if ((!relay || relay.part === 0) && !wallet.canPlay()) { paintStamina(); toast(`体力が たりません(回復まで ${waitText(wallet.waitToPlay)})`, 3000); return; }
     charged = false; recorded = false;
     q('r-reward').textContent = '';
     audio.ensure(); ac = audio.ctx;
@@ -222,7 +226,7 @@ export function startTower(root: HTMLElement, level: TowerLevel): () => void {
     run = newRun();
     hinted = new Set();
     run.start();
-    progress.attempt(level.id);
+    if (!relay || relay.part === 0) progress.attempt(rid);
     elStart.classList.remove('on'); elResult.classList.remove('on');
     react('wave', 'いらっしゃいませ！', 1800);
     paintHud();
@@ -240,7 +244,7 @@ export function startTower(root: HTMLElement, level: TowerLevel): () => void {
   q('snd-r').addEventListener('click', toggleSound);
   paintSound();
   q('go').addEventListener('click', () => begin());
-  q('retry').addEventListener('click', () => begin());
+  q('retry').addEventListener('click', () => (relay ? relay.restart() : begin()));
 
   // ---- 入力: 画面のどこをタップしても落とす(「おとどけ」ボタンは、とどける) ----
   const frameEl = q('frame');
@@ -300,6 +304,7 @@ export function startTower(root: HTMLElement, level: TowerLevel): () => void {
       case 'nibAim': react('trouble', 'あっ！ 下は だめ！', 1000); break;
       case 'nibble': react('trouble', '下を 食べられた〜！', 1400); toast('タワーの 下を 食べられた！', 1500); break;
       case 'nibShoo': react('wave', 'じゅんばんに ならんでね！', 1200); break;
+      case 'nibBlock': helpers.say('kuru', 'とおせんぼ！'); toast('Kuru が いたずら鹿を 通せんぼ！', 1600); break;
       case 'clear': toast('目標たっせい！ タワー だいせいこう！', 3000); react('hooray', 'やったね！', 4000); break;
       case 'fail': react('trouble', '', 4000); break;
     }
@@ -318,7 +323,7 @@ export function startTower(root: HTMLElement, level: TowerLevel): () => void {
     }
     if (run.phase !== prevPhase) {
       prevPhase = run.phase;
-      if (run.phase === 'cleared' || run.phase === 'failed') resultTimer = window.setTimeout(showResult, run.phase === 'cleared' ? 2400 : 1600);
+      if (run.phase === 'cleared' || run.phase === 'failed') resultTimer = window.setTimeout(() => (relay && run.phase === 'cleared' && relay.part < relay.parts - 1 ? relay.next(carryOf(run, relay)) : showResult()), run.phase === 'cleared' ? 2400 : 1600);
     }
     paintHud();
     view.renderTower(run, dt);
@@ -327,6 +332,8 @@ export function startTower(root: HTMLElement, level: TowerLevel): () => void {
   paintStamina();
   raf = requestAnimationFrame(frame);
 
+  // リレーの 2つ目からは、すぐ はじめる(体力は はじめに 1回だけ)
+  if (relay && relay.part > 0) begin();
   (window as unknown as { __bake?: unknown }).__bake = { get run() { return run; }, level, view, audio };
 
   return () => {

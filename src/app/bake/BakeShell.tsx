@@ -13,11 +13,14 @@ export function BakeShell() {
     let cancelled = false;
     // three.js はブラウザ側でだけ読み込む。面は /bake/?level=2-1 のように指定する(無ければ2-1)
     // 焼く面(game.ts)・積む面(towerGame.ts)・配る面(tossGame.ts)は、面のデータの mode で分ける
-    Promise.all([import('../../bake/game.ts'), import('../../bake/towerGame.ts'), import('../../bake/tossGame.ts'), import('../../bake/levels.ts')]).then(([game, tower, toss, levels]) => {
+    Promise.all([import('../../bake/game.ts'), import('../../bake/towerGame.ts'), import('../../bake/tossGame.ts'), import('../../bake/levels.ts'), import('../../bake/relay.ts')]).then(([game, tower, toss, levels, relayMod]) => {
       if (cancelled || !ref.current) return;
       const id = new URLSearchParams(window.location.search).get('level') ?? '2-1';
       const level = levels.bakeById(id) ?? levels.BAKE_LEVELS[0];
-      stop = levels.isTower(level) ? tower.startTower(ref.current, level) : levels.isToss(level) ? toss.startToss(ref.current, level) : game.startBake(ref.current, level);
+      // リレー面(2-9・2-10)は、焼く → 積む → 配る を 順に つなぐ
+      const starterOf = (lv: typeof level) => (r: HTMLElement, l: typeof level, relay?: import('../../bake/relay.ts').RelayCtx) =>
+        levels.isTower(lv) ? tower.startTower(r, l as typeof lv, relay) : levels.isToss(lv) ? toss.startToss(r, l as typeof lv, relay) : game.startBake(r, l as import('../../bake/levels.ts').BakeLevel, relay);
+      stop = levels.isRelay(level) ? relayMod.startRelay(ref.current, level, starterOf) : starterOf(level)(ref.current, level);
     });
     return () => {
       cancelled = true;

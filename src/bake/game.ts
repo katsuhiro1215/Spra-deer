@@ -3,6 +3,7 @@ import { Progress } from '../progress.ts';
 import { Wallet, clearRewards, waitText, STAMINA_MAX, STAMINA_FAIL } from '../wallet.ts';
 import { RunnerAudio } from '../runner/audio.ts';
 import { BAKE_LEVELS, DEER_NAME, type BakeLevel } from './levels.ts';
+import { applyCarry, carryOf, type RelayCtx } from './relay.ts';
 import { HELPER_TEXT, mountHelpers } from './helpers.ts';
 import { BAL, BakeRun, type BakeEvent } from './sim.ts';
 import { BakeView } from './view.ts';
@@ -19,24 +20,27 @@ const FAIL_TEXT: Record<string, [string, string]> = {
 };
 type Pose = 'idle' | 'hooray' | 'trouble' | 'wave';
 
-export function startBake(root: HTMLElement, base: BakeLevel): () => void {
+export function startBake(root: HTMLElement, base: BakeLevel, relay?: RelayCtx): () => void {
   const q = <T extends HTMLElement>(k: string) => root.querySelector<T>(`[data-ks="${k}"]`)!;
   const wallet = new Wallet();
   const progress = new Progress();
   // プレミアムコインは1つの面に1枚だけ。もう取った面では出さない(設計書 25-3)
-  const premiumTaken = wallet.hasPremium(base.id);
   const level: BakeLevel = base;
-  const newRun = () => new BakeRun(level, { premium: !premiumTaken });
+  // リレー面(2-9・2-10)では、記録と コインは その面の番号で つける
+  const rid = relay?.id ?? level.id;
+  const premiumTaken = wallet.hasPremium(rid);
+  const newRun = () => applyCarry(new BakeRun(level, { premium: !premiumTaken }), relay);
   const view = new BakeView(q('stage'), level);
-  const nextLevel = BAKE_LEVELS[BAKE_LEVELS.findIndex(l => l.id === level.id) + 1];
+  const nextLevel = BAKE_LEVELS[BAKE_LEVELS.findIndex(l => l.id === rid) + 1];
   let run = newRun();
   let charged = false, recorded = false;
 
-  q('lv-id').textContent = `面 ${level.id}`;
-  q('lv-title').textContent = level.title;
+  q('lv-id').textContent = `面 ${rid}`;
+  q('lv-title').textContent = relay ? `${relay.title}(${relay.part + 1}/${relay.parts})` : level.title;
   q('goal').textContent = `/ ${level.goal}頭`;
-  q('s-title').textContent = level.title;
+  q('s-title').textContent = relay ? relay.title : level.title;
   q('s-lead').textContent = `${level.summary}。${level.time}秒で、鹿を ${level.goal}頭 まんぞくさせよう！`;
+  if (relay) q('s-lead').textContent = `${relay.summary}。まずは: ${q('s-lead').textContent}`;
   const pr = level.premium;
   q('s-prem').textContent = premiumTaken ? '◆ この面の プレミアムコインは 取ったよ'
     : pr.kind === 'streak' ? `◆ 極上せんべいを ${pr.n}まい 続けて作ると…？` : '◆ くいしんぼう鹿を、台に 着く前に 全部 おいはらうと…？';
@@ -263,9 +267,9 @@ export function startBake(root: HTMLElement, base: BakeLevel): () => void {
     let newBest = false;
     if (cleared && !recorded) {
       recorded = true;
-      newBest = progress.clear(level.id, run.t);
-      const got = clearRewards(wallet, level.id, { silver: run.coins, gold: run.gold, star3: stars === 3 });
-      const prem = run.premium && wallet.takePremium(level.id);
+      newBest = progress.clear(rid, (relay?.carry?.t ?? 0) + run.t);
+      const got = clearRewards(wallet, rid, { silver: run.coins, gold: run.gold, star3: stars === 3 });
+      const prem = run.premium && wallet.takePremium(rid);
       q('r-reward').textContent = `+${got.silver} シルバー` + (got.gold ? `　+${got.gold} ゴールド` : '') + (prem ? '　+1 プレミアム！' : '');
       q('r-reward').classList.remove('lose');
     }
@@ -275,7 +279,7 @@ export function startBake(root: HTMLElement, base: BakeLevel): () => void {
       q('r-reward').classList.add('lose');
     }
     paintStamina();
-    const best = progress.get(level.id).best, why = FAIL_TEXT[run.reason ?? ''];
+    const best = progress.get(rid).best, why = FAIL_TEXT[run.reason ?? ''];
     q('r-title').textContent = cleared ? 'おみせ だいせいこう！' : why?.[0] ?? 'ざんねん…';
     q('r-tip').textContent = cleared ? '' : why?.[1] ?? '';
     q('r-stars').textContent = cleared ? '★'.repeat(stars) + '☆'.repeat(3 - stars) : '';
@@ -294,7 +298,7 @@ export function startBake(root: HTMLElement, base: BakeLevel): () => void {
   let hinted = new Set<string>();
   const hint = (key: string, msg: string, ms = 3000) => { if (!hinted.has(key)) { hinted.add(key); toast(msg, ms); } };
   const begin = () => {
-    if (!wallet.canPlay()) {
+    if ((!relay || relay.part === 0) && !wallet.canPlay()) {
       paintStamina();
       toast(`体力が たりません(回復まで ${waitText(wallet.waitToPlay)})`, 3000);
       return;
@@ -308,7 +312,7 @@ export function startBake(root: HTMLElement, base: BakeLevel): () => void {
     run = newRun();
     hinted = new Set();
     run.start();
-    progress.attempt(level.id);
+    if (!relay || relay.part === 0) progress.attempt(rid);
     elStart.classList.remove('on'); elResult.classList.remove('on');
     react('wave', 'いらっしゃいませ！', 1800);
     paintHud();
@@ -326,7 +330,7 @@ export function startBake(root: HTMLElement, base: BakeLevel): () => void {
   q('snd-r').addEventListener('click', toggleSound);
   paintSound();
   q('go').addEventListener('click', () => begin());
-  q('retry').addEventListener('click', () => begin());
+  q('retry').addEventListener('click', () => (relay ? relay.restart() : begin()));
 
   // ---- 入力: タップした所が鉄板か鹿か(画面の位置で決める)。キーボードは 1〜3=鉄板・Q/W/E=鹿 ----
   const frameEl = q('frame');
@@ -422,7 +426,7 @@ export function startBake(root: HTMLElement, base: BakeLevel): () => void {
     }
     if (run.phase !== prevPhase) {
       prevPhase = run.phase;
-      if (run.phase === 'cleared' || run.phase === 'failed') resultTimer = window.setTimeout(showResult, run.phase === 'cleared' ? 2400 : 1600);
+      if (run.phase === 'cleared' || run.phase === 'failed') resultTimer = window.setTimeout(() => (relay && run.phase === 'cleared' && relay.part < relay.parts - 1 ? relay.next(carryOf(run, relay)) : showResult()), run.phase === 'cleared' ? 2400 : 1600);
     }
     paintHud();
     view.render(run, dt);
@@ -432,6 +436,8 @@ export function startBake(root: HTMLElement, base: BakeLevel): () => void {
   raf = requestAnimationFrame(frame);
 
   // 動作確認用(開発中の自動テストから状態を読む・操作する)
+  // リレーの 2つ目からは、すぐ はじめる(体力は はじめに 1回だけ)
+  if (relay && relay.part > 0) begin();
   (window as unknown as { __bake?: unknown }).__bake = { get run() { return run; }, level, view, audio };
 
   return () => {
@@ -449,5 +455,6 @@ export function startBake(root: HTMLElement, base: BakeLevel): () => void {
     view.dispose();
     helpers.dispose();
     elLabels.replaceChildren();
+    root.classList.remove('bk-p4');
   };
 }

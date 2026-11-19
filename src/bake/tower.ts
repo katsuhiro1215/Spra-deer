@@ -54,7 +54,7 @@ export const TBAL = {
 export type Layer = { x: number; r: number; perfect: boolean };
 export type TowerEvent = {
   kind: 'drop' | 'land' | 'perfect' | 'miss' | 'collapse' | 'big' | 'deliver' | 'arrive' | 'happy' | 'angry' | 'heart' | 'premium' | 'clear' | 'fail' | 'notYet'
-    | 'windWarn' | 'wind' | 'windEnd' | 'nibbler' | 'nibAim' | 'nibble' | 'nibShoo' | 'nibLeave';
+    | 'windWarn' | 'wind' | 'windEnd' | 'nibbler' | 'nibAim' | 'nibble' | 'nibShoo' | 'nibLeave' | 'nibBlock';
   /** 着いた段・崩れはじめた段・とどけた段数 */
   n?: number; x?: number; gold?: boolean; deer?: number;
   /** 崩れて落ちた段・とどけたタワー(絵のため) */
@@ -290,7 +290,11 @@ export class TowerRun {
     const b = this.nibbler;
     if (!b) return;
     b.t += dt;
-    if (b.phase === 'walk' && b.t >= TBAL.nibWalk) { b.phase = 'aim'; b.t = 0; this.events.push({ kind: 'nibAim', deer: b.id }); }
+    if (b.phase === 'walk' && b.t >= TBAL.nibWalk) {
+      // Kuru: 左から来た鹿を 通せんぼ
+      if (this.level.helpers?.includes('kuru') && b.side === -1) { b.phase = 'flee'; b.t = 0; this.events.push({ kind: 'nibBlock', deer: b.id }); return; }
+      b.phase = 'aim'; b.t = 0; this.events.push({ kind: 'nibAim', deer: b.id });
+    }
     else if (b.phase === 'aim' && b.t >= TBAL.nibAim) { b.phase = 'eat'; b.t = TBAL.nibBite; }
     else if (b.phase === 'eat' && b.t >= TBAL.nibBite) {
       b.t = 0;

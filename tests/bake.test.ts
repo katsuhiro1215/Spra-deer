@@ -280,3 +280,41 @@ test('2-5・2-8 のバランス: 人の手の ぶれ(±0.45秒)が あっても 
   const careless = drive(BAKE_LEVELS.find(l => l.id === '2-5') as BakeLevel, { timing: 'ok', delay: 0.4 });
   assert.ok(careless.lives < 3, '「やわらか」「こんがり」を 気にしないと ハートが へる');
 });
+
+// ---- 2-9・2-10: リレー面 ----
+test('リレー面: 焼く → 積む → 配る の順。ハート・コイン・ゴールド・プレミアム・時間を 引きつぐ', async () => {
+  const { applyCarry, carryOf } = await import('../src/bake/relay.ts');
+  const { isRelay, isTower, isToss } = await import('../src/bake/levels.ts');
+  for (const id of ['2-9', '2-10']) {
+    const lv = BAKE_LEVELS.find(l => l.id === id)!;
+    assert.ok(isRelay(lv), id);
+    assert.deepEqual(lv.parts.map(p => (isTower(p) ? 'tower' : isToss(p) ? 'toss' : 'bake')), ['bake', 'tower', 'toss'], id);
+  }
+  const ctx = { id: '2-9', title: '', summary: '', part: 1, parts: 3, carry: { lives: 2, coins: 40, gold: 1, premium: false, t: 50 }, next: () => {}, restart: () => {} };
+  const r = applyCarry(new BakeRun(LEVEL_2_1), ctx);
+  assert.equal(r.lives, 2); assert.equal(r.coins, 40); assert.equal(r.gold, 1);
+  r.t = 30;
+  assert.equal(carryOf(r, ctx).t, 80, '時間は 足していく');
+});
+
+test('2-9・2-10 のバランス: ふつうの人(ボット)なら、3つ続けて ハートを引きついで クリア', async () => {
+  const { isRelay, isTower, isToss } = await import('../src/bake/levels.ts');
+  const { driveTower } = await import('./towerbot.ts');
+  const { driveToss } = await import('./tossbot.ts');
+  for (const id of ['2-9', '2-10']) {
+    const lv = BAKE_LEVELS.find(l => l.id === id)!;
+    if (!isRelay(lv)) continue;
+    let ok = 0;
+    for (let seed = 1; seed <= 4; seed++) {
+      let lives = 3, alive = true;
+      for (const p of lv.parts) {
+        if (!alive) break;
+        const res = isTower(p) ? driveTower(p, { err: 0.1, errSide: 'rand', seed, windComp: 0.5, shooDelay: 1 }) : isToss(p) ? driveToss(p, { errD: 0.15, errX: 0.2, seed }) : drive(p as BakeLevel, { delay: 0.6, jitter: 0.45, seed });
+        lives -= 3 - res.lives;
+        alive = res.phase === 'cleared' && lives > 0;
+      }
+      if (alive) ok++;
+    }
+    assert.ok(ok >= 3, `${id} ${ok}/4`);
+  }
+});

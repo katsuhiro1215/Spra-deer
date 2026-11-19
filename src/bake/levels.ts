@@ -106,7 +106,17 @@ export type TossLevel = W2Common & {
   notes?: { t: number; text: string }[];
 };
 
-export type W2Level = BakeLevel | TowerLevel | TossLevel;
+/** リレー面(2-9・2-10): 1つの面の中で、焼く → 積む → 配る を 順につなぐ。ハート・コイン・時間は 引きつぐ(src/bake/relay.ts) */
+export type RelayLevel = W2Common & {
+  mode: 'relay';
+  id: string;
+  title: string;
+  summary: string;
+  intro: string;
+  parts: (BakeLevel | TowerLevel | TossLevel)[];
+};
+
+export type W2Level = BakeLevel | TowerLevel | TossLevel | RelayLevel;
 
 /** 鹿の種類ごとの名前 */
 export const DEER_NAME: Record<DeerKind, string> = { fawn: '子鹿', doe: 'めす鹿', stag: '大きな鹿' };
@@ -300,8 +310,108 @@ export const LEVEL_2_8: BakeLevel = {
   ],
 };
 
-export const BAKE_LEVELS: W2Level[] = [LEVEL_2_1, LEVEL_2_2, LEVEL_2_3, LEVEL_2_4, LEVEL_2_5, LEVEL_2_6, LEVEL_2_7, LEVEL_2_8];
+// ---- リレー面 ----
+const RAIN: W2Scene = { place: 'ukimido', rain: true };
+
+export const LEVEL_2_9: RelayLevel = {
+  mode: 'relay',
+  id: '2-9', title: '雨の 大いそがし', summary: '雨の 浮見堂で。焼いて → 積んで → 投げて くばる',
+  intro: '焼いて、積んで、投げて！ 3つ 続けて がんばろう',
+  scene: RAIN, helpers: ['kuru'],
+  parts: [
+    {
+      id: '2-9', title: '焼く', summary: '雨で 生地が しめって、焼けるのが ゆっくり', intro: 'まずは 焼いて わたそう！ 雨で 焼けるのが ゆっくりだよ',
+      scene: RAIN, helpers: ['kuru'],
+      time: 75, goal: 6, plates: 3,
+      cook: { ok: 3.5, perfect: [4.3, 5.1], smoke: 5.9, burn: 7.1 },
+      patience: { fawn: 28, doe: 32, stag: 38 },
+      arrivals: seq([[3, 'doe', 2], [10, 'fawn', 1, 'soft'], [17, 'stag', 3], [24, 'doe', 2, 'crisp'], [31, 'fawn', 1], [38, 'doe', 2], [45, 'stag', 2], [52, 'fawn', 1, 'soft'], [58, 'doe', 2]]),
+      sneaks: [{ t: 14, side: -1 }, { t: 28, side: 1 }, { t: 44, side: -1 }, { t: 56, side: 1 }],
+      premium: { kind: 'streak', n: 5 },
+      notes: [{ t: 12, text: 'くいしんぼう鹿！ 左から 来たら Kuru が 通せんぼ。右は タップで おいはらおう' }],
+    },
+    {
+      mode: 'tower', id: '2-9', title: '積む', summary: 'タワーを とどける', intro: 'つぎは 積んで とどけよう！',
+      scene: RAIN, helpers: ['kuru'],
+      time: 60, goal: 3,
+      orders: [{ kind: 'fawn', want: 5 }, { kind: 'doe', want: 6 }, { kind: 'stag', want: 7 }, { kind: 'doe', want: 6 }],
+      patience: 30, swing: { speed: 0.9, accel: 0.07 }, premiumHeight: 12,
+      nibblers: [{ t: 12, side: -1 }, { t: 30, side: 1 }, { t: 46, side: -1 }],
+    },
+    {
+      mode: 'toss', id: '2-9', title: '配る', summary: '投げて くばる', intro: 'さいごは 投げて くばろう！',
+      scene: RAIN, helpers: ['kuru'],
+      time: 55, goal: 8, senbei: 13,
+      patience: { fawn: 13, doe: 15, stag: 18 },
+      arrivals: toss([
+        [2, 'doe', 0, MID, 1], [5, 'fawn', -1.1, NEAR, 1], [9, 'stag', 1.0, FAR, 2], [13, 'doe', -1.6, FAR, 1],
+        [17, 'fawn', 1.4, NEAR, 1, [-1.2, NEAR], 0.9], [21, 'doe', 0.4, MID, 1], [25, 'fawn', -1.8, MID, 1], [29, 'doe', 1.6, FAR, 1], [33, 'fawn', 0, NEAR, 1],
+      ]),
+      guide: 0.55, premiumStreak: 4,
+    },
+  ],
+};
+
+/** 2-10 は なかま 5人 みんなで お店を まわす */
+const ALL: FriendId[] = ['lumi', 'momo', 'kuru', 'piko', 'ruru'];
+const FIELD: W2Scene = { place: 'tobihino', hill: true };
+
+export const LEVEL_2_10: RelayLevel = {
+  mode: 'relay',
+  id: '2-10', title: '鹿寄せの 大行列', summary: '飛火野の 鹿寄せ。ホルンが なると 鹿が 大集合！ なかま みんなで 焼いて 積んで くばる',
+  intro: 'ホルンが なったら 鹿が 大集合！ みんなで お店を まわそう！',
+  scene: FIELD, helpers: ALL,
+  parts: [
+    {
+      id: '2-10', title: '焼く', summary: '鹿の 大行列', intro: 'プップー！ ホルンの 合図で 鹿が 大行列！ どんどん 焼こう！',
+      scene: FIELD, helpers: ALL,
+      time: 90, goal: 12, plates: 4,
+      cook: { ok: 3.0, perfect: [3.7, 4.5], smoke: 5.2, burn: 6.4 },
+      heat: [1.3, 1, 1, 0.8],
+      patience: { fawn: 24, doe: 28, stag: 34 },
+      arrivals: seq([
+        [2, 'doe', 2], [4, 'fawn', 1, 'soft'], [6, 'stag', 3, 'crisp'],
+        [16, 'doe', 2], [18, 'fawn', 2, 'soft'], [26, 'stag', 4],
+        [30, 'doe', 2, 'crisp'], [36, 'fawn', 1], [40, 'stag', 3],
+        [46, 'doe', 3], [48, 'fawn', 1, 'soft'], [54, 'stag', 4, 'crisp'],
+        [60, 'doe', 2], [64, 'fawn', 2], [68, 'stag', 3], [74, 'doe', 2],
+      ]),
+      sneaks: [{ t: 10, side: 1 }, { t: 22, side: -1 }, { t: 34, side: 1 }, { t: 50, side: -1 }, { t: 62, side: 1 }],
+      premium: { kind: 'streak', n: 6 },
+      notes: [{ t: 3, text: 'なかま みんなが 手伝ってくれる！ Lumi=金色が のびる・Ruru=水・Kuru=通せんぼ・Momo=鹿が 待つ' }],
+    },
+    {
+      mode: 'tower', id: '2-10', title: '積む', summary: '大きな タワー', intro: 'つぎは 大きな タワー！ 風と いたずら鹿に 気をつけて',
+      scene: FIELD, helpers: ALL,
+      time: 75, goal: 4,
+      orders: [{ kind: 'doe', want: 6 }, { kind: 'stag', want: 8 }, { kind: 'fawn', want: 7 }, { kind: 'stag', want: 9 }, { kind: 'doe', want: 7 }],
+      patience: 30, swing: { speed: 0.95, accel: 0.08 }, premiumHeight: 13,
+      wind: { from: 6, every: 9, dur: 3, force: 1.1 },
+      nibblers: [{ t: 10, side: 1 }, { t: 24, side: -1 }, { t: 38, side: 1 }, { t: 52, side: 1 }],
+    },
+    {
+      mode: 'toss', id: '2-10', title: '配る', summary: '鹿寄せの 大集合', intro: 'さいごは 鹿寄せ！ 集まった 鹿 みんなに 投げて くばろう！',
+      scene: FIELD, helpers: ALL,
+      time: 80, goal: 18, senbei: 28,
+      patience: { fawn: 12, doe: 14, stag: 17 },
+      arrivals: toss([
+        [1, 'doe', 0, NEAR, 1], [2, 'fawn', -1.4, MID, 1], [3, 'doe', 1.4, MID, 1], [4, 'stag', 0, FAR, 2],
+        [8, 'fawn', -1.8, FAR, 1], [9, 'doe', 1.8, FAR, 1], [10, 'fawn', 0.8, NEAR, 1, [-1.0, NEAR], 1.2],
+        [15, 'stag', -1.0, TOP, 2], [16, 'doe', 1.0, TOP, 1], [18, 'fawn', -1.2, NEAR, 1],
+        [23, 'doe', 0, MID, 1], [24, 'fawn', 1.9, MID, 1, [-1.9, MID], 1.4], [26, 'stag', 1.6, FAR, 2],
+        [31, 'doe', -1.6, MID, 1], [33, 'fawn', 0.2, TOP, 1], [35, 'doe', 1.2, NEAR, 1],
+        [40, 'fawn', -1.9, FAR, 1, [1.4, FAR], 1.0], [42, 'doe', 0, NEAR, 1], [45, 'stag', -0.6, TOP, 2],
+        [50, 'doe', 1.6, MID, 1], [52, 'fawn', -1.0, NEAR, 1], [56, 'doe', 0.6, FAR, 1], [60, 'fawn', -1.6, MID, 1],
+      ]),
+      guide: 0.55, premiumStreak: 5,
+      wind: { from: 10, every: 12, dur: 3, force: 1.0 },
+    },
+  ],
+};
+
+export const BAKE_LEVELS: W2Level[] = [LEVEL_2_1, LEVEL_2_2, LEVEL_2_3, LEVEL_2_4, LEVEL_2_5, LEVEL_2_6, LEVEL_2_7, LEVEL_2_8, LEVEL_2_9, LEVEL_2_10];
 export const bakeById = (id: string): W2Level | undefined => BAKE_LEVELS.find(l => l.id === id);
 export const isTower = (l: W2Level): l is TowerLevel => l.mode === 'tower';
 export const isToss = (l: W2Level): l is TossLevel => l.mode === 'toss';
 export const isBake = (l: W2Level): l is BakeLevel => !l.mode || l.mode === 'bake';
+export const isRelay = (l: W2Level): l is RelayLevel => l.mode === 'relay';
