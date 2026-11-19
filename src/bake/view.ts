@@ -622,6 +622,12 @@ export class BakeView {
       m.position.set(lm.x ?? 0, lm.h / 2 - 0.4, lm.z ?? -24);
       this.scene.add(m);
     }
+    if (sc.hill) {
+      const hill = new THREE.Mesh(new THREE.SphereGeometry(1, 40, 20, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.MeshStandardMaterial({ color: '#79b04f', roughness: 1, fog: false }));
+      // 鹿の立つ いちばん奥(山の上)の すぐうしろから もり上がる
+      hill.scale.set(18, 5.5, 5); hill.position.set(0, -0.3, -15.5);
+      this.scene.add(hill);
+    }
     if (sc.night) {
       this.scene.background = new THREE.Color('#0f1630');
       this.scene.fog = new THREE.Fog('#141c3a', 9, 34);

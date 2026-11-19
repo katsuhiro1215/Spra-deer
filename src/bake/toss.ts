@@ -49,6 +49,10 @@ export const SBAL = {
   coinLeft: 2,
   /** この距離(m)より遠い鹿に「ぴったり」で、ゴールド */
   goldDist: 6,
+  /** 風: ふく前の 予告(秒)・Piko が手伝うと 流される割合・Momo が手伝うと 鹿が待つ長さ(倍) */
+  windWarn: 1.4,
+  pikoWind: 0.35,
+  momoPatience: 1.3,
 };
 
 export type TossDeerPhase = 'walk' | 'wait' | 'eat' | 'pick' | 'happy' | 'angry';
@@ -74,7 +78,7 @@ export type TossDeer = {
 export type Flight = { id: number; x0: number; z0: number; x1: number; z1: number; T: number; h: number; t: number; dist: number };
 export type Ground = { id: number; x: number; z: number; t: number; claimed: number | null };
 export type TossEvent = {
-  kind: 'throw' | 'catch' | 'perfect' | 'miss' | 'pick' | 'vanish' | 'arrive' | 'happy' | 'angry' | 'heart' | 'premium' | 'clear' | 'fail' | 'served';
+  kind: 'throw' | 'catch' | 'perfect' | 'miss' | 'pick' | 'vanish' | 'arrive' | 'happy' | 'angry' | 'heart' | 'premium' | 'clear' | 'fail' | 'served' | 'windWarn' | 'wind' | 'windEnd';
   deer?: number; id?: number; x?: number; z?: number;
   /** 屋台からの距離(m)・ゴールド・数(ぴったりの連続、あまったせんべい) */
   dist?: number; gold?: boolean; n?: number;
@@ -115,6 +119,13 @@ export class TossRun {
   private premiumOn: boolean;
   private nextArrival = 0;
   private nextId = 1;
+  /** 風: 向き(−1/0/1)・予告の向き・のこりの秒数 */
+  wind: -1 | 0 | 1 = 0;
+  windComing: -1 | 0 | 1 = 0;
+  windLeft = 0;
+  private nextWind = 0;
+  /** 風で 流される速さ(m/秒。左が −)。Piko が手伝うと 弱い */
+  get windSpeed(): number { const w = this.level.wind; return w && this.wind ? this.wind * w.force * (this.level.helpers?.includes('piko') ? SBAL.pikoWind : 1) : 0; }
 
   constructor(level: TossLevel, opts: { premium?: boolean } = {}) {
     this.level = level;
@@ -182,8 +193,12 @@ export class TossRun {
     this.t += dt;
     this.reload = Math.max(0, this.reload - dt);
     this.arrive();
+    this.stepWind(dt);
+    const ws = this.windSpeed;
     for (const f of [...this.flights]) {
       f.t += dt;
+      // 風: 着く所が 横へ ずれていく
+      f.x1 += ws * dt;
       if (f.t >= f.T) { this.flights.splice(this.flights.indexOf(f), 1); this.land(f); }
       if (this.phase !== 'running') return;
     }
@@ -195,6 +210,26 @@ export class TossRun {
     if (this.t >= this.level.time) { this.fail('time'); return; }
     // せんべいが なくなって、とんでいるのも、拾われそうなのも ない
     if (this.stock <= 0 && !this.flights.length && !this.ground.length && !this.deer.some(d => d.phase === 'pick')) this.fail('empty');
+  }
+
+  /** 風: 予告(矢印)のあとに ふく */
+  private stepWind(dt: number) {
+    const w = this.level.wind;
+    if (!w || this.t < w.from) return;
+    if (this.windLeft > 0) {
+      this.windLeft -= dt;
+      if (this.windLeft <= 0) {
+        if (this.windComing) { this.wind = this.windComing; this.windComing = 0; this.windLeft = w.dur; this.events.push({ kind: 'wind', n: this.wind }); }
+        else { this.wind = 0; this.windLeft = 0; this.events.push({ kind: 'windEnd' }); }
+      }
+      return;
+    }
+    this.nextWind -= dt;
+    if (this.nextWind > 0) return;
+    this.nextWind = w.every;
+    this.windComing = Math.floor(this.t / w.every) % 2 ? 1 : -1;
+    this.windLeft = SBAL.windWarn;
+    this.events.push({ kind: 'windWarn', n: this.windComing });
   }
 
   /** 来る時刻になった鹿を出す(立つ場所に ほかの鹿がいたら、去るまで待つ。順番は守る) */
@@ -211,7 +246,7 @@ export class TossRun {
     const side = a.at[0] >= 0 ? 1 : -1, from: [number, number] = [side * 5.6, a.at[1] - 0.8];
     const dist = Math.hypot(a.at[0] - from[0], a.at[1] - from[1]);
     this.deer.push({
-      id: this.nextId++, kind: a.kind, want: a.want, got: 0, phase: 'walk', t: 0, waited: 0, patience: this.level.patience[a.kind],
+      id: this.nextId++, kind: a.kind, want: a.want, got: 0, phase: 'walk', t: 0, waited: 0, patience: this.level.patience[a.kind] * (this.level.helpers?.includes('momo') ? SBAL.momoPatience : 1),
       x: from[0], z: from[1], home: [...a.at], move: a.move ? [...a.move] : null, speed: a.speed ?? 0.5, u: 0, dirU: 1,
       from, walkT: Math.max(1.2, dist / SBAL.walkSpeed), pickId: null, pickFrom: [0, 0], leaveFrom: [0, 0],
     });

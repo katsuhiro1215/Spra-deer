@@ -198,6 +198,10 @@ export class TossView extends BakeView {
       if (m) m.visible = g.claimed !== null || g.t < SBAL.groundLife - 1.2 || Math.sin(this.time * 20) > 0;
     }
     this.paintTossDeer(run, dt);
+    // 風: 葉っぱが 横へ とぶ
+    if (run.wind && Math.random() < dt * 24) {
+      this.emit('crumb', new THREE.Vector3(-run.wind * 5, 0.6 + Math.random() * 2.2, -1.5 - Math.random() * 7), { n: 1, spread: 0.3, v: new THREE.Vector3(run.wind * 5, 0.2, 0), vr: 0.6, size: 0.08, life: 1.8, color: Math.random() < 0.6 ? '#6fae47' : '#c9a25a' });
+    }
     this.finishFrame(dt);
   }
 

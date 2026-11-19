@@ -6,6 +6,7 @@ import { RunnerAudio } from '../runner/audio.ts';
 import { BAKE_LEVELS, DEER_NAME, type TossLevel } from './levels.ts';
 import { SBAL, TossRun, type TossEvent } from './toss.ts';
 import { TossView } from './tossView.ts';
+import { HELPER_TEXT, mountHelpers } from './helpers.ts';
 
 const STEP = 1 / 120;
 const BAKE_BGM = { url: '/assets/audio/play.mp3', loopStart: 0, loopEnd: 1e4, volume: 0.32 };
@@ -45,6 +46,13 @@ export function startToss(root: HTMLElement, level: TossLevel): () => void {
     '<li><b>♥</b> 鹿を 待たせすぎると へる。せんべいが なくなると おしまい</li>',
   ].join('');
   q('keys').textContent = 'キーボード: ←→ = 向き/↑↓ = 強さ/スペース = 投げる';
+  const helpers = mountHelpers(root, level.helpers);
+  {
+    const extra: string[] = [];
+    if (level.wind) extra.push('<li><b>風</b> とんでいる せんべいが 流される。矢印の 反対に ずらそう</li>');
+    for (const id of level.helpers ?? []) { const t = HELPER_TEXT[id]; if (t) extra.push(`<li><b>なかま</b> ${t}</li>`); }
+    q('how').insertAdjacentHTML('beforeend', extra.join(''));
+  }
   q('go').textContent = 'せんべいを くばる';
   q('r-l1').textContent = 'まんぞくした鹿';
   q('r-l2').textContent = 'ぴったり キャッチ';
@@ -94,6 +102,7 @@ export function startToss(root: HTMLElement, level: TossLevel): () => void {
       case 'angry': tone(420, 200, 0.3, 'square', 0.045); tone(380, 180, 0.3, 'square', 0.04, 0.18); break;
       case 'heart': audio.sfx('hit'); break;
       case 'premium': audio.sfx('premium'); break;
+      case 'windWarn': noise(1.6, 0.12, 'bandpass', 500, 0, 1.2); break;
       case 'clear': audio.stopMusic(); audio.jingle('clear'); break;
       case 'fail': audio.stopMusic(); audio.jingle('fail'); break;
     }
@@ -159,6 +168,8 @@ export function startToss(root: HTMLElement, level: TossLevel): () => void {
   const alertText = (): [string, string] => {
     if (run.phase !== 'running') return ['', ''];
     if (run.stock > 0 && run.stock <= 3) return [`のこり ${run.stock}まい！ よく ねらって`, 'red'];
+    if (run.windComing) return [run.windComing > 0 ? '風が くる！ → → →' : '風が くる！ ← ← ←', 'yellow'];
+    if (run.wind) return [run.wind > 0 ? '風 → → →  左に ずらして！' : '風 ← ← ←  右に ずらして！', 'yellow'];
     if (run.deer.some(d => d.phase === 'wait' && d.waited / d.patience > 0.7)) return ['鹿が 待ちくたびれてる！', 'yellow'];
     if (run.streak >= 2) return [`ぴったり ×${run.streak} れんぞく！`, 'gold'];
     return ['', ''];
@@ -344,10 +355,12 @@ export function startToss(root: HTMLElement, level: TossLevel): () => void {
       case 'arrive':
         if (d && d.move) hint('moving', '歩いている鹿だ！ 少し 先を ねらおう', 2800);
         else if (d) hint(`arrive${d.z < -6.5 ? 'far' : ''}`, d.z < -6.5 ? '奥の鹿は、長めに なぞって 遠くへ！' : '鹿が おじぎ！ 足もとの 輪を ねらって 投げよう', 3000);
+        if (level.helpers?.includes('momo') && Math.random() < 0.25) helpers.say('momo', 'ゆっくり 待っててね', 1300);
         break;
       case 'served': if (d && d.want >= 2) toast(`${DEER_NAME[d.kind]}も まんぞく！`, 1400); break;
       case 'angry': react('trouble', 'ごめんね…', 1600); toast('鹿が おこって 帰っちゃった…', 2000); break;
       case 'premium': toast(`◆ プレミアムコイン！！ ぴったり ${level.premiumStreak}れんぞく！`, 3200); break;
+      case 'windWarn': hint('wind', '風が くるよ！ とんでいる せんべいが 矢印の 向きに 流される', 2600); if (level.helpers?.includes('piko')) helpers.say('piko', 'ふーっ！ 風よ よわまれ！', 1500); break;
       case 'clear': toast('目標たっせい！ くばり おわり！', 3000); react('hooray', 'やったね！', 4000); break;
       case 'fail': react('trouble', '', 4000); break;
     }
@@ -402,6 +415,7 @@ export function startToss(root: HTMLElement, level: TossLevel): () => void {
     delete (window as unknown as { __bake?: unknown }).__bake;
     audio.close();
     view.dispose();
+    helpers.dispose();
     elLabels.replaceChildren();
     root.classList.remove('bk-mode-toss');
   };

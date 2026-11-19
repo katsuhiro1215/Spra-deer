@@ -15,10 +15,12 @@ export type TossPolicy = {
   react?: number;
   /** 投げたあと、次に投げるまでの間(秒) */
   pause?: number;
+  /** 風の分を 何割 見こして ずらすか(0 = 気にしない) */
+  windComp?: number;
 };
 
 export function driveToss(level: TossLevel, policy: TossPolicy = {}, dt = 1 / 120): TossRun {
-  const { errD = 0, errX = 0, seed = 1, lead = true, react = 0.8, pause = 0.6 } = policy;
+  const { errD = 0, errX = 0, seed = 1, lead = true, react = 0.8, pause = 0.6, windComp = 0.6 } = policy;
   let a = seed >>> 0;
   const rnd = () => { a = (a + 0x6d2b79f5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
   const run = new TossRun(level);
@@ -47,7 +49,10 @@ export function driveToss(level: TossLevel, policy: TossPolicy = {}, dt = 1 / 12
         const [tx, tz] = ahead(d, SBAL.flightBase + SBAL.flightPer * D);
         // 屋台から見た向きのまま、距離と横にぶれを足す
         const ang = Math.atan2(tx, SBAL.originZ - tz), dist = Math.hypot(tx, tz - SBAL.originZ) * (1 + (rnd() * 2 - 1) * errD), side = (rnd() * 2 - 1) * errX;
-        const x = Math.sin(ang) * dist + Math.cos(ang) * side, z = SBAL.originZ - Math.cos(ang) * dist + Math.sin(ang) * side;
+        // 風: ふいている(予告が出ている)ときは、流される分を 見こして 風上へ
+        const T = SBAL.flightBase + SBAL.flightPer * dist, w = level.wind;
+        const ws = run.windSpeed || (run.windComing && w ? run.windComing * w.force * (level.helpers?.includes('piko') ? SBAL.pikoWind : 1) : 0);
+        const x = Math.sin(ang) * dist + Math.cos(ang) * side - ws * T * windComp, z = SBAL.originZ - Math.cos(ang) * dist + Math.sin(ang) * side;
         const before = run.flights.length;
         if (run.throwTo(x, z) && run.flights.length > before) aimed.set(run.flights.at(-1)!.id, d.id);
         wait = pause;

@@ -12,7 +12,7 @@ export type Taste = 'soft' | 'crisp';
 export type Arrival = { t: number; kind: DeerKind; want: number; taste?: Taste };
 
 /** 屋台を出す場所(2-5 から 面ごとに かわる): 奥に見える名所の絵・夜・雨 */
-export type W2Scene = { place: string; landmark?: { img: string; w: number; h: number; x?: number; z?: number }; night?: boolean; rain?: boolean };
+export type W2Scene = { place: string; landmark?: { img: string; w: number; h: number; x?: number; z?: number }; night?: boolean; rain?: boolean; /** 奥に 若草山(緑の山) */ hill?: boolean };
 /** 面の共通: 場所と、お店を手伝う なかま */
 type W2Common = { scene?: W2Scene; helpers?: FriendId[] };
 
@@ -101,6 +101,8 @@ export type TossLevel = W2Common & {
   guide: number;
   /** プレミアムコイン: 「ぴったり」キャッチを n 回続ける */
   premiumStreak: number;
+  /** 風(2-7 から): from 秒から、every 秒ごとに dur 秒ふく。とんでいる せんべいが 横へ 流される(force m/秒) */
+  wind?: { from: number; every: number; dur: number; force: number };
   notes?: { t: number; text: string }[];
 };
 
@@ -172,6 +174,8 @@ export const LEVEL_2_3: TowerLevel = {
 
 // 配る面の立ち位置(手前・まん中・奥)。屋台から 約2.5m・4.5m・7m
 const NEAR = -3.4, MID = -5.4, FAR = -7.8;
+/** 山の上(2-7。屋台から 約8.6m) */
+const TOP = -9.6;
 const toss = (list: [number, DeerKind, number, number, number, [number, number]?, number?][]): TossArrival[] =>
   list.map(([t, kind, x, z, want, move, speed]) => ({ t, kind, at: [x, z], want, ...(move ? { move, speed: speed ?? 0.5 } : {}) }));
 
@@ -243,6 +247,32 @@ export const LEVEL_2_6: TowerLevel = {
   ],
 };
 
+export const LEVEL_2_7: TossLevel = {
+  mode: 'toss',
+  id: '2-7', title: '山の上まで くばる', summary: '若草山の ふもとで。山の上の鹿・走る子鹿・風',
+  intro: '若草山の ふもとに お店を 出すよ！ 山の上の 鹿にも とどけよう',
+  scene: { place: 'wakakusa', hill: true },
+  helpers: ['momo'],
+  time: 95, goal: 13, senbei: 22,
+  patience: { fawn: 12, doe: 14, stag: 17 },
+  // 山の上(TOP)の鹿・走りまわる子鹿(速い)・風
+  arrivals: toss([
+    [2, 'doe', 0, MID, 1], [6, 'fawn', -1.0, NEAR, 1], [9, 'stag', 0.6, FAR, 2], [13, 'doe', -1.4, TOP, 1],
+    [17, 'fawn', -1.8, MID, 1, [1.8, MID], 1.3], [21, 'doe', 1.2, NEAR, 1], [25, 'stag', -0.4, TOP, 2], [28, 'fawn', 1.6, FAR, 1],
+    [33, 'fawn', 1.8, NEAR, 1, [-1.6, NEAR], 1.4], [36, 'doe', -1.8, FAR, 1], [41, 'stag', 1.4, TOP, 2, [-0.6, TOP], 0.5], [44, 'doe', 0, MID, 1],
+    [49, 'fawn', -1.9, MID, 1, [1.9, MID], 1.5], [53, 'doe', 1.1, TOP, 1], [57, 'fawn', 0.4, NEAR, 1], [61, 'stag', -1.6, FAR, 2],
+    [66, 'fawn', 1.9, FAR, 1, [-1.2, FAR], 1.2], [70, 'doe', -0.8, TOP, 1], [74, 'doe', 1.2, MID, 1],
+  ]),
+  guide: 0.55,
+  premiumStreak: 4,
+  wind: { from: 14, every: 11, dur: 3.5, force: 1.0 },
+  notes: [
+    { t: 12, text: '山の上の 鹿は 遠いよ！ 長ーく なぞろう' },
+    { t: 15, text: '風が ふくと、とんでいる せんべいが 流される！ 矢印の 反対に ずらそう' },
+    { t: 17, text: '走る 子鹿は 速い！ 先を ねらおう(Momo が いると、鹿が 長く 待ってくれる)' },
+  ],
+};
+
 export const LEVEL_2_8: BakeLevel = {
   id: '2-8', title: '鹿の 団体さん', summary: '夜の 燈花会で。団体さんの 大きな注文と、強火・弱火の 鉄板',
   intro: '夜の 燈花会に お店を 出すよ！ 暗いので 焼き色を よく見て',
@@ -270,7 +300,7 @@ export const LEVEL_2_8: BakeLevel = {
   ],
 };
 
-export const BAKE_LEVELS: W2Level[] = [LEVEL_2_1, LEVEL_2_2, LEVEL_2_3, LEVEL_2_4, LEVEL_2_5, LEVEL_2_6, LEVEL_2_8];
+export const BAKE_LEVELS: W2Level[] = [LEVEL_2_1, LEVEL_2_2, LEVEL_2_3, LEVEL_2_4, LEVEL_2_5, LEVEL_2_6, LEVEL_2_7, LEVEL_2_8];
 export const bakeById = (id: string): W2Level | undefined => BAKE_LEVELS.find(l => l.id === id);
 export const isTower = (l: W2Level): l is TowerLevel => l.mode === 'tower';
 export const isToss = (l: W2Level): l is TossLevel => l.mode === 'toss';

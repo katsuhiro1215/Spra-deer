@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { TossRun, SBAL } from "../src/bake/toss.ts";
-import { LEVEL_2_4, type TossLevel, type TossArrival } from "../src/bake/levels.ts";
+import { BAKE_LEVELS, LEVEL_2_4, type TossLevel, type TossArrival } from "../src/bake/levels.ts";
 import { driveToss } from "./tossbot.ts";
 
 const lv = (arrivals: TossArrival[], extra: Partial<TossLevel> = {}): TossLevel => ({ ...LEVEL_2_4, notes: [], arrivals, ...extra });
@@ -142,4 +142,36 @@ test("2-4 のバランス: ねらいが正確なら プレミアム。ぶれ15%�
   }
   assert.ok(ok15 >= 19, `ぶれ15%のクリア ${ok15}/20`);
   assert.ok(ok35 <= 12, `ぶれ35%のクリア ${ok35}/20`);
+});
+
+// ---- 2-7: 風・Momo ----
+test("風: 予告のあとに ふいて、とんでいる せんべいが 横へ 流される(Piko が手伝うと 弱い)。Momo がいると 鹿が 長く待つ", () => {
+  const land = (helpers: ("piko" | "momo")[]) => {
+    const r = start(lv([one(0, -5.4)], { helpers, wind: { from: 0, every: 99, dur: 9, force: 1 } }));
+    wait(r, SBAL.windWarn + 0.1);
+    assert.notEqual(r.wind, 0);
+    r.throwTo(0, -5.4);
+    const f = r.flights[0];
+    let x = 0;
+    while (r.flights.includes(f)) { x = f.x1; r.step(1 / 240); }
+    return Math.abs(x);
+  };
+  const free = land([]), piko = land(["piko"]);
+  assert.ok(free > 0.4, `流される ${free}`);
+  assert.ok(piko < free * 0.5, `Piko ${piko}`);
+  const m = start(lv([one(0, -5.4)], { helpers: ["momo"] }));
+  wait(m, 0.1);
+  assert.ok(m.deer[0].patience > LEVEL_2_4.patience.doe * 1.2);
+});
+
+test("2-7 のバランス: ぶれ15%で 風を 見こせば クリア。2-4 より むずかしい(ぶれ25%で 差が出る)", () => {
+  const lv27 = BAKE_LEVELS.find(l => l.id === "2-7") as TossLevel;
+  let ok = 0, sloppy27 = 0, sloppy24 = 0;
+  for (let seed = 1; seed <= 6; seed++) {
+    if (driveToss(lv27, { errD: 0.15, errX: 0.2, seed }).phase === "cleared") ok++;
+    if (driveToss(lv27, { errD: 0.25, errX: 0.3, react: 1.2, seed }).phase === "cleared") sloppy27++;
+    if (driveToss(LEVEL_2_4, { errD: 0.25, errX: 0.3, react: 1.2, seed }).phase === "cleared") sloppy24++;
+  }
+  assert.ok(ok >= 5, `2-7 ふつう ${ok}/6`);
+  assert.ok(sloppy27 < sloppy24, `ぶれ25%: 2-7 ${sloppy27} < 2-4 ${sloppy24}`);
 });
