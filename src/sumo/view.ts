@@ -1,20 +1,14 @@
 // WORLD 6「鹿ずもう」の3Dの絵: 奈良公園の土俵・2頭の鹿・応援のSpra・土ぼこり・カメラ。
 // 縦の画面に合わせて、押し合う向き(X)を ななめに見る(自分の鹿が手前、相手が奥)。
 import * as THREE from 'three';
-import { PLAYER_DEER, type SumoArt, type SumoLevel } from './levels.ts';
-import { make3dDeer, makeImageDeer, type DeerActor } from './deer.ts';
+import { PLAYER_DEER, type SumoLevel } from './levels.ts';
+import { make3dDeer, type DeerActor } from './deer.ts';
 import type { Bout } from './sim.ts';
 
 const ASSET = '/assets';
 const TEAM_ME = 0x4f9a5c, TEAM_THEM = 0xd0563c;
 /** カメラの向き(Y回転、ラジアン)。0 = 真横から。マイナス = 自分の鹿の後ろへまわる */
 const CAM_YAW = -0.5;
-
-/** 絵の鹿に使う絵(左向き)と、その縦横比 */
-const IMAGES: Record<string, { url: string; aspect: number; bodyW: number }> = {
-  'deer.png': { url: `${ASSET}/deer.png`, aspect: 1536 / 1024, bodyW: 0.95 },
-  'stag.png': { url: `${ASSET}/hero/stag.png`, aspect: 399 / 560, bodyW: 0.9 },
-};
 
 export class SumoView {
   readonly renderer: THREE.WebGLRenderer;
@@ -30,10 +24,8 @@ export class SumoView {
   private camPos = new THREE.Vector3();
   private camLook = new THREE.Vector3();
   private disposables: { dispose(): void }[] = [];
-  art: SumoArt;
 
-  constructor(private host: HTMLElement, private level: SumoLevel, art: SumoArt) {
-    this.art = art;
+  constructor(private host: HTMLElement, private level: SumoLevel) {
     const r = this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     r.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
     r.shadowMap.enabled = true; r.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -63,26 +55,10 @@ export class SumoView {
     this.resize();
   }
 
-  /** 鹿の見た目を切りかえる(立体 ⇔ 絵)。比べるため */
-  setArt(art: SumoArt): void {
-    if (art === this.art) return;
-    this.art = art;
-    this.scene.remove(this.player.root, this.opponent.root);
-    this.player.dispose(); this.opponent.dispose();
-    this.makeDeer();
-  }
-
   private makeDeer() {
-    const o = this.level.opponent;
-    if (this.art === '3d') {
-      this.player = make3dDeer(PLAYER_DEER, TEAM_ME);
-      this.opponent = make3dDeer(o, TEAM_THEM);
-      this.opponent.root.rotation.y = Math.PI;
-    } else {
-      const pi = IMAGES[PLAYER_DEER.image], oi = IMAGES[o.image];
-      this.player = makeImageDeer(pi.url, pi.aspect, PLAYER_DEER, TEAM_ME, true, pi.bodyW);
-      this.opponent = makeImageDeer(oi.url, oi.aspect, o, TEAM_THEM, false, oi.bodyW);
-    }
+    this.player = make3dDeer(PLAYER_DEER, TEAM_ME);
+    this.opponent = make3dDeer(this.level.opponent, TEAM_THEM);
+    this.opponent.root.rotation.y = Math.PI;
     this.scene.add(this.player.root, this.opponent.root);
   }
 
@@ -150,10 +126,8 @@ export class SumoView {
     const stumble = b.enemyState === 'stumble';
     this.player.root.position.set(c - gapP, 0, evade);
     this.opponent.root.position.set(c + gapO + (stumble ? 0.25 : 0), 0, stumble ? -0.3 : 0);
-    if (this.art === '3d') {
-      this.player.root.rotation.y = evade * 0.3;
-      this.opponent.root.rotation.y = Math.PI + (stumble ? 0.2 : 0);
-    }
+    this.player.root.rotation.y = evade * 0.3;
+    this.opponent.root.rotation.y = Math.PI + (stumble ? 0.2 : 0);
     const speed = Math.abs(b.velocity);
     this.player.animate({ t, moving: speed, impact: b.playerImpact, charging: b.charging, dodging: b.dodge > 0, won: b.phase === 'won', lost: b.phase === 'lost', engaged: fighting });
     this.opponent.animate({ t, moving: speed, impact: b.enemyImpact, charging: b.enemyState === 'windup', dodging: false, won: b.phase === 'lost', lost: b.phase === 'won', engaged: fighting });
@@ -171,7 +145,6 @@ export class SumoView {
     this.camera.position.copy(this.camPos);
     this.camera.lookAt(this.camLook);
     const yaw = Math.atan2(this.camPos.x - this.camLook.x, this.camPos.z - this.camLook.z);
-    this.player.face(yaw); this.opponent.face(yaw);
     this.spra.rotation.y = yaw;
     // 土ぼこり(強く押したとき・大きく動いたとき)
     for (let i = 0; i < this.dust.length; i++) {

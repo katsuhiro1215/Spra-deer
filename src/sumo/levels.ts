@@ -1,8 +1,6 @@
 // WORLD 6「鹿ずもう」の面。相手の鹿と、その強さ・見た目をここに書く(設計書 33章)。
+// 鹿は立体(部品を組み合わせた模型)。絵の鹿とくらべて、立体に決めた(2026-11-20 Owner)
 // 元になった試作: showcases/deersample9(Owner依頼の別AIの試作。ルールの考え方を移し、縦の画面に作り直した)
-
-/** 鹿の見た目: 3d=立体の鹿(部品を組み合わせた模型)、image=絵本風の絵(板に貼った絵) */
-export type SumoArt = '3d' | 'image';
 
 export type SumoDeer = {
   name: string;
@@ -10,8 +8,6 @@ export type SumoDeer = {
   coat: number; dark: number; antler: number;
   /** 体の大きさ・角の大きさ(1=ふつう) */
   size: number; antlerSize: number;
-  /** 絵の鹿のとき: 絵のファイル(左向きの絵)と、色の重ね(0xffffff=そのまま) */
-  image: string; tint: number;
 };
 
 export type SumoOpponent = SumoDeer & {
@@ -31,7 +27,6 @@ export type SumoLevel = {
   intro: string;
   /** その面で覚えること(はじめの画面に出す) */
   lesson: string;
-  art: SumoArt;
   opponent: SumoOpponent;
   /** 勝負の時間(秒) */
   duration: number;
@@ -42,7 +37,6 @@ export type SumoLevel = {
 /** 自分の鹿(いまは1頭。バランス型) */
 export const PLAYER_DEER: SumoDeer & { power: number; recovery: number; dodge: number } = {
   name: 'あなたの鹿', coat: 0xbb7949, dark: 0x785033, antler: 0xe4c899, size: 1, antlerSize: 1,
-  image: 'deer.png', tint: 0xffffff,
   power: 1, recovery: 1, dodge: 1,
 };
 
@@ -51,10 +45,8 @@ const LEVEL_6_1: SumoLevel = {
   id: '6-1', title: 'はじめての はっけよい', summary: 'のんびり鹿と、押し合い勝負',
   intro: 'はっけよい！ 緑のときに 押そう',
   lesson: '緑のタイミングで「押す」。長押しの「ため押し」は、金色で はなす',
-  art: '3d',
   opponent: {
     name: 'のんびり鹿', title: 'のんびり屋', coat: 0xc69060, dark: 0x7d5838, antler: 0xead2a4, size: 0.95, antlerSize: 0.8,
-    image: 'stag.png', tint: 0xffffff,
     force: 1.0, interval: 1.4, windupEvery: 0, windup: 1.2,
   },
   duration: 45, par: 20,
@@ -65,10 +57,8 @@ const LEVEL_6_2: SumoLevel = {
   id: '6-2', title: '角と角の 力くらべ', summary: '力自慢の鹿の、強い角押しを いなそう',
   intro: '相手が ためたら、「今！」で いなす',
   lesson: '相手が ためたら、「今！」の合図で「いなす」。すぐ押すと 切り返し',
-  art: 'image',
   opponent: {
     name: '力自慢の鹿', title: '力自慢', coat: 0x8a6a52, dark: 0x4e433d, antler: 0xd8bc90, size: 1.08, antlerSize: 1.18,
-    image: 'stag.png', tint: 0xc9b29e,
     force: 1.8, interval: 1.4, windupEvery: 3, windup: 1.2,
   },
   duration: 45, par: 22,

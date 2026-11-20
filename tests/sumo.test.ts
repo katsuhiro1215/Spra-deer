@@ -9,8 +9,8 @@ const L1 = sumoById('6-1')!, L2 = sumoById('6-2')!;
 const playing = (lv = L1) => { const b = new Bout(lv); b.start(); b.update(3.01); assert.equal(b.phase, 'playing'); return b; };
 const until = (b: Bout, f: () => boolean, max = 600) => { for (let i = 0; i < max && !f(); i++) b.update(1 / 60); };
 
-test('面は 6-1(立体の鹿)と 6-2(絵の鹿)', () => {
-  assert.deepEqual(SUMO_LEVELS.map(l => [l.id, l.art]), [['6-1', '3d'], ['6-2', 'image']]);
+test('面は 6-1・6-2', () => {
+  assert.deepEqual(SUMO_LEVELS.map(l => l.id), ['6-1', '6-2']);
 });
 
 test('カウントダウンの間は 押せず、3秒で はっけよい', () => {

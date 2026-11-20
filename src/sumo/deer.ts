@@ -1,6 +1,5 @@
-// 鹿ずもうの鹿(2種類の作り方)。どちらも +X が前。足もとが原点。
-//   make3dDeer: 部品(胴・脚・首・頭・耳・しっぽ・枝分かれした角)を組み合わせた立体の鹿。試作 deersample9 の DeerModel.ts を移した
-//   makeImageDeer: 絵本風の絵を板に貼った鹿(ほかのワールドと同じ作り方)。体を傾けたり、つぶしたりして動かす
+// 鹿ずもうの鹿: 部品(胴・脚・首・頭・耳・しっぽ・枝分かれした角)を組み合わせた立体の鹿。+X が前。足もとが原点。
+// 試作 deersample9 の DeerModel.ts を移した
 import * as THREE from 'three';
 import type { SumoDeer } from './levels.ts';
 
@@ -20,15 +19,13 @@ export type DeerActor = {
   /** 体の中心から、角の先まで(組み合う間合い) */
   reach: number;
   animate(p: DeerPose): void;
-  /** カメラの向き(Y回転)。絵の鹿は、いつもカメラへ向ける */
-  face(cameraYaw: number): void;
   dispose(): void;
 };
 
 const disposeTree = (root: THREE.Object3D) => root.traverse(o => {
   if (o instanceof THREE.Mesh) {
     o.geometry.dispose();
-    for (const m of Array.isArray(o.material) ? o.material : [o.material]) { (m as THREE.MeshBasicMaterial).map?.dispose(); m.dispose(); }
+    for (const m of Array.isArray(o.material) ? o.material : [o.material]) m.dispose();
   }
 });
 
@@ -111,50 +108,6 @@ export function make3dDeer(type: SumoDeer, team: number): DeerActor {
       tail.rotation.y = Math.sin(t * 5) * 0.2;
       body.rotation.x = p.dodging ? 0.13 : 0;
     },
-    face() { /* 立体なので、向きはそのまま */ },
-    dispose() { disposeTree(root); },
-  };
-}
-
-/**
- * 絵の鹿。url = 左向きの絵。faceRight = 右(+X)向きにするなら、左右を反転する。
- * 絵の縦横比(aspect = 横/縦)と、絵の中で体が占める横幅の割合(bodyW)から、間合いを決める
- */
-export function makeImageDeer(url: string, aspect: number, type: SumoDeer, team: number, faceRight: boolean, bodyW = 0.85): DeerActor {
-  const root = new THREE.Group(), turn = new THREE.Group(), pivot = new THREE.Group();
-  root.add(turn); turn.add(pivot);
-  const h = 2.25 * type.size, w = h * aspect;
-  const tex = new THREE.TextureLoader().load(url);
-  tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
-  const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: 0.3, side: THREE.DoubleSide, toneMapped: false, color: type.tint });
-  const plane = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat);
-  plane.position.y = h / 2;
-  plane.scale.x = faceRight ? -1 : 1;
-  pivot.add(plane);
-  // 影と、まわしの色の輪(どちらが自分か分かるように)
-  const shadow = new THREE.Mesh(new THREE.CircleGeometry(w * 0.36, 28), new THREE.MeshBasicMaterial({ color: 0x5b4a2f, transparent: true, opacity: 0.28, depthWrite: false }));
-  shadow.rotation.x = -Math.PI / 2; shadow.position.y = 0.05; shadow.scale.y = 0.45;
-  const ring = new THREE.Mesh(new THREE.RingGeometry(w * 0.3, w * 0.36, 32), new THREE.MeshBasicMaterial({ color: team, transparent: true, opacity: 0.85, depthWrite: false }));
-  ring.rotation.x = -Math.PI / 2; ring.position.y = 0.06; ring.scale.y = 0.45;
-  root.add(shadow, ring);
-  const dir = faceRight ? 1 : -1;
-  let lean = 0;
-  return {
-    root, reach: (w * bodyW) / 2,
-    animate(p) {
-      const { t } = p;
-      // 前へ傾ける(押すとき・組み合っているとき)。ためているときは、低く かまえて ぷるぷる
-      const want = p.won ? -0.05 : p.lost ? -0.28 : p.charging ? 0.2 : p.engaged ? 0.12 + p.impact * 0.12 : 0;
-      lean += (want - lean) * 0.15;
-      pivot.rotation.z = -lean * dir;
-      const squash = p.charging ? 0.9 : 1 - p.impact * 0.05;
-      pivot.scale.set(1 + (1 - squash) * 0.6, squash, 1);
-      const hop = p.won ? Math.max(0, Math.sin(t * 7)) * 0.3 : 0;
-      const shake = p.charging ? Math.sin(t * 60) * 0.02 : 0;
-      const step = p.moving > 0.08 ? Math.abs(Math.sin(t * 14)) * 0.05 : Math.sin(t * 2.5) * 0.015;
-      pivot.position.set(shake, hop + step, 0);
-    },
-    face(cameraYaw) { turn.rotation.y = cameraYaw; },
     dispose() { disposeTree(root); },
   };
 }

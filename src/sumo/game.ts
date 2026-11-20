@@ -2,7 +2,7 @@
 import { Progress } from '../progress.ts';
 import { Wallet, clearRewards, waitText, STAMINA_MAX, STAMINA_FAIL } from '../wallet.ts';
 import { RunnerAudio } from '../runner/audio.ts';
-import { SUMO_LEVELS, type SumoArt, type SumoLevel } from './levels.ts';
+import { SUMO_LEVELS, type SumoLevel } from './levels.ts';
 import { Bout, RULES, type BoutEvent } from './sim.ts';
 import { SumoView } from './view.ts';
 
@@ -17,11 +17,11 @@ const TIPS = {
   time: '時間切れは、押しこんでいる方の 勝ち。もっと前へ！',
 };
 
-export function startSumo(root: HTMLElement, level: SumoLevel, artOverride?: SumoArt): () => void {
+export function startSumo(root: HTMLElement, level: SumoLevel): () => void {
   const q = <T extends HTMLElement>(k: string) => root.querySelector<T>(`[data-ks="${k}"]`)!;
   const wallet = new Wallet();
   const progress = new Progress();
-  const view = new SumoView(q('stage'), level, artOverride ?? level.art);
+  const view = new SumoView(q('stage'), level);
   const nextLevel = SUMO_LEVELS[SUMO_LEVELS.findIndex(l => l.id === level.id) + 1];
   let bout = new Bout(level);
   let charged = false, recorded = false, paused = false;
@@ -122,9 +122,6 @@ export function startSumo(root: HTMLElement, level: SumoLevel, artOverride?: Sum
     const st = wallet.stamina;
     const txt = `体力 ${st} / ${STAMINA_MAX}` + (st < STAMINA_FAIL ? `(回復まで ${waitText(wallet.waitToPlay)})` : '');
     for (const k of ['s-stamina', 'r-stamina']) { const e = q(k); e.textContent = txt; e.classList.toggle('low', st < STAMINA_FAIL); }
-  };
-  const paintArt = () => {
-    for (const b of root.querySelectorAll<HTMLButtonElement>('[data-art]')) b.setAttribute('aria-pressed', String(b.dataset.art === view.art));
   };
 
   let resultTimer = 0;
@@ -234,15 +231,7 @@ export function startSumo(root: HTMLElement, level: SumoLevel, artOverride?: Sum
   q('retry').addEventListener('click', () => begin());
   q('resume').addEventListener('click', () => setPaused(false));
   q('pause-btn').addEventListener('click', () => setPaused(true));
-  // 鹿の見た目(立体 ⇔ 絵)を切りかえる。比べるための仮のボタン
-  for (const b of root.querySelectorAll<HTMLButtonElement>('[data-art]')) {
-    b.addEventListener('click', () => {
-      view.setArt(b.dataset.art as SumoArt);
-      paintArt();
-      const u = new URL(window.location.href); u.searchParams.set('art', view.art); window.history.replaceState(null, '', u);
-    });
-  }
-  paintSound(); paintArt(); paintStamina(); paintHud();
+  paintSound(); paintStamina(); paintHud();
 
   // ---- ループ ----
   let raf = 0, last = performance.now(), acc = 0, prevPhase = bout.phase;

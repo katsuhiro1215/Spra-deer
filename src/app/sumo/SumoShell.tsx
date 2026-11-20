@@ -11,13 +11,11 @@ export function SumoShell() {
   useEffect(() => {
     let stop: (() => void) | undefined;
     let cancelled = false;
-    // three.js はブラウザ側でだけ読み込む。面は /sumo/?level=6-1、鹿の見た目は &art=3d または &art=image
+    // three.js はブラウザ側でだけ読み込む。面は /sumo/?level=6-1 のように指定する(無ければ6-1)
     Promise.all([import('../../sumo/game.ts'), import('../../sumo/levels.ts')]).then(([game, levels]) => {
       if (cancelled || !ref.current) return;
-      const p = new URLSearchParams(window.location.search);
-      const level = levels.sumoById(p.get('level') ?? '6-1') ?? levels.SUMO_LEVELS[0];
-      const art = p.get('art');
-      stop = game.startSumo(ref.current, level, art === '3d' || art === 'image' ? art : undefined);
+      const id = new URLSearchParams(window.location.search).get('level') ?? '6-1';
+      stop = game.startSumo(ref.current, levels.sumoById(id) ?? levels.SUMO_LEVELS[0]);
     });
     return () => {
       cancelled = true;
@@ -134,15 +132,6 @@ export function SumoShell() {
               </li>
             </ul>
             <p className="sm-keys">キーボード: スペース=押す・D=ため押し・A=いなす</p>
-            <div className="sm-art" role="group" aria-label="鹿の見た目(くらべる用)">
-              <small>鹿の見た目</small>
-              <button type="button" data-art="3d" aria-pressed="false">
-                立体
-              </button>
-              <button type="button" data-art="image" aria-pressed="false">
-                絵
-              </button>
-            </div>
             <p className="ks-stamina" data-ks="s-stamina" />
             <button type="button" className="ks-sound" data-ks="snd-s" aria-pressed="true">
               ♪ 音 ON
