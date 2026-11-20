@@ -285,3 +285,19 @@
     display: none;
   }
 }
+
+/* 傾ける案内: 押す側の矢印を光らせる */
+.ct-pad[data-cue='left'] .l,
+.ct-pad[data-cue='right'] .r {
+  color: #ffd84a;
+  opacity: 1;
+  animation: ct-cue 0.45s ease-in-out infinite alternate;
+}
+@keyframes ct-cue {
+  from { transform: scale(1); filter: drop-shadow(0 0 0 rgba(255, 216, 74, 0)); }
+  to { transform: scale(1.35); filter: drop-shadow(0 0 10px rgba(255, 216, 74, 0.95)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ct-pad[data-cue='left'] .l,
+  .ct-pad[data-cue='right'] .r { animation: none; transform: scale(1.25); }
+}

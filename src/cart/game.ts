@@ -177,7 +177,7 @@ export function startCart(root: HTMLElement, level: CartLevel): () => void {
     if (o && o.s - s < v * 1.3 + 6) {
       if (o.kind === 'senbei') return [o.side === 1 ? 'せんべいは 右！ ▶' : '◀ せんべいは 左！', 'yellow'];
       if (o.kind === 'branch') {
-        const dodge = o.side === 1 ? '◀ 左へ よけて！' : '右へ よけて！ ▶';
+        const dodge = o.side === 1 ? '◀ 左へ かたむけて よけて！' : '右へ かたむけて よけて！ ▶';
         // カーブの内がわの枝: よけると外へ傾くので、速すぎたら先にブレーキ
         const c = track.sharpestAhead(s, o.s - s + 6), kk = Math.abs(c);
         if (kk > 0.006 && (o.side === 1) === (c > 0) && v > Math.sqrt((BAL.latBase - BAL.latOut * 0.5) / kk)) return [`ブレーキ！ ${dodge}`, 'red'];
@@ -234,6 +234,9 @@ export function startCart(root: HTMLElement, level: CartLevel): () => void {
     if (elAlert.textContent !== msg) elAlert.textContent = msg;
     elAlert.dataset.tone = tone_;
     elAlert.classList.toggle('on', msg !== '');
+    // 傾ける案内のときは、押す側の矢印を光らせる(枝・カーブ・せんべい・ずれた線路)
+    const cue = msg.includes('◀') ? 'left' : msg.includes('▶') ? 'right' : '';
+    if (elPad.dataset.cue !== cue) elPad.dataset.cue = cue;
     // 後ろから追ってくるものとの距離(近いほど、バーがのびて赤くなる)
     const ch = run.phase === 'running' ? run.chaser : null;
     elChase.hidden = !ch;
@@ -448,7 +451,7 @@ export function startCart(root: HTMLElement, level: CartLevel): () => void {
       if (e.kind === 'hit') {
         view.bump(0.5);
         const o = e.id !== undefined ? obstacleById.get(e.id) : undefined;
-        toast(o?.kind === 'branch' ? '枝に ぶつかった！' : o?.kind === 'log' ? '倒木に ぶつかった！' : '岩に ぶつかった！', 1800);
+        toast(o?.kind === 'branch' ? '枝に ぶつかった！ ◀ ▶ で 枝の 反対へ かたむけると よけられるよ' : o?.kind === 'log' ? '倒木に ぶつかった！' : '岩に ぶつかった！', o?.kind === 'branch' ? 3200 : 1800);
       } else if (e.kind === 'dash') toast('鹿の ダッシュ！', 1200);
       else if (e.kind === 'senbei') toast('もぐもぐ！ 鹿の 全力疾走！', 1300);
       else if (e.kind === 'chase' && run.chaser) {
