@@ -2,6 +2,7 @@ import { FIELD } from './stage.ts';
 import type { ArenaDefinition, HungryDefinition, LineDefinition, NightDefinition, SenbeiDefinition } from './stage.ts';
 import { RUNNER_LEVELS } from '../runner/levels.ts';
 import { CART_LEVELS, CART_PLANNED } from '../cart/levels.ts';
+import { SUMO_LEVELS, SUMO_PLANNED } from '../sumo/levels.ts';
 import { BAKE_LEVELS } from '../bake/levels.ts';
 import { SWEEP_LEVELS } from '../sweep/levels.ts';
 import type { ChaserDefinition, CoinDefinition, CrosserDefinition, CrossDefinition, DeliveryDefinition, HedgeDefinition, PondDefinition, RescueDefinition, StoneDefinition, SweepDefinition, GoalDefinition, Point, RainDefinition, SliderDefinition, TrapDefinition, WallDefinition } from './stage.ts';
@@ -1076,6 +1077,13 @@ export const STAGES: { stage: number; title: string; slots: LevelSlot[] }[] = [
   },
   // ステージ5は保留(5-1の定義は残してある)
   { stage: 5, title: '森のなかま救出', slots: [{ id: '5-1', title: LEVEL_5_1.title, summary: '保留中' }] },
+  // WORLD 6 は、Three.js の鹿ずもう(/sumo/)。作った面は sumo/levels.ts、まだの面は名前だけの「準備中」(設計書 33章)
+  {
+    stage: 6, title: '鹿ずもう', slots: [
+      ...SUMO_LEVELS.map(l => ({ id: l.id, title: l.title, summary: l.summary, runnerId: l.id, page: '/sumo/' })),
+      ...SUMO_PLANNED.map(l => ({ id: l.id, title: l.title, summary: '準備中' })),
+    ],
+  },
   // WORLD 8 は、Three.js の3Dトロッコ(/cart/)。作った面は cart/levels.ts、まだの面は名前だけの「準備中」
   {
     stage: 8, title: '鹿と暴走トロッコ', slots: [
