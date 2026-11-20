@@ -2,7 +2,7 @@
 import { Progress } from '../progress.ts';
 import { Wallet, clearRewards, waitText, STAMINA_MAX, STAMINA_FAIL } from '../wallet.ts';
 import { RunnerAudio } from '../runner/audio.ts';
-import { JUMP_LEVELS, type JumpLevel } from './levels.ts';
+import { JUMP_LEVELS, type JumpLevel, type JumpScene } from './levels.ts';
 import { JBAL, JumpRun, type JInput, type JumpEvent, type Pad } from './sim.ts';
 
 const STEP = 1 / 120;
@@ -15,8 +15,25 @@ const ART = {
   lie: { src: [`${A}/bake/stag_lie.png`], h: 1.55, top: 0.85 },
   walk: { src: [0, 1, 2, 3].map(i => `${A}/deer-walk/doe_r_${i}.png`), h: 1.6, top: 0.93 },
   bow: { src: [`${A}/bake/stag_front.png`, `${A}/bake/stag_sneak.png`], h: 1.7, top: 1.19 },
+  sleep: { src: [`${A}/bake/stag_lie.png`, `${A}/bake/stag_front.png`], h: 1.55, top: 0.85 },
+  hop: { src: [0, 1, 2, 3].map(i => `${A}/deer-walk/doe_r_${i}.png`), h: 1.3, top: 0.76 },
 } as const;
+/** 空のようす: 下の方の高さ(0)と てっぺん(1)の、空の色 [上, 下] と、山の色 */
+const SKY: Record<JumpScene, { lo: [string, string]; hi: [string, string]; hill: string }> = {
+  day: { lo: ['#a9dcf5', '#e2f5f0'], hi: ['#5aa6e8', '#bfe4f5'], hill: '#a7c98a' },
+  forest: { lo: ['#b9e2cf', '#e6f4d8'], hi: ['#6db6d9', '#cdebd6'], hill: '#5f9a57' },
+  evening: { lo: ['#f7c08f', '#fde7c3'], hi: ['#d77fa0', '#f6b98a'], hill: '#b98b6a' },
+  sky: { lo: ['#cfeaff', '#ffffff'], hi: ['#7cc0f5', '#e6f5ff'], hill: '#ffffff' },
+  night: { lo: ['#1d2a55', '#34477a'], hi: ['#0b1230', '#1d2a55'], hill: '#24325e' },
+};
+const LANDMARK = { kasuga: { src: `${A}/runner/landmarks/kasuga.webp`, h: 4.2 }, 'kofukuji-pagoda': { src: `${A}/runner/landmarks/kofukuji-pagoda.webp`, h: 9 }, 'todaiji-hall': { src: `${A}/runner/landmarks/todaiji-hall.webp`, h: 5.2 } } as const;
 const SPRA = { up: `${A}/bake/spra_hooray.png`, idle: `${A}/bake/spra_idle.png`, oops: `${A}/bake/spra_trouble.png`, h: 1.45 };
+
+/** 2つの色(#rrggbb)を k で まぜる */
+const mix = (a: string, b: string, k: number): string => {
+  const pa = [1, 3, 5].map(i => parseInt(a.slice(i, i + 2), 16)), pb = [1, 3, 5].map(i => parseInt(b.slice(i, i + 2), 16));
+  return `rgb(${pa.map((v, i) => Math.round(v + (pb[i] - v) * k)).join(',')})`;
+};
 
 export function startJump(root: HTMLElement, level: JumpLevel): () => void {
   const q = <T extends HTMLElement>(k: string) => root.querySelector<T>(`[data-ks="${k}"]`)!;
@@ -39,6 +56,7 @@ export function startJump(root: HTMLElement, level: JumpLevel): () => void {
   };
   for (const k of Object.values(ART)) for (const s of k.src) img(s);
   for (const s of [SPRA.up, SPRA.idle, SPRA.oops]) img(s);
+  if (level.landmark) img(LANDMARK[level.landmark].src);
 
   // 画面の大きさ(1m = scale px)
   let W = 0, H = 0, scale = 1, dpr = 1;
@@ -89,13 +107,17 @@ export function startJump(root: HTMLElement, level: JumpLevel): () => void {
       case 'gold': audio.sfx('gold'); break;
       case 'premium': audio.sfx('premium'); break;
       case 'fall': audio.sfx('hit'); break;
+      case 'senbei': tone(660, 990, 0.12, 'triangle', 0.07); tone(990, 1320, 0.12, 'triangle', 0.05); break;
+      case 'catch': audio.sfx('dash'); tone(400, 1200, 0.35, 'triangle', 0.07); break;
+      case 'crow': tone(700, 420, 0.18, 'sawtooth', 0.05); tone(640, 380, 0.16, 'sawtooth', 0.04); break;
+      case 'wake': tone(500, 800, 0.15, 'sine', 0.05); break;
       case 'clear': audio.stopMusic(); audio.jingle('clear'); break;
       case 'fail': audio.stopMusic(); audio.jingle('fail'); break;
     }
   };
 
   // ---- 画面の表示 ----
-  const elCoins = q('coins'), elGold = q('gold'), elPrem = q('prem'), elHearts = q('hearts'), elFill = q('fill'), elMark = q('mark'), elHeight = q('height');
+  const elCoins = q('coins'), elGold = q('gold'), elPrem = q('prem'), elHearts = q('hearts'), elFill = q('fill'), elMark = q('mark'), elHeight = q('height'), elSenbei = q('senbei'), elWind = q('wind');
   const elToast = q('toast'), elStart = q('start'), elResult = q('result');
   let toastTimer = 0;
   const toast = (msg: string, ms = 2200) => {
@@ -109,6 +131,10 @@ export function startJump(root: HTMLElement, level: JumpLevel): () => void {
     const p = run.progress;
     elFill.style.width = `${p * 100}%`; elMark.style.left = `${p * 100}%`;
     elHeight.textContent = `${Math.floor(run.maxY)} m`;
+    elSenbei.hidden = run.senbei <= 0 && !level.sections.some(s => s.senbeiEvery);
+    elSenbei.textContent = `せんべい ×${run.senbei}`;
+    elWind.hidden = run.wind === 0;
+    elWind.textContent = run.wind > 0 ? '風 ▶▶' : '◀◀ 風';
   };
   const paintStamina = () => {
     const st = wallet.stamina;
@@ -243,6 +269,24 @@ export function startJump(root: HTMLElement, level: JumpLevel): () => void {
     if (top < -80 || top > H + 120) return;
     if (p.y >= level.goal) return; // ゴールの足場は、山頂として描く
     if (p.kind === 'lie') drawImg(ART.lie.src[0], p.x, p.y - ART.lie.top, ART.lie.h);
+    else if (p.kind === 'sleep') {
+      if (p.goneAt < 0) {
+        drawImg(ART.sleep.src[0], p.x, p.y - ART.sleep.top, ART.sleep.h);
+        // zzz(ねむい鹿のしるし)
+        ctx.font = `900 ${Math.round(scale * 0.3)}px 'M PLUS Rounded 1c', sans-serif`;
+        ctx.textAlign = 'left'; ctx.fillStyle = '#6a7bd8'; ctx.strokeStyle = '#fff'; ctx.lineWidth = 3;
+        const zy = top - scale * (0.55 + Math.sin(run.t * 2 + p.id) * 0.08);
+        ctx.strokeText('zzz', sx(p.x) + scale * 0.35, zy); ctx.fillText('zzz', sx(p.x) + scale * 0.35, zy);
+      } else {
+        // 起きて、立ち上がって 行ってしまう
+        const age = run.t - p.goneAt;
+        if (age < 0.9) {
+          ctx.globalAlpha = Math.max(0, 1 - age / 0.9);
+          drawImg(ART.sleep.src[1], p.x + age * 2.5 * p.dir, p.y - ART.sleep.top + age * 0.5, 1.6);
+          ctx.globalAlpha = 1;
+        }
+      }
+    } else if (p.kind === 'hop') drawImg(ART.hop.src[Math.floor(run.t * 10) % 4], p.x, p.y - ART.hop.top, ART.hop.h, p.dir < 0);
     else if (p.kind === 'walk') drawImg(ART.walk.src[Math.floor(run.t * 7) % 4], p.x, p.y - ART.walk.top, ART.walk.h, p.dir < 0);
     else {
       const b = run.bowing(p);
@@ -261,19 +305,39 @@ export function startJump(root: HTMLElement, level: JumpLevel): () => void {
   };
   const drawBg = () => {
     // 空: 高く のぼるほど、青く 深く
-    const k = Math.min(1, run.camY / level.goal);
+    const k = Math.min(1, run.camY / level.goal), sk = SKY[level.scene];
     const g = ctx.createLinearGradient(0, 0, 0, H);
-    g.addColorStop(0, `hsl(${205 + k * 10}, ${70 + k * 10}%, ${78 - k * 22}%)`);
-    g.addColorStop(1, `hsl(${195 - k * 10}, 70%, ${88 - k * 10}%)`);
+    g.addColorStop(0, mix(sk.lo[0], sk.hi[0], k));
+    g.addColorStop(1, mix(sk.lo[1], sk.hi[1], k));
     ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    // 夜: 星
+    if (level.scene === 'night') {
+      for (let i = 0; i < 70; i++) {
+        const x = ((i * 97) % 100) / 100 * W, y = (((i * 61) % 100) / 100 * H * 1.4 + run.camY * scale * 0.1) % H;
+        ctx.fillStyle = `rgba(255,255,230,${0.4 + 0.5 * Math.abs(Math.sin(run.t * 1.5 + i))})`;
+        ctx.fillRect(x, y, 2, 2);
+      }
+    }
     // 遠くの山(ゆっくり動く)
     const hillY = H + 40 - (-run.camY * 0.12) * scale * 0.4 - run.camY * scale * 0.06;
-    ctx.fillStyle = '#a7c98a';
+    ctx.fillStyle = sk.hill;
     ctx.beginPath(); ctx.moveTo(-20, H + 10);
     ctx.quadraticCurveTo(W * 0.25, hillY - scale * 3.5, W * 0.55, hillY - scale * 2.2);
     ctx.quadraticCurveTo(W * 0.85, hillY - scale * 3.2, W + 20, H + 10); ctx.closePath(); ctx.fill();
     // 雲(決まった場所。少しゆっくり動く)
-    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    // 奈良の名所(ふもと。ゆっくり 下へ 流れる)
+    if (level.landmark) {
+      const lm = LANDMARK[level.landmark];
+      const i = img(lm.src);
+      const base = H - (0 - run.camY * 0.5) * scale;
+      if (i.complete && i.naturalWidth && base - lm.h * scale < H) {
+        const h = lm.h * scale, w = (h * i.naturalWidth) / i.naturalHeight;
+        ctx.globalAlpha = level.scene === 'night' ? 0.5 : 0.9;
+        ctx.drawImage(i, W * 0.5 - w / 2, base - h, w, h);
+        ctx.globalAlpha = 1;
+      }
+    }
+    ctx.fillStyle = level.scene === 'night' ? 'rgba(200,210,255,0.18)' : 'rgba(255,255,255,0.85)';
     for (let i = 0; i < 40; i++) {
       const wy = i * 6 + ((i * 37) % 5), wx = ((i * 53) % 90) / 10;
       const y = H - (wy - run.camY * 0.7) * scale;
@@ -284,11 +348,11 @@ export function startJump(root: HTMLElement, level: JumpLevel): () => void {
     }
     // はじめの 草原
     const gy = sy(0);
-    if (gy < H + 10) { ctx.fillStyle = '#7fbf5a'; ctx.fillRect(0, gy, W, H - gy + 10); ctx.fillStyle = '#6aa94a'; ctx.fillRect(0, gy, W, 6); }
+    if (gy < H + 10) { ctx.fillStyle = level.scene === 'night' ? '#2f4a3a' : '#7fbf5a'; ctx.fillRect(0, gy, W, H - gy + 10); ctx.fillStyle = '#6aa94a'; ctx.fillRect(0, gy, W, 6); }
     // ゴール: 若草山の てっぺん(草の丘と旗)
     const top = sy(level.goal);
     if (top > -200 && top < H + 200) {
-      ctx.fillStyle = '#8cc56a';
+      ctx.fillStyle = level.scene === 'sky' || level.scene === 'night' ? '#f4f8ff' : '#8cc56a';
       ctx.beginPath(); ctx.ellipse(W / 2, top + scale * 0.9, scale * 2.4, scale * 0.95, 0, Math.PI, 0); ctx.fill();
       ctx.fillRect(W / 2 - scale * 2.4, top + scale * 0.9, scale * 4.8, H);
       ctx.fillStyle = '#7a5a3a'; ctx.fillRect(W / 2 + scale * 1.2, top - scale * 1.8, 4, scale * 1.9);
@@ -298,6 +362,14 @@ export function startJump(root: HTMLElement, level: JumpLevel): () => void {
       ctx.textAlign = 'center'; ctx.fillStyle = '#fff'; ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = 4;
       ctx.strokeText(level.goalName, W / 2, top - scale * 2.2); ctx.fillText(level.goalName, W / 2, top - scale * 2.2);
     }
+  };
+  /** 星の形(夜の ゴールド) */
+  const star = (x: number, y: number, r: number, t: number) => {
+    ctx.save(); ctx.translate(x, y); ctx.rotate(Math.sin(t) * 0.2);
+    ctx.fillStyle = '#ffe36b'; ctx.shadowColor = '#ffe36b'; ctx.shadowBlur = 12;
+    ctx.beginPath();
+    for (let i = 0; i < 10; i++) { const a = (i / 10) * Math.PI * 2 - Math.PI / 2, rr = i % 2 ? r * 0.45 : r; ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr); }
+    ctx.fill(); ctx.restore();
   };
   const draw = (dt: number) => {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -319,10 +391,61 @@ export function startJump(root: HTMLElement, level: JumpLevel): () => void {
       }
       ctx.restore();
     }
+    // せんべい
+    for (const b of run.senbeiItems) {
+      if (run.collected.has(-1 - b.id)) continue;
+      const y = sy(b.y);
+      if (y < -30 || y > H + 30) continue;
+      const x = sx(b.x), r = scale * 0.3, bob = Math.sin(run.t * 3 + b.id) * 3;
+      ctx.fillStyle = '#d9a25b'; ctx.beginPath(); ctx.arc(x, y + bob, r, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#a8702f'; ctx.lineWidth = 2; ctx.stroke();
+      ctx.fillStyle = '#b97a3a';
+      for (const [dx, dy] of [[-0.3, -0.2], [0.25, -0.1], [0, 0.3], [-0.1, 0.05]]) { ctx.beginPath(); ctx.arc(x + dx * r, y + bob + dy * r, r * 0.09, 0, Math.PI * 2); ctx.fill(); }
+    }
+    // カラス(羽ばたく 黒い鳥)
+    for (const c of run.crows) {
+      const y = sy(c.y);
+      if (y < -30 || y > H + 30) continue;
+      for (const off of [0, -JBAL.width, JBAL.width]) {
+        const x = sx(c.x + off);
+        if (x < -40 || x > W + 40) continue;
+        const flap = Math.sin(run.t * 14 + c.id) * scale * 0.28, s2 = scale * 0.32;
+        ctx.save(); ctx.translate(x, y); ctx.scale(c.dir, 1);
+        ctx.fillStyle = '#26262e';
+        ctx.beginPath(); ctx.ellipse(0, 0, s2 * 1.2, s2 * 0.62, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(s2 * 1.05, -s2 * 0.25, s2 * 0.45, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(-s2 * 0.2, -s2 * 0.2); ctx.lineTo(-s2 * 0.9, -s2 * 0.4 - flap); ctx.lineTo(s2 * 0.5, -s2 * 0.3); ctx.fill();
+        ctx.fillStyle = '#f2a33a'; ctx.beginPath(); ctx.moveTo(s2 * 1.4, -s2 * 0.3); ctx.lineTo(s2 * 1.85, -s2 * 0.18); ctx.lineTo(s2 * 1.4, -s2 * 0.08); ctx.fill();
+        ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(s2 * 1.15, -s2 * 0.35, s2 * 0.1, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+      }
+    }
+    // 風: 木の葉が 流れる
+    if (run.wind !== 0) {
+      ctx.fillStyle = level.scene === 'night' ? 'rgba(160,200,140,0.5)' : 'rgba(110,170,70,0.75)';
+      for (let i = 0; i < 16; i++) {
+        const x = ((((i * 0.37 + run.t * 0.35 * Math.sign(run.wind)) % 1) + 1) % 1) * W, y = ((i * 0.61) % 1) * H;
+        ctx.save(); ctx.translate(x, y + Math.sin(run.t * 3 + i) * 8); ctx.rotate(run.t * 4 + i);
+        ctx.beginPath(); ctx.ellipse(0, 0, 6, 3, 0, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+      }
+    }
     // Spra(上がるとき=ばんざい、落ちるとき=ふつう、落ちた直後=こまり顔)
     squash = Math.max(0, squash - dt * 5); hurt = Math.max(0, hurt - dt);
     const face = hurt > 0 ? SPRA.oops : run.vy > 2 ? SPRA.up : SPRA.idle;
     drawImg(face, run.x, run.y, SPRA.h, run.vx < -0.5, 1 + squash * 0.25, 1 - squash * 0.25);
+    // 夜: Spra の まわりだけ 明るい。星(ゴールド)は 遠くからも 光って見える
+    if (level.scene === 'night') {
+      const cx = sx(run.x), cy = sy(run.y + SPRA.h / 2);
+      const rg = ctx.createRadialGradient(cx, cy, scale * 2.2, cx, cy, scale * 5.5);
+      rg.addColorStop(0, 'rgba(8,12,35,0)'); rg.addColorStop(1, 'rgba(8,12,35,0.86)');
+      ctx.fillStyle = rg; ctx.fillRect(0, 0, W, H);
+      for (const c of run.coins) {
+        if (c.kind !== 'gold' || run.collected.has(c.id)) continue;
+        const y = sy(c.y);
+        if (y < -20 || y > H + 20) continue;
+        star(sx(c.x), y, scale * 0.3, run.t * 2 + c.id);
+      }
+    }
     // ぽんっと出る文字
     for (const p of pops) {
       p.t += dt;
@@ -331,7 +454,9 @@ export function startJump(root: HTMLElement, level: JumpLevel): () => void {
       ctx.font = `900 ${Math.round(scale * 0.42)}px 'M PLUS Rounded 1c', sans-serif`;
       ctx.textAlign = 'center'; ctx.fillStyle = p.color; ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 4;
       const y = sy(p.y) - p.t * 40;
-      ctx.strokeText(p.text, sx(p.x), y); ctx.fillText(p.text, sx(p.x), y);
+      // 画面の端で 切れないように、文字の幅の半分は 内がわへ
+      const half = ctx.measureText(p.text).width / 2 + 6, px = Math.min(W - half, Math.max(half, sx(p.x)));
+      ctx.strokeText(p.text, px, y); ctx.fillText(p.text, px, y);
       ctx.globalAlpha = 1;
     }
     for (let i = pops.length - 1; i >= 0; i--) if (pops[i].t > 0.9) pops.splice(i, 1);
@@ -350,6 +475,10 @@ export function startJump(root: HTMLElement, level: JumpLevel): () => void {
       else if (e.kind === 'super') { squash = 1.4; pops.push({ text: 'ぺこり！ 大ジャンプ！', x: run.x, y: run.y + 1.4, t: 0, color: '#ffd23a' }); }
       else if (e.kind === 'fall') { hurt = 1.2; toast(run.lives > 0 ? 'わっ、落ちた！ ふわっと 助けてもらったよ' : '落ちちゃった…', 2000); }
       else if (e.kind === 'premium') toast('◆ プレミアムコイン！！', 2400);
+      else if (e.kind === 'senbei') pops.push({ text: 'せんべい ゲット！', x: run.x, y: run.y + 1.6, t: 0, color: '#f0b45a' });
+      else if (e.kind === 'catch') { squash = 1.4; toast('鹿が 受けとめてくれた！(せんべい −1)', 2200); }
+      else if (e.kind === 'crow') { hurt = 0.6; pops.push({ text: 'カァ！', x: run.x, y: run.y + 1.6, t: 0, color: '#ffffff' }); }
+      else if (e.kind === 'wake') pops.push({ text: 'おきた！', x: run.x, y: run.y - 0.3, t: 0, color: '#9aa8ff' });
       else if (e.kind === 'gold') pops.push({ text: 'ゴールド！', x: run.x, y: run.y + 1.4, t: 0, color: '#ffc83a' });
       else if (e.kind === 'clear') toast(`${level.goalName}に とうちゃく！`, 3000);
     }

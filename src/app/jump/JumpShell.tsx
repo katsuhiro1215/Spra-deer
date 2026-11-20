@@ -53,6 +53,10 @@ export function JumpShell() {
             <span className="ks-progress-goal" data-ks="lv-goal" />
           </div>
           <div className="jp-height" data-ks="height">0 m</div>
+          <div className="jp-side">
+            <span className="jp-senbei" data-ks="senbei" hidden />
+            <span className="jp-wind" data-ks="wind" hidden />
+          </div>
           <div className="ks-toast jp-toast" data-ks="toast" />
         </div>
 
@@ -79,6 +83,9 @@ export function JumpShell() {
               </li>
               <li>
                 <b>おじぎ</b> 頭を 下げた 鹿に 乗ると 大ジャンプ
+              </li>
+              <li>
+                <b>おちても</b> ハートが 1つ へるだけ。3回で 失敗
               </li>
             </ul>
             <p className="ks-prem-note" data-ks="s-prem" />

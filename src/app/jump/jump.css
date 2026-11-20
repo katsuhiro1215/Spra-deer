@@ -52,3 +52,30 @@
   font-weight: 800;
   opacity: 0.85;
 }
+.jp-side {
+  position: absolute;
+  right: 14px;
+  top: 108px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+.jp-senbei,
+.jp-wind {
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 900;
+  background: rgba(20, 40, 28, 0.55);
+}
+.jp-senbei {
+  color: #ffd79a;
+}
+.jp-wind {
+  color: #c8f5a8;
+}
+.jp-senbei[hidden],
+.jp-wind[hidden] {
+  display: none;
+}
