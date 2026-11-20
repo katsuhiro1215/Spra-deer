@@ -63,6 +63,7 @@ export function startSumo(root: HTMLElement, level: SumoLevel): () => void {
       case 'charge': thud(0.35, 0.65, 300); tone(260, 520, 0.25, 'sawtooth', 0.05); break;
       case 'dodge': tone(450, 900, 0.18, 'sine', 0.07); break;
       case 'counter': audio.sfx('dash'); thud(0.3, 0.6, 500); break;
+      case 'parry': tone(450, 1200, 0.25, 'sine', 0.08); thud(0.25, 0.4, 700); break;
       case 'enemy': thud(0.2, 0.4, 220); break;
       case 'strong': thud(0.45, 0.75, 180); audio.sfx('hit'); break;
       case 'windup': tone(210, 260, 0.6, 'triangle', 0.06); break;
@@ -175,6 +176,7 @@ export function startSumo(root: HTMLElement, level: SumoLevel): () => void {
     audio.stopMusic(0); audio.startMusic(SUMO_BGM);
     window.clearTimeout(resultTimer);
     bout = new Bout(level);
+    view.reset();
     bout.start();
     progress.attempt(level.id);
     elStart.classList.remove('on'); elResult.classList.remove('on'); elPause.classList.remove('on');
@@ -246,12 +248,15 @@ export function startSumo(root: HTMLElement, level: SumoLevel): () => void {
     last = now;
     if (!paused) {
       acc += dt;
+      // 強くぶつかった瞬間は、ほんの少し止める(ヒットストップ)
+      if (view.stop > 0) acc = 0;
       while (acc >= STEP) { bout.update(STEP); acc -= STEP; }
     } else acc = 0;
-    for (const e of bout.drain()) { sound(e); feedback(e); }
+    for (const e of bout.drain()) { sound(e); feedback(e); view.fx(e.kind, bout); }
     if (bout.phase !== prevPhase) {
       prevPhase = bout.phase;
-      if (bout.done) resultTimer = window.setTimeout(showResult, 1600);
+      // 押し出しは、吹っ飛ぶのを 見てから 結果を出す
+      if (bout.done) resultTimer = window.setTimeout(showResult, bout.pushedOut ? 2900 : 1800);
     }
     paintHud();
     view.render(paused ? 0 : dt, bout);

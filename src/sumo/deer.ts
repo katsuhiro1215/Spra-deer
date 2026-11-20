@@ -16,6 +16,8 @@ export type DeerPose = {
 
 export type DeerActor = {
   root: THREE.Group;
+  /** 体全体を傾ける台(後ろ足が支点)。rotation.z=前足を上げる(+)/頭から つっこむ(-)、rotation.x=横に たおれる */
+  rig: THREE.Group;
   /** 体の中心から、角の先まで(組み合う間合い) */
   reach: number;
   animate(p: DeerPose): void;
@@ -31,8 +33,9 @@ const disposeTree = (root: THREE.Object3D) => root.traverse(o => {
 
 /** 立体の鹿。team = まわしの色 */
 export function make3dDeer(type: SumoDeer, team: number): DeerActor {
-  const root = new THREE.Group(), body = new THREE.Group(), head = new THREE.Group();
-  root.add(body); body.add(head); head.position.set(0.59, 1.66, 0);
+  const root = new THREE.Group(), rig = new THREE.Group(), body = new THREE.Group(), head = new THREE.Group();
+  root.add(rig); rig.add(body); body.add(head); head.position.set(0.59, 1.66, 0);
+  rig.position.x = -0.62; body.position.x = 0.62; // 後ろ足のところで傾ける
   const legs: THREE.Group[] = [];
   const mats = new Map<number, THREE.MeshStandardMaterial>();
   const mat = (color: number) => {
@@ -105,7 +108,7 @@ export function make3dDeer(type: SumoDeer, team: number): DeerActor {
   const scale = type.size * 0.92;
   root.scale.setScalar(scale);
   return {
-    root, reach: 1.35 * scale,
+    root, rig, reach: 1.35 * scale,
     animate(p) {
       const { t } = p;
       body.position.y = Math.sin(t * 2.5) * 0.013 + (p.won ? Math.max(0, Math.sin(t * 7)) * 0.09 : 0);

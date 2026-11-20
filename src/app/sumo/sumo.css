@@ -177,6 +177,7 @@
   color: #ffe36b;
 }
 .sm-feed[data-kind='counter'],
+.sm-feed[data-kind='parry'],
 .sm-feed[data-kind='round'],
 .sm-feed[data-kind='start'] {
   color: #9dff8a;

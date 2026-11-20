@@ -19,7 +19,7 @@ export const RULES = {
 } as const;
 
 export type Phase = 'ready' | 'countdown' | 'playing' | 'won' | 'lost' | 'draw';
-export type BoutEvent = { kind: 'push' | 'perfect' | 'charge' | 'dodge' | 'counter' | 'enemy' | 'strong' | 'windup' | 'feint' | 'tired' | 'start' | 'round' | 'won' | 'lost' | 'draw'; text: string };
+export type BoutEvent = { kind: 'push' | 'perfect' | 'charge' | 'dodge' | 'counter' | 'parry' | 'enemy' | 'strong' | 'windup' | 'feint' | 'tired' | 'start' | 'round' | 'won' | 'lost' | 'draw'; text: string };
 
 /** フェイント: ためる時間の この割合で、ためるのを やめる(「今！」より前) */
 export const FEINT_AT = 0.55;
@@ -132,7 +132,7 @@ export class Bout {
     const o = this.opp;
     if (this.dodge > 0) {
       this.enemyState = 'stumble'; this.enemyTimer = 1.1; this.vulnerable = 1.6; this.gain(0.4);
-      this.emit('counter', 'いなした！ 今が 押しどき');
+      this.emit('parry', 'いなした！ 今が 押しどき');
       return;
     }
     this.velocity -= (strong ? 2.5 : 0.98) * o.force;
