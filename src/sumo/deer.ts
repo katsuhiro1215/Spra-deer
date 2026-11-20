@@ -92,6 +92,16 @@ export function make3dDeer(type: SumoDeer, team: number): DeerActor {
   const belt = new THREE.Mesh(new THREE.TorusGeometry(0.395, 0.042, 6, 36), mat(team));
   belt.rotation.y = Math.PI / 2; belt.position.set(-0.05, 1.17, 0); belt.scale.set(1.12, 1, 1); body.add(belt);
   const knot = ell(body, -0.03, 1.16, 0.4, 0.12, 0.095, 0.07, team, 1); knot.rotation.z = 0.3;
+  // 横綱の白い綱(太い綱と、前に垂らす紙垂)
+  if (type.rope) {
+    const rope = new THREE.Mesh(new THREE.TorusGeometry(0.43, 0.085, 8, 36), mat(0xfbf8ee));
+    rope.rotation.y = Math.PI / 2; rope.position.set(0.12, 1.2, 0); rope.scale.set(1.12, 1, 1); rope.castShadow = true; body.add(rope);
+    for (const z of [-1, 1]) for (let k = 0; k < 3; k++) {
+      const shide = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.16, 0.01), mat(0xffffff));
+      shide.position.set(0.05 + k * 0.1, 0.98 - (k % 2) * 0.05, z * 0.47); shide.rotation.z = (k % 2 ? 0.4 : -0.4);
+      body.add(shide);
+    }
+  }
   const scale = type.size * 0.92;
   root.scale.setScalar(scale);
   return {

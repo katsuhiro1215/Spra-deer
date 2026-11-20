@@ -1,16 +1,16 @@
 // WORLD 6「鹿ずもう」の勝負のしくみ
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Bout, RULES } from '../src/sumo/sim.ts';
+import { Bout, RULES, FEINT_AT } from '../src/sumo/sim.ts';
 import { SUMO_LEVELS, sumoById } from '../src/sumo/levels.ts';
 import { driveSumo } from './sumobot.ts';
 
-const L1 = sumoById('6-1')!, L2 = sumoById('6-2')!;
+const L1 = sumoById('6-1')!, L2 = sumoById('6-2')!, L4 = sumoById('6-4')!, L6 = sumoById('6-6')!, L7 = sumoById('6-7')!, L9 = sumoById('6-9')!;
 const playing = (lv = L1) => { const b = new Bout(lv); b.start(); b.update(3.01); assert.equal(b.phase, 'playing'); return b; };
 const until = (b: Bout, f: () => boolean, max = 600) => { for (let i = 0; i < max && !f(); i++) b.update(1 / 60); };
 
-test('面は 6-1・6-2', () => {
-  assert.deepEqual(SUMO_LEVELS.map(l => l.id), ['6-1', '6-2']);
+test('面は 6-1〜6-10', () => {
+  assert.deepEqual(SUMO_LEVELS.map(l => l.id), Array.from({ length: 10 }, (_, i) => `6-${i + 1}`));
 });
 
 test('カウントダウンの間は 押せず、3秒で はっけよい', () => {
@@ -105,4 +105,79 @@ test('★とコイン: 負けは 0、勝ちは 15枚から', () => {
   const win = driveSumo(L1);
   assert.ok(win.silver >= 15);
   assert.ok(RULES.edge > 2);
+});
+
+test('息切れ: スタミナを使い切ると、しばらく押せない', () => {
+  const b = playing();
+  b.stamina = 10;
+  assert.equal(b.push(), true);
+  assert.equal(b.stamina, 0);
+  assert.ok(b.gassed > 0);
+  b.update(0.3);
+  assert.equal(b.push(), false);
+  b.update(RULES.gassed);
+  assert.equal(b.push(), true);
+});
+
+test('6-4 フェイント: ためるふりは「今！」が出ずに やめ、すぐ押してくる', () => {
+  const b = playing(L4);
+  let saw = false, now = false;
+  for (let i = 0; i < 60 * 30 && !saw; i++) {
+    b.update(1 / 60);
+    b.position = 0; b.velocity = 0; // 押し出されないように(フェイントが出るまで見る)
+    if (b.feint && b.dodgeNow) now = true;
+    if (b.drain().some(e => e.kind === 'feint')) saw = true;
+  }
+  assert.ok(saw, 'フェイントが出る');
+  assert.equal(now, false, 'ふりのときは「今！」が出ない');
+  assert.equal(b.enemyState, 'rest');
+  assert.ok(b.enemyTimer < 0.5, 'すぐ押してくる');
+  assert.ok(FEINT_AT < 1 - RULES.nowAt / L4.opponents[0].windup, 'ふりは「今！」より前にやめる');
+});
+
+test('6-4 は、ためが見えてすぐ いなすと 負ける(「今！」を待てば 勝てる)', () => {
+  assert.equal(driveSumo(L4, { evade: 'panic' }).phase, 'lost');
+  assert.equal(driveSumo(L4, { evade: 'now' }).phase, 'won');
+});
+
+test('6-6 雨: すべるので、同じ押しでも 遠くまで動く', () => {
+  const dry = playing(L1), wet = playing(L6);
+  dry.velocity = wet.velocity = 1;
+  for (let i = 0; i < 60; i++) { dry.update(1 / 60); wet.update(1 / 60); }
+  assert.ok(wet.position > dry.position * 1.2);
+});
+
+test('6-7 大きな鹿: 重くて、同じ押しでも 動きにくい', () => {
+  const a = playing(L1), b = playing(L7);
+  a.beginCharge(); a.update(1.1); a.releaseCharge();
+  b.beginCharge(); b.update(1.1); b.releaseCharge();
+  assert.ok(b.velocity < a.velocity / 1.3);
+});
+
+test('6-9 勝ち抜き: 勝つと 次の相手。スタミナは引きつぐ', () => {
+  const b = playing(L9);
+  b.stamina = 40;
+  b.position = RULES.edge - 0.01; b.velocity = 1;
+  b.update(1 / 60);
+  assert.equal(b.phase, 'countdown');
+  assert.equal(b.round, 1);
+  assert.equal(b.opp.name, L9.opponents[1].name);
+  assert.equal(b.position, 0);
+  assert.ok(b.stamina > 40 && b.stamina < 100, 'スタミナは 少しだけ回復');
+  assert.ok(b.drain().some(e => e.kind === 'round'));
+  const full = driveSumo(L9, { charge: true });
+  assert.equal(full.phase, 'won');
+  assert.equal(full.round, 2, '3頭目まで 勝つ');
+});
+
+test('手ごたえ: 人らしいボット(3回に1回 緑をはずす・「今！」に 0.12秒おくれる)+ため押しで、どの面も 勝てる', () => {
+  for (const lv of SUMO_LEVELS) {
+    const b = driveSumo(lv, { missEvery: 3, late: 0.12, charge: true });
+    assert.equal(b.phase, 'won', lv.id);
+  }
+});
+
+test('手ごたえ: あとの面ほど、勝つのに時間がかかる(6-1 より 6-10)', () => {
+  const t = (id: string) => driveSumo(sumoById(id)!, { missEvery: 3, late: 0.12, charge: true }).totalTime;
+  assert.ok(t('6-10') > t('6-1') * 2);
 });

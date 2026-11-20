@@ -47,7 +47,10 @@ export function SumoShell() {
               <i />
               あなた
             </span>
-            <span className="sm-vs">VS</span>
+            <span className="sm-vs">
+              VS
+              <small data-ks="round" hidden />
+            </span>
             <span className="sm-them">
               <small data-ks="opp-title" />
               <b data-ks="opp-name" />

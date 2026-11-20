@@ -1,7 +1,7 @@
 // WORLD 6「鹿ずもう」の3Dの絵: 奈良公園の土俵・2頭の鹿・応援のSpra・土ぼこり・カメラ。
 // 縦の画面に合わせて、押し合う向き(X)を ななめに見る(自分の鹿が手前、相手が奥)。
 import * as THREE from 'three';
-import { PLAYER_DEER, type SumoLevel } from './levels.ts';
+import { PLAYER_DEER, type SumoLevel, type SumoScene } from './levels.ts';
 import { make3dDeer, type DeerActor } from './deer.ts';
 import type { Bout } from './sim.ts';
 
@@ -9,6 +9,14 @@ const ASSET = '/assets';
 const TEAM_ME = 0x4f9a5c, TEAM_THEM = 0xd0563c;
 /** カメラの向き(Y回転、ラジアン)。0 = 真横から。マイナス = 自分の鹿の後ろへまわる */
 const CAM_YAW = -0.5;
+
+/** 天気と時間ごとの、空・霧・光 */
+const SCENES: Record<SumoScene, { sky: number; fog: number; fogNear: number; hemi: number; hemiI: number; sun: number; sunI: number; sunY: number; exposure: number }> = {
+  day: { sky: 0xbfdcef, fog: 0xcfe3d6, fogNear: 22, hemi: 0xfff4d9, hemiI: 2.4, sun: 0xffedcc, sunI: 3.0, sunY: 10, exposure: 1.15 },
+  rain: { sky: 0x9aa8b0, fog: 0xa4b0b4, fogNear: 12, hemi: 0xdfe6ea, hemiI: 2.0, sun: 0xdde4ea, sunI: 1.1, sunY: 10, exposure: 1.05 },
+  evening: { sky: 0xf2b48a, fog: 0xeab48e, fogNear: 18, hemi: 0xffd2a6, hemiI: 2.0, sun: 0xffa860, sunI: 2.8, sunY: 4, exposure: 1.1 },
+  night: { sky: 0x1c2442, fog: 0x1c2442, fogNear: 12, hemi: 0x8090c0, hemiI: 0.9, sun: 0xa8b8e8, sunI: 0.7, sunY: 10, exposure: 1.2 },
+};
 
 export class SumoView {
   readonly renderer: THREE.WebGLRenderer;
@@ -31,15 +39,20 @@ export class SumoView {
     r.shadowMap.enabled = true; r.shadowMap.type = THREE.PCFSoftShadowMap;
     r.outputColorSpace = THREE.SRGBColorSpace; r.toneMapping = THREE.ACESFilmicToneMapping; r.toneMappingExposure = 1.15;
     host.append(r.domElement);
-    this.scene.background = new THREE.Color(0xbfdcef);
-    this.scene.fog = new THREE.Fog(0xcfe3d6, 22, 52);
-    this.scene.add(new THREE.HemisphereLight(0xfff4d9, 0x6d8060, 2.4));
-    const sun = new THREE.DirectionalLight(0xffedcc, 3.0);
-    sun.position.set(-4, 10, 7); sun.castShadow = true; sun.shadow.mapSize.set(1024, 1024);
+    // 天気と時間(昼・雨・夕方・夜)
+    const look = SCENES[level.scene];
+    this.scene.background = new THREE.Color(look.sky);
+    this.scene.fog = new THREE.Fog(look.fog, look.fogNear, 52);
+    r.toneMappingExposure = look.exposure;
+    this.scene.add(new THREE.HemisphereLight(look.hemi, 0x6d8060, look.hemiI));
+    const sun = new THREE.DirectionalLight(look.sun, look.sunI);
+    sun.position.set(-4, look.sunY, 7); sun.castShadow = true; sun.shadow.mapSize.set(1024, 1024);
     Object.assign(sun.shadow.camera, { left: -8, right: 8, top: 8, bottom: -8 });
     sun.shadow.normalBias = 0.04;
     this.scene.add(sun);
     this.environment();
+    if (level.scene === 'night') this.candles();
+    if (level.scene === 'rain') this.makeRain();
     // 応援のSpra(土俵の外、奥のほう)
     for (const f of ['spra_idle', 'spra_hooray', 'spra_trouble']) {
       const t = new THREE.TextureLoader().load(`${ASSET}/bake/${f}.png`); t.colorSpace = THREE.SRGBColorSpace; this.spraTex.push(t);
@@ -55,9 +68,45 @@ export class SumoView {
     this.resize();
   }
 
+  /** 夜(燈花会): 土俵のまわりに ろうそくの灯り */
+  private candles() {
+    const glass = new THREE.MeshBasicMaterial({ color: 0xffd58a });
+    const cup = new THREE.CylinderGeometry(0.11, 0.09, 0.22, 10);
+    this.disposables.push(glass, cup);
+    for (let i = 0; i < 28; i++) {
+      const a = (i / 28) * Math.PI * 2, r = 4.9 + (i % 2) * 0.35;
+      // カメラ側(手前)には置かない(大きく写って じゃまになる)
+      if (Math.cos(a) * Math.sin(CAM_YAW) + Math.sin(a) * Math.cos(CAM_YAW) > 0.1) continue;
+      const c = new THREE.Mesh(cup, glass);
+      c.position.set(Math.cos(a) * r, 0.0, Math.sin(a) * r);
+      this.scene.add(c);
+    }
+    for (const [x, z] of [[-3.5, 3.5], [3.5, 3.5], [-3.5, -3.5], [3.5, -3.5]]) {
+      const p = new THREE.PointLight(0xffb45c, 9, 9, 1.6);
+      p.position.set(x, 1.2, z);
+      this.scene.add(p);
+    }
+  }
+
+  /** 雨: 落ちてくる雨のすじ */
+  private rain: THREE.LineSegments | null = null;
+  private makeRain() {
+    const n = 500, pos = new Float32Array(n * 6);
+    for (let i = 0; i < n; i++) {
+      const x = (Math.sin(i * 12.9898) * 43758.5453 % 1) * 24 - 12, z = (Math.sin(i * 78.233) * 12345.678 % 1) * 20 - 10, y = (i * 0.37) % 24;
+      pos.set([x, y, z, x + 0.05, y - 0.5, z], i * 6);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    const mat = new THREE.LineBasicMaterial({ color: 0xdfe8f0, transparent: true, opacity: 0.55 });
+    this.rain = new THREE.LineSegments(geo, mat);
+    this.scene.add(this.rain);
+    this.disposables.push(geo, mat);
+  }
+
   private makeDeer() {
     this.player = make3dDeer(PLAYER_DEER, TEAM_ME);
-    this.opponent = make3dDeer(this.level.opponent, TEAM_THEM);
+    this.opponent = make3dDeer(this.level.opponents[0], TEAM_THEM);
     this.opponent.root.rotation.y = Math.PI;
     this.scene.add(this.player.root, this.opponent.root);
   }
@@ -114,8 +163,17 @@ export class SumoView {
     this.camera.updateProjectionMatrix();
   }
 
+  /** 勝ち抜きで、相手が かわったら 鹿を作りなおす */
+  private shownRound = 0;
+
   render(dt: number, b: Bout): void {
     this.time += dt;
+    if (b.round !== this.shownRound) {
+      this.shownRound = b.round;
+      this.scene.remove(this.opponent.root); this.opponent.dispose();
+      this.opponent = make3dDeer(b.opp, TEAM_THEM);
+      this.scene.add(this.opponent.root);
+    }
     const t = this.time, fighting = b.phase === 'playing' || b.phase === 'countdown';
     const c = b.position * 0.72;
     // 組み合う間合い: 角の先が ふれあう位置(押した瞬間は、少し近づく)
@@ -146,6 +204,8 @@ export class SumoView {
     this.camera.lookAt(this.camLook);
     const yaw = Math.atan2(this.camPos.x - this.camLook.x, this.camPos.z - this.camLook.z);
     this.spra.rotation.y = yaw;
+    // 雨を落とす
+    if (this.rain) { this.rain.position.y = -((t * 14) % 12); }
     // 土ぼこり(強く押したとき・大きく動いたとき)
     for (let i = 0; i < this.dust.length; i++) {
       const p = this.dust[i], phase = (t * 1.3 + i * 0.13) % 1;

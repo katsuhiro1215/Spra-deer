@@ -31,8 +31,7 @@ export function startSumo(root: HTMLElement, level: SumoLevel): () => void {
   q('s-title').textContent = level.title;
   q('s-lead').textContent = level.summary;
   q('s-lesson').textContent = level.lesson;
-  q('opp-name').textContent = level.opponent.name;
-  q('opp-title').textContent = level.opponent.title;
+  const elOppName = q('opp-name'), elOppTitle = q('opp-title');
 
   // ---- 音 ----
   const audio = new RunnerAudio();
@@ -67,6 +66,8 @@ export function startSumo(root: HTMLElement, level: SumoLevel): () => void {
       case 'enemy': thud(0.2, 0.4, 220); break;
       case 'strong': thud(0.45, 0.75, 180); audio.sfx('hit'); break;
       case 'windup': tone(210, 260, 0.6, 'triangle', 0.06); break;
+      case 'feint': tone(520, 300, 0.2, 'square', 0.04); break;
+      case 'round': audio.sfx('checkpoint'); break;
       case 'won': audio.stopMusic(); audio.jingle('clear'); break;
       case 'lost': case 'draw': audio.stopMusic(); audio.jingle('fail'); break;
     }
@@ -78,6 +79,7 @@ export function startSumo(root: HTMLElement, level: SumoLevel): () => void {
   const elPush = q<HTMLButtonElement>('push'), elCharge = q<HTMLButtonElement>('charge'), elEvade = q<HTMLButtonElement>('evade');
   const elChargeFill = q('charge-fill'), elEvadeSub = q('evade-sub'), elWarn = q('warn'), elWarnText = q('warn-text'), elWarnFill = q('warn-fill');
   const elFeed = q('feed'), elCount = q('count'), elCoach = q('coach');
+  const elRound = q('round');
   let feedTimer = 0;
   const feedback = (e: BoutEvent) => {
     if (e.kind === 'won' || e.kind === 'lost' || e.kind === 'draw') return;
@@ -88,6 +90,9 @@ export function startSumo(root: HTMLElement, level: SumoLevel): () => void {
   };
   const paintHud = () => {
     const b = bout, active = b.active && !paused;
+    if (elOppName.textContent !== b.opp.name) { elOppName.textContent = b.opp.name; elOppTitle.textContent = b.opp.title; }
+    elRound.hidden = b.rounds < 2;
+    elRound.textContent = `${b.round + 1} / ${b.rounds} 番`;
     elTime.textContent = String(Math.ceil(b.remaining));
     elPos.style.left = `${50 + Math.max(-1, Math.min(1, b.position / RULES.edge)) * 46}%`;
     elPos.parentElement!.classList.toggle('pinch', b.position < -RULES.edge * 0.55);
@@ -109,7 +114,7 @@ export function startSumo(root: HTMLElement, level: SumoLevel): () => void {
     elEvade.classList.toggle('now', b.dodgeNow);
     elWarnText.textContent = b.dodgeNow ? '今！ いなす' : '相手が ためている…';
     elWarn.classList.toggle('now', b.dodgeNow);
-    elWarnFill.style.width = `${(1 - b.enemyTimer / level.opponent.windup) * 100}%`;
+    elWarnFill.style.width = `${b.windupProgress * 100}%`;
     elCount.hidden = b.phase !== 'countdown';
     elCount.textContent = String(Math.max(1, Math.ceil(b.countdown)));
     elCoach.textContent = b.vulnerable > 0 ? 'いなした！ 今すぐ 押して 切り返そう'
@@ -130,7 +135,7 @@ export function startSumo(root: HTMLElement, level: SumoLevel): () => void {
     let newBest = false;
     if (won && !recorded) {
       recorded = true;
-      newBest = progress.clear(level.id, bout.time, true);
+      newBest = progress.clear(level.id, bout.totalTime, true);
       const got = clearRewards(wallet, level.id, { silver: bout.silver, star3: stars === 3 });
       q('r-reward').textContent = `+${got.silver} シルバー` + (got.gold ? `　+${got.gold} ゴールド` : '');
       q('r-reward').classList.remove('lose');
@@ -143,12 +148,12 @@ export function startSumo(root: HTMLElement, level: SumoLevel): () => void {
     paintStamina();
     q('r-title').textContent = won ? (bout.pushedOut ? '押し出し！ 勝ち！' : '優勢で 勝ち！') : bout.phase === 'draw' ? '引き分け…' : bout.pushedOut ? '押し出された…' : '時間切れ… 負け';
     const tip = won ? (stars < 3 ? `★3 は ${level.par} 秒までに 押し出し。ため押しや 切り返しを ためそう` : '') :
-      bout.stamina < 25 ? TIPS.tired : level.opponent.windupEvery && bout.counters === 0 ? TIPS.dodge : bout.phase === 'draw' || !bout.pushedOut ? TIPS.time : TIPS.charge;
+      bout.stamina < 25 ? TIPS.tired : bout.opp.windupEvery && bout.counters === 0 ? TIPS.dodge : bout.phase === 'draw' || !bout.pushedOut ? TIPS.time : TIPS.charge;
     q('r-tip').textContent = tip;
     q('r-stars').textContent = won ? '★'.repeat(stars) + '☆'.repeat(3 - stars) : '';
     q('r-perfect').textContent = `${bout.perfects} 回`;
     q('r-counter').textContent = `${bout.counters} 回`;
-    q('r-time').textContent = `${bout.time.toFixed(1)} 秒${newBest ? '(ベスト！)' : ''}`;
+    q("r-time").textContent = `${bout.totalTime.toFixed(1)} 秒${newBest ? '(ベスト！)' : ''}`;
     const best = progress.get(level.id).best;
     q('r-best').textContent = best === null ? '—' : `${best.toFixed(1)} 秒`;
     const next = q<HTMLAnchorElement>('next');

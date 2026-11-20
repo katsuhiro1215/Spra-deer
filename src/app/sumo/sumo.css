@@ -64,6 +64,9 @@
   background: #d0563c;
 }
 .sm-vs {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   font-size: 14px;
   font-style: italic;
   color: #ffe08a;
@@ -174,6 +177,7 @@
   color: #ffe36b;
 }
 .sm-feed[data-kind='counter'],
+.sm-feed[data-kind='round'],
 .sm-feed[data-kind='start'] {
   color: #9dff8a;
   font-size: 38px;
@@ -381,4 +385,21 @@
   font-size: 11px;
   font-weight: 700;
   opacity: 0.6;
+}
+.sm-vs small {
+  font-size: 11px;
+  font-style: normal;
+  color: #fff;
+  white-space: nowrap;
+}
+.sm-vs small[hidden] {
+  display: none;
+}
+.sm-feed[data-kind='feint'] {
+  color: #ffd0f0;
+  font-size: 30px;
+}
+.sm-feed[data-kind='round'] {
+  top: 24%;
+  font-size: 24px;
 }
