@@ -426,7 +426,8 @@ test('level data is sound: unique ids, safe start, final chapter, reachable gaps
   // WORLD 2 は3Dのせんべい屋台(/bake/。旧ステージ2の配達は WORLD 1 へ)
   assert.ok(STAGES[1].slots.length >= 1 && STAGES[1].slots.every(s => s.page === '/bake/' && s.runnerId === s.id));
   assert.ok(STAGES[2].slots.length >= 1 && STAGES[2].slots.every(s => s.page === '/sweep/')); // 3=3D掃除(/sweep/。作った面だけ)
-  assert.deepEqual(STAGES.slice(3, 5).map(g => g.slots.length), [10, 1]); // 4=3D走り(作る枠を含む) 5=保留(2026-11-19 に 3・4 を入れかえ)
+  assert.deepEqual(STAGES.slice(3, 5).map(g => g.slots.length), [10, 10]); // 4=3D走り(作る枠を含む) 5=ジャンプ(/jump/。準備中の枠を含む。2026-11-21)
+  assert.ok(STAGES[4].slots.filter(s => s.runnerId).every(s => s.page === '/jump/'));
   for (const level of PLAYABLE.filter(l => l.delivery)) {
     for (const t of level.delivery!.thieves) assert.ok(Math.hypot(t.x - level.start.x, t.y - level.start.y) > 350, `${level.id}: ${t.id} too close to start`);
     if (level.delivery!.thieves.length) assert.ok(level.hints.caught, `${level.id}: needs a stolen hint`);
