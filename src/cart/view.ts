@@ -857,9 +857,9 @@ export class CartView {
         const trunk = new THREE.Mesh(trunkGeo, barkMat);
         trunk.position.set(side * 3.1, 2.1, 0); trunk.rotation.z = side * 0.12; trunk.castShadow = true;
         const limb = new THREE.Mesh(limbGeo, barkMat);
-        limb.position.set(side * 1.25, 1.95, 0); limb.rotation.z = side * (Math.PI / 2 - 0.1); limb.castShadow = true;
+        limb.scale.set(1, 0.7, 1); limb.position.set(side * 2.05, 2.0, 0); limb.rotation.z = side * (Math.PI / 2 - 0.1); limb.castShadow = true; // 線路の片側だけ(反対へ傾ければ、よけられると見て分かる)
         g.add(trunk, limb);
-        for (const [x, y, z, r] of [[0.2, 2.15, 0.1, 0.62], [0.95, 2.35, -0.3, 0.75], [1.8, 2.5, 0.25, 0.8], [3.0, 4.6, 0, 1.6]]) {
+        for (const [x, y, z, r] of [[0.75, 2.15, 0.1, 0.55], [1.35, 2.35, -0.3, 0.7], [2.1, 2.5, 0.25, 0.8], [3.0, 4.6, 0, 1.6]]) {
           const leaf = new THREE.Mesh(leafGeo, leafMat);
           leaf.position.set(side * x, y, z); leaf.scale.setScalar(r); leaf.castShadow = true;
           g.add(leaf);
@@ -1235,7 +1235,7 @@ export class CartView {
 
     // Spra: トロッコの中。傾けた向きへ体をたおす。ブレーキで後ろへ、ダッシュで前のめり
     const bob = Math.abs(Math.sin(this.time * 23)) * 0.02 * speed;
-    this.spra.position.set(run.lean * 0.3, RAIL_TOP + 0.5 + 0.78 + bob, 0.28);
+    this.spra.position.set(run.lean * 0.6, RAIL_TOP + 0.5 + 0.78 + bob, 0.28);
     this.spra.rotation.set(run.braking ? 0.16 : run.dashT > 0 ? -0.12 : 0, 0, -run.lean * 0.34 + (run.tilt > 0.2 ? Math.sin(this.time * 40) * 0.06 : 0));
     const squash = !run.air && this.wasAir ? 0.84 : 1;
     this.spra.scale.y += (1.56 * squash - this.spra.scale.y) * Math.min(1, dt * 14);
