@@ -10,7 +10,8 @@ import { applyCarry, carryOf, type RelayCtx } from './relay.ts';
 import { HELPER_TEXT, mountHelpers } from './helpers.ts';
 
 const STEP = 1 / 120;
-const BAKE_BGM = { url: '/assets/audio/play.mp3', loopStart: 0, loopEnd: 1e4, volume: 0.32 };
+/** DEER-08 Spra Deer Sendeiyaki(4.04〜116.51秒をくり返す) */
+const BAKE_BGM = { url: '/assets/audio/bake.mp3', loopStart: 4.04, loopEnd: 116.51, volume: 0.32 };
 /** なぞりはじめと みなす長さ(px) */
 const DRAG_MIN = 12;
 const FAIL_TEXT: Record<string, [string, string]> = {

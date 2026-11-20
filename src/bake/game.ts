@@ -10,7 +10,8 @@ import { BakeView } from './view.ts';
 
 const STEP = 1 / 120;
 /** BGMは、まだ専用の曲がないので、2Dの面の曲を仮に使う */
-const BAKE_BGM = { url: '/assets/audio/play.mp3', loopStart: 0, loopEnd: 1e4, volume: 0.32 };
+/** DEER-08 Spra Deer Sendeiyaki(4.04〜116.51秒をくり返す) */
+const BAKE_BGM = { url: '/assets/audio/bake.mp3', loopStart: 4.04, loopEnd: 116.51, volume: 0.32 };
 
 const FAIL_TEXT: Record<string, [string, string]> = {
   burnt: ['せんべいを 焦がしすぎた…', '輪の 金色で タップ！ 煙が 出たら いそいで'],

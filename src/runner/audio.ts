@@ -10,6 +10,8 @@ export function soundOn(): boolean {
 
 /** WORLD 4(鹿、走る。)のBGM(bgm/bgm-prompts.md の DEER-05)。頭から流し、LOOP_START〜LOOP_END をくり返す */
 export const RUN_BGM = { url: '/assets/audio/run.mp3', loopStart: 16.02, loopEnd: 141.552, volume: 0.42 };
+/** DEER-10 Spra Deer trolley(WORLD 8 トロッコ。7.87〜64.36秒をくり返す) */
+export const CART_BGM = { url: '/assets/audio/cart.mp3', loopStart: 7.87, loopEnd: 64.36, volume: 0.42 };
 
 export type Sfx = 'jump' | 'dash' | 'heal' | 'hit' | 'gold' | 'premium' | 'checkpoint';
 const SFX_VOLUME: Record<Sfx, number> = { jump: 0.35, dash: 0.45, heal: 0.6, hit: 0.5, gold: 0.6, premium: 0.75, checkpoint: 0.55 };

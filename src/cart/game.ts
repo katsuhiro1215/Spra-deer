@@ -1,7 +1,7 @@
 // WORLD 8「鹿と暴走トロッコ」の組み立て: 入力・画面の表示(HUD)・音・ループ・記録。
 import { Progress } from '../progress.ts';
 import { Wallet, clearRewards, waitText, STAMINA_MAX, STAMINA_FAIL } from '../wallet.ts';
-import { RunnerAudio } from '../runner/audio.ts';
+import { CART_BGM, RunnerAudio } from '../runner/audio.ts';
 import { CART_LEVELS, trackOf, type CartLevel } from './levels.ts';
 import { COLLAPSE_AT } from './track.ts';
 import { BAL, CartRun, rampReach, type CartEvent, type Input } from './sim.ts';
@@ -301,7 +301,7 @@ export function startCart(root: HTMLElement, level: CartLevel): () => void {
     q('r-reward').textContent = '';
     audio.ensure(); ac = audio.ctx;
     startLoops();
-    audio.stopMusic(0); audio.startMusic();
+    audio.stopMusic(0); audio.startMusic(CART_BGM);
     window.clearTimeout(resultTimer);
     run = new CartRun(track);
     if (from) run.restore(from.s, from.t, from.coins, from.gold, from.premium, from.collected);
