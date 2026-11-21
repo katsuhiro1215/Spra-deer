@@ -4,7 +4,8 @@ import { ALL_PLAYABLE_SLOTS, PLAYABLE, levelById, pageOf, type LevelDefinition }
 import { createWorld, step, type World, type Event } from './game/world.ts';
 import { Progress } from './progress.ts';
 import { Wallet, clearRewards } from './wallet.ts';
-import { titleHTML, homeHTML, worldHTML, shopHTML, friendsHTML, settingsHTML, tiredHTML, statusBar, type Tab } from './home.ts';
+import { titleHTML, homeHTML, worldsHTML, worldHTML, shopHTML, friendsHTML, settingsHTML, tiredHTML, statusBar, type Tab } from './home.ts';
+import { loadSeasonPick, saveSeasonPick, type SeasonPick } from './season.ts';
 import { ParkView, walkKey, deerKey } from './view.ts';
 import deerWalk from './game/deer-walk.json';
 import walk from './game/spru-walk.json';
@@ -142,6 +143,8 @@ class Park extends Phaser.Scene {
       if (action === 'home') { this.abandon(); this.home(); }
       if (action === 'tab') this.tab(button!.dataset.tab as Tab);
       if (action === 'world') this.world_(Number(button!.dataset.stage));
+      if (action === 'worlds') { this.abandon(); this.tab('worlds'); }
+      if (action === 'season') { saveSeasonPick(button!.dataset.season as SeasonPick); this.tab('settings'); }
       if (action === 'story') this.toast('ストーリーは、準備中です。');
       if (action === 'sound') { toggleSound(); this.tab('settings'); }
       if (action === 'buy-potion') this.buyPotion();
@@ -157,7 +160,7 @@ class Park extends Phaser.Scene {
     });
     // 走りゲームのページから「面えらびへ」で戻ってきたときは、そのワールドの面えらびから始める
     const m = /^#world-(\d+)$/.exec(location.hash);
-    if (m) this.world_(Number(m[1])); else if (location.hash === '#select') this.home(); else this.title();
+    if (m) this.world_(Number(m[1])); else if (location.hash === '#worlds') this.tab('worlds'); else if (location.hash === '#select') this.home(); else this.title();
     // 体力の回復(残り時間)を、1秒ごとに書きかえる
     window.setInterval(() => {
       const live = el('overlay').querySelector('[data-live="status"]');
@@ -180,7 +183,7 @@ class Park extends Phaser.Scene {
   private tab(t: Tab, note = '') {
     if (t === 'home') { this.home(); return; }
     this.idle('select');
-    el('overlay').innerHTML = t === 'shop' ? shopHTML(wallet, note) : t === 'friends' ? friendsHTML(wallet) : settingsHTML(wallet, sound.enabled);
+    el('overlay').innerHTML = t === 'worlds' ? worldsHTML(progress, wallet) : t === 'shop' ? shopHTML(wallet, note) : t === 'friends' ? friendsHTML(wallet) : settingsHTML(wallet, sound.enabled, loadSeasonPick());
   }
   private stageOf(id: string): number { return ALL_PLAYABLE_SLOTS.find(l => l.id === id)?.stage ?? 1; }
   /** 遊んでいる面を、とちゅうでやめる(失敗と同じく体力が減る。設計書 25-2) */

@@ -163,3 +163,39 @@ span.hs-buy { background: #eee6cf; box-shadow: none; color: #7a7260; }
   strong { font-size: max(14px, 3.4cqw); margin: .4cqw 0; } > span { font-size: max(12px, 2.6cqw); }
   &.busy { background: #c5b891; box-shadow: 0 2px 0 #a49773; transform: translateY(3px); } &:disabled { cursor: default; } &[hidden] { display: none; } }
 #controls.has-throw .control-note { display: none; }
+
+// ホーム: 季節の場面(設計書 36章)。Spra と鹿を 画面いっぱいに。上の表示は 場面に 重ねる
+.home-main .hs-head { position: absolute; z-index: 5; left: 0; right: 0; top: 0; }
+.home-main .hs-body { position: relative; padding: 0; overflow: hidden; }
+.hs-scene { position: absolute; inset: 0; overflow: hidden; background: linear-gradient(var(--sky1), var(--sky2) 72%);
+  .sc-far { position: absolute; left: 50%; bottom: 47%; width: 74cqw; transform: translateX(-50%); opacity: .92; }
+  .sc-hill { position: absolute; left: -12%; right: -12%; bottom: 0; height: 52%; border-radius: 50% 50% 0 0 / 16% 16% 0 0; background: linear-gradient(var(--hill1), var(--hill2)); }
+  .sc-tree { position: absolute; bottom: 40%; width: 36cqw; z-index: 1; &.l { left: -10cqw; } &.r { right: -10cqw; transform: scaleX(-1); } }
+  .sc-cast { position: absolute; left: 0; right: 0; bottom: 17%; z-index: 2; display: flex; justify-content: center; align-items: flex-end; pointer-events: none; }
+  .sc-spra { position: relative; z-index: 2; height: 74cqw; margin: 0 -7cqw; filter: drop-shadow(0 2cqw 2cqw #0003); animation: sc-bob 3.2s ease-in-out infinite; }
+  .sc-stag { position: relative; z-index: 1; height: 56cqw; filter: drop-shadow(0 1.6cqw 1.6cqw #0002); }
+  .sc-fawn { position: relative; z-index: 3; height: 38cqw; filter: drop-shadow(0 1.6cqw 1.6cqw #0002); }
+  .sc-speech { position: absolute; z-index: 5; left: 3.5cqw; right: 33cqw; bottom: 3.5%; margin: 0; padding: 2.4cqw 3.4cqw; border: .6cqw solid #c9a46a; border-radius: 3cqw; background: #fffdf0f0; font-weight: 800; font-size: max(13px, 3.6cqw); line-height: 1.5; color: #4a3a24; box-shadow: 0 1cqw 0 #0000001c;
+    b { display: block; width: fit-content; margin-bottom: .6cqw; padding: .2cqw 2.4cqw; border-radius: 99px; background: #3b9a2a; color: #fff; font-size: .78em; } }
+  .sc-side { position: absolute; z-index: 5; left: 3.5cqw; top: 24cqw; display: flex; flex-direction: column; align-items: flex-start; gap: 1.6cqw; }
+  .sc-season, .sc-count, .sc-story { padding: .8cqw 2.8cqw; border: 0; border-radius: 99px; background: #fffdf3e6; box-shadow: 0 .5cqw 0 #00000014; font-family: $rounded; font-weight: 900; font-size: max(12px, 3cqw); color: #4a3a24; }
+  .sc-season { background: #3b9a2a; color: #fff; }
+  .sc-count b { margin: 0 .6cqw; font-size: 1.25em; color: #e0702a; }
+  .sc-play { position: absolute; z-index: 6; right: 3.5cqw; bottom: 3%; width: 26cqw; height: 26cqw; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .4cqw; border: 1cqw solid #fff; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #ffd86b, #f28a12 70%); color: #fff; font-family: $rounded; font-weight: 900; font-size: max(18px, 5.4cqw); text-shadow: 0 .4cqw 0 #b85f08aa; box-shadow: 0 1.4cqw 0 #b85f08, 0 2.4cqw 4cqw #0003; animation: sc-pulse 2.4s ease-in-out infinite;
+    small { font-size: max(9px, 2.2cqw); letter-spacing: .05em; }
+    &:active { transform: translateY(1cqw); box-shadow: 0 .4cqw 0 #b85f08; animation: none; } } }
+.sc-fall { position: absolute; inset: 0; z-index: 4; pointer-events: none;
+  i { position: absolute; top: -4%; left: var(--x); width: calc(2.4cqw * var(--s)); height: calc(1.6cqw * var(--s)); opacity: 0; animation: sc-fall var(--t) linear var(--d) infinite; }
+  &.petal i { background: #ffc3d8; border-radius: 80% 0 80% 0; }
+  &.leaf i { background: #e0562c; border-radius: 0 80% 0 80%; }
+  &.snow i { width: calc(1.6cqw * var(--s)); height: calc(1.6cqw * var(--s)); border-radius: 50%; background: #fff; box-shadow: 0 0 1cqw #fff; }
+  &.spark i { top: auto; bottom: 10%; width: calc(1.1cqw * var(--s)); height: calc(1.1cqw * var(--s)); border-radius: 50%; background: #fff9c4; box-shadow: 0 0 1.6cqw #fff59a; animation-name: sc-float; } }
+@keyframes sc-fall { 0% { opacity: 0; transform: translate(0, 0) rotate(0); } 10% { opacity: .95; } 100% { opacity: .85; transform: translate(-14cqw, 230cqw) rotate(540deg); } }
+@keyframes sc-float { 0% { opacity: 0; transform: translate(0, 0); } 30% { opacity: 1; } 100% { opacity: 0; transform: translate(6cqw, -70cqw); } }
+@keyframes sc-bob { 50% { transform: translateY(-1.2cqw); } }
+@keyframes sc-pulse { 50% { transform: scale(1.05); } }
+@media (prefers-reduced-motion: reduce) { .sc-fall, .hs-scene .sc-spra, .hs-scene .sc-play { animation: none; } .sc-fall { display: none; } }
+.hs-season-row { flex-wrap: wrap; gap: 2cqw; padding-top: 2cqw; padding-bottom: 2cqw; }
+.hs-chips { display: flex; flex-wrap: wrap; gap: 1.4cqw; }
+.hs-chip-btn { min-height: 36px; padding: 0 3cqw; border: 2px solid #d8e4c4; border-radius: 99px; background: #fff; font-family: $rounded; font-weight: 900; font-size: max(13px, 3.3cqw); color: #3a4a30;
+  &[aria-pressed='true'] { border-color: #3b9a2a; background: #3b9a2a; color: #fff; } }

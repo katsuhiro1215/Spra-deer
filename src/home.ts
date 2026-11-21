@@ -4,6 +4,7 @@ import { STAGES } from './game/levels.ts';
 import type { Progress } from './progress.ts';
 import { POTION, STAMINA_MAX, STAMINA_FAIL, waitText, type Wallet } from './wallet.ts';
 import pkg from '../package.json';
+import { SEASONS, currentSeason, type SeasonPick } from './season.ts';
 
 export const APP_VERSION = `v${pkg.version}`;
 
@@ -46,10 +47,11 @@ function head(w: Wallet): string {
   return `<header class="hs-head"><button class="hs-brand" data-action="title" aria-label="トップへ"><span class="hs-mark">S</span><span class="hs-name">Spraと鹿。</span></button>${statusBar(w)}</header>`;
 }
 
-export type Tab = 'home' | 'shop' | 'friends' | 'settings';
+export type Tab = 'home' | 'worlds' | 'shop' | 'friends' | 'settings';
 function nav(active: Tab): string {
   const items: [Tab, string, string][] = [
     ['home', 'ホーム', '<path d="M4 13L14 4l10 9M7 11v11h14V11"/>'],
+    ['worlds', 'ワールド', '<path d="M4 7l6-2 8 3 6-2v15l-6 2-8-3-6 2zM10 5v15M18 8v15"/>'],
     ['shop', 'アイテム', '<path d="M5 9h18l-2 13H7zM10 9a4 4 0 0 1 8 0"/>'],
     ['friends', 'なかま', '<circle cx="10" cy="11" r="4"/><circle cx="19" cy="11" r="3.2"/><path d="M3 23c1-5 4-7 7-7s6 2 7 7M16 17c3-1 7 1 8 5"/>'],
     ['settings', 'せってい', '<circle cx="14" cy="14" r="4"/><path d="M14 3v4M14 21v4M3 14h4M21 14h4M6 6l3 3M19 19l3 3M22 6l-3 3M9 19l-3 3"/>'],
@@ -66,8 +68,33 @@ export function titleHTML(): string {
   return `<div class="screen title-screen"><div class="title-corner"><span class="hs-mark">S</span><span class="title-version">${APP_VERSION}</span></div><div class="title-head"><h2 class="wordmark" aria-label="Spraと鹿。"><span class="w-spru">Spra</span><span class="w-to">と</span><span class="w-deer">鹿</span><span class="w-dot">。</span></h2><p class="subtitle">奈良を、鹿と大冒険。</p></div><div class="hero"><img class="hero-fawn" src="/assets/hero/fawn.png" alt="子鹿"><img class="hero-spru" src="/assets/hero/spru.png" alt="Spra"><img class="hero-stag" src="/assets/hero/stag.png" alt="雄鹿"><span class="speech">いっしょに、いこう！</span></div><div class="hill"><button class="play" data-action="home">はじめる</button><nav class="legal-links"><a href="/terms/">利用規約</a><a href="/privacy/">プライバシーポリシー</a></nav></div></div>`;
 }
 
-/** ホーム: ストーリーの帯と、ワールド1〜8のカード */
-export function homeHTML(p: Progress, w: Wallet): string {
+/** ストーリーは、絵と遊び方ができるまで 隠す(2026-11-21 Owner) */
+export const STORY_VISIBLE = false;
+
+/** ホーム: Spra と鹿が 画面いっぱい。季節で 背景と ひとことが かわる(着せ替え)。「あそぶ」で ワールドえらびへ */
+export function homeHTML(p: Progress, w: Wallet, now = new Date()): string {
+  const se = currentSeason(now);
+  const line = se.lines[Math.floor(now.getTime() / 60000) % se.lines.length];
+  const total = WORLDS.reduce((n, wd) => n + (wd.stage ? playable(wd.stage).length : 0), 0);
+  const cleared = WORLDS.reduce((n, wd) => n + (wd.stage ? p.clearedCount(wd.stage) : 0), 0);
+  // 降ってくるもの(位置・速さ・大きさは 決まった ばらつき)
+  const fall = Array.from({ length: 16 }, (_, i) => `<i style="--x:${(i * 37) % 100}%;--d:${(i * 0.83) % 7}s;--t:${7 + ((i * 5) % 6)}s;--s:${0.7 + ((i * 3) % 5) / 8}"></i>`).join('');
+  const tree = se.tree ? `<img class="sc-tree l" src="${se.tree}" alt=""><img class="sc-tree r" src="${se.tree}" alt="">` : '';
+  const story = STORY_VISIBLE ? '<button class="sc-story" data-action="story">ストーリー</button>' : '';
+  const scene = `<div class="hs-scene season-${se.key}" style="--sky1:${se.sky[0]};--sky2:${se.sky[1]};--hill1:${se.hill[0]};--hill2:${se.hill[1]}">
+    <img class="sc-far" src="${se.far}" alt="" style="width:${se.farW}cqw">
+    <div class="sc-hill"></div>${tree}
+    <div class="sc-fall ${se.fall}" aria-hidden="true">${fall}</div>
+    <div class="sc-cast"><img class="sc-stag" src="/assets/hero/stag.png" alt="雄鹿"><img class="sc-spra" src="${se.spra ?? '/assets/hero/spru.png'}" alt="Spra"><img class="sc-fawn" src="/assets/hero/fawn.png" alt="子鹿"></div>
+    <p class="sc-speech"><b>Spra</b>${line}</p>
+    <div class="sc-side"><span class="sc-season">${se.label}</span><span class="sc-count">クリア<b>${cleared}</b>/ ${total}</span>${story}</div>
+    <button class="sc-play" data-action="worlds"><small>WORLD 1〜8</small>あそぶ</button>
+  </div>`;
+  return shell(w, 'home', scene, 'home-main');
+}
+
+/** ワールドえらび: ワールド1〜8のカード */
+export function worldsHTML(p: Progress, w: Wallet): string {
   const cards = WORLDS.map(wd => {
     const slots = wd.stage ? playable(wd.stage) : [];
     if (!slots.length) {
@@ -78,8 +105,7 @@ export function homeHTML(p: Progress, w: Wallet): string {
     const state = needs > 0 ? `🔒 前のワールドを あと${needs}面` : `${cleared} / ${slots.length} クリア`;
     return `<button class="hs-world${needs > 0 ? ' locked' : ''}${cleared === slots.length ? ' done' : ''}" style="--wc:${wd.color}" data-action="world" data-stage="${wd.stage}"${needs > 0 ? ' aria-disabled="true"' : ''}><span class="hs-wno">WORLD ${wd.no}</span><b>${wd.name}</b><small>${wd.play}</small><span class="hs-wstate">${state}</span></button>`;
   }).join('');
-  const story = `<button class="hs-story" data-action="story"><span class="hs-wno">STORY</span><b>ストーリー</b><small>準備中 ── Spraと鹿の、ぼうけんの物語。</small></button>`;
-  return shell(w, 'home', `${story}<div class="hs-worlds">${cards}</div>`);
+  return shell(w, 'worlds', `<h2 class="hs-title">ワールドを えらぶ</h2><div class="hs-worlds">${cards}</div>`);
 }
 
 /** ワールドの面えらび */
@@ -94,7 +120,7 @@ export function worldHTML(stage: number, p: Progress, w: Wallet): string {
     return `<button class="level-card${record.clears ? ' done' : ''}" data-action="${slot.runnerId ? 'run' : 'start'}" data-level="${slot.id}"${open ? '' : ' disabled'}><b>${slot.id}</b><span class="lv-name">${slot.title}<small>${slot.summary}</small></span><span class="lv-best">${status}</span></button>`;
   }).join('');
   const total = playable(stage).length;
-  return shell(w, 'home', `<div class="hs-world-head" style="--wc:${wd?.color ?? '#5db443'}"><button class="secondary" data-action="home">← ホーム</button><div><span class="hs-wno">WORLD ${wd?.no ?? stage}</span><h2>${wd?.name ?? group?.title ?? ''}</h2></div><span class="count">${p.clearedCount(stage)} / ${total}</span></div><div class="levels">${cards}</div>`, 'world-screen');
+  return shell(w, 'worlds', `<div class="hs-world-head" style="--wc:${wd?.color ?? '#5db443'}"><button class="secondary" data-action="worlds">← ワールド</button><div><span class="hs-wno">WORLD ${wd?.no ?? stage}</span><h2>${wd?.name ?? group?.title ?? ''}</h2></div><span class="count">${p.clearedCount(stage)} / ${total}</span></div><div class="levels">${cards}</div>`, 'world-screen');
 }
 
 /** 体力が足りないとき(面を始める前) */
@@ -119,6 +145,7 @@ export function friendsHTML(w: Wallet): string {
   return shell(w, 'friends', `<h2 class="hs-title">なかま</h2><div class="hs-friends"><img src="/assets/hero/spru.png" alt="Spra"><img src="/assets/hero/fawn.png" alt="子鹿"></div><p class="hs-note">いまの なかま: Spra・子鹿</p><p class="hs-help">衣装の鹿や、Lumi・Ruru は、アイテムで手に入るようになります(準備中)。</p>`);
 }
 
-export function settingsHTML(w: Wallet, soundOn: boolean): string {
-  return shell(w, 'settings', `<h2 class="hs-title">せってい</h2><div class="hs-settings"><button class="hs-row" data-action="sound" aria-pressed="${soundOn}"><span>音(BGM・効果音)</span><b>${soundOn ? 'ON' : 'OFF'}</b></button><a class="hs-row" href="/terms/"><span>利用規約</span><b>›</b></a><a class="hs-row" href="/privacy/"><span>プライバシーポリシー</span><b>›</b></a><div class="hs-row"><span>バージョン</span><b>${APP_VERSION}</b></div></div><p class="hs-help">記録・体力・コインは、このブラウザに保存されます。${w.canSave ? '' : '(この環境では保存できません)'}</p>`);
+export function settingsHTML(w: Wallet, soundOn: boolean, season: SeasonPick = 'auto'): string {
+  const seasons = (['auto', 'spring', 'summer', 'autumn', 'winter'] as const).map(k => `<button class="hs-chip-btn" data-action="season" data-season="${k}" aria-pressed="${k === season}">${k === 'auto' ? '自動' : SEASONS[k].label}</button>`).join('');
+  return shell(w, 'settings', `<h2 class="hs-title">せってい</h2><div class="hs-settings"><button class="hs-row" data-action="sound" aria-pressed="${soundOn}"><span>音(BGM・効果音)</span><b>${soundOn ? 'ON' : 'OFF'}</b></button><div class="hs-row hs-season-row"><span>ホームの 季節</span><div class="hs-chips">${seasons}</div></div><a class="hs-row" href="/terms/"><span>利用規約</span><b>›</b></a><a class="hs-row" href="/privacy/"><span>プライバシーポリシー</span><b>›</b></a><div class="hs-row"><span>バージョン</span><b>${APP_VERSION}</b></div></div><p class="hs-help">記録・体力・コインは、このブラウザに保存されます。${w.canSave ? '' : '(この環境では保存できません)'}</p>`);
 }
