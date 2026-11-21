@@ -163,7 +163,7 @@ export class ParkView {
         for (let x = 120; x < 600; x += 56) ground.lineBetween(x, y, x + 28, y);
       }
     }
-    // スタートゲート。Spruはアーチの下に立つ（ゲートは、Spruより奥に描く）。
+    // スタートゲート。Spraはアーチの下に立つ（ゲートは、Spraより奥に描く）。
     const gate = s.add.image(start0.x, start0.y + 26, 'gate-start').setOrigin(.5, 1).setDepth(start0.y - 5);
     gate.setDisplaySize(380, 380 * gate.frame.height / gate.frame.width);
     this.label(start0.x, start0.y + 80, '奈良さんぽ、出発。', 26, '#839467').setDepth(1);
@@ -398,7 +398,7 @@ export class ParkView {
       shape.setPosition(s.cx, s.cy).setDepth(s.cy);
     }
     for (const wall of w.walls) {
-      // 壁ごとに描き、Spruと同じく y で前後を決める（跳び越えるとき、壁の裏に隠れないように）。
+      // 壁ごとに描き、Spraと同じく y で前後を決める（跳び越えるとき、壁の裏に隠れないように）。
       let g = this.wallShapes.get(wall.id);
       if (!g) { g = this.scene.add.graphics(); this.wallShapes.set(wall.id, g); }
       g.clear().setDepth(wall.y + 40);
@@ -621,7 +621,7 @@ export class ParkView {
     }
     this.labels = this.labels.filter(l => now - l.born <= 1.2);
     // 旗はゴールの位置について行く（動くゴールがあるため）。基準は、中央ゴール (360,300) のときの形。
-    // ゴールゲートはゴールの位置について行く（動くゴールがあるため）。Spruはゲートの手前を通ってクリアする。
+    // ゴールゲートはゴールの位置について行く（動くゴールがあるため）。Spraはゲートの手前を通ってクリアする。
     this.goalGate.setPosition(w.goal.x, w.goal.y + 62).setDepth(w.goal.y - 20).setVisible(!w.level.delivery);
   }
 }

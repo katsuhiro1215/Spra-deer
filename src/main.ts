@@ -4,6 +4,7 @@ import { ALL_PLAYABLE_SLOTS, PLAYABLE, STAGES, levelById, pageOf, type LevelDefi
 import { createWorld, step, type World, type Event } from './game/world.ts';
 import { Progress } from './progress.ts';
 import { Wallet, clearRewards } from './wallet.ts';
+import { Closet, costumeOf, type Who } from './closet.ts';
 import { titleHTML, homeHTML, worldsHTML, worldHTML, shopHTML, friendsHTML, settingsHTML, tiredHTML, statusBar, type Tab } from './home.ts';
 import { loadSeasonPick, saveSeasonPick, type SeasonPick } from './season.ts';
 import { AccountController } from './account/controller.ts';
@@ -20,6 +21,7 @@ import './styles.scss';
 const el = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const progress = new Progress();
 const wallet = new Wallet();
+const closet = new Closet(wallet);
 const WATER_HINT = '池に、落ちた…！\n石や はすの葉の上を、跳んで渡ろう。\n乗ると沈む石もある。';
 const STOLEN_DEFAULT = 'せんべいを、取られた…！\n鹿は、せんべいの匂いで寄ってくる。';
 const CAUGHT_HINT = '鹿が追いかけてきた…！\n止まると追いつかれる。\nジャンプで鹿を越えるのもアリ。';
@@ -164,6 +166,8 @@ class Park extends Phaser.Scene {
       if (action === 'story') this.toast('ストーリーは、準備中です。');
       if (action === 'sound') { toggleSound(); this.tab('settings'); }
       if (action === 'buy-potion') this.buyPotion();
+      if (action === 'buy-costume') this.buyCostume(button!.dataset.id ?? '');
+      if (action === 'wear') { const id = button!.dataset.id ?? ''; if (id) closet.wear(id); else closet.takeOff(button!.dataset.who as Who); this.tab('friends'); }
       if ((action === 'start' || action === 'next') && target && progress.isUnlocked(target.id)) this.tryBegin(target);
       // 3D走りゲームの面(WORLD 4)は、別のページ(/run/)で遊ぶ
       const runId = button?.dataset.level ?? '';
@@ -192,12 +196,12 @@ class Park extends Phaser.Scene {
     el('hud').hidden = el('controls').hidden = true; el('message').textContent = '';
     el('game-wrap').classList.toggle('menu', mode === 'select');
   }
-  private title() { this.idle('title'); el('overlay').innerHTML = titleHTML(); }
+  private title() { this.idle('title'); el('overlay').innerHTML = titleHTML(new Date(), closet); }
   private account!: AccountController;
   /** いま出している画面(記録が かわったときに かきなおす) */
   private current: (() => void) | null = null;
   private lastStage = 1;
-  private home() { this.idle('select'); this.current = () => this.home(); el('overlay').innerHTML = homeHTML(progress, wallet, new Date(), this.account.signedIn ? this.account.acc.profileName : null); }
+  private home() { this.idle('select'); this.current = () => this.home(); el('overlay').innerHTML = homeHTML(progress, wallet, new Date(), this.account.signedIn ? this.account.acc.profileName : null, closet); }
   private world_(stage: number) {
     if (!(stage > 0)) { this.home(); return; }
     this.idle('select'); this.lastStage = stage; this.current = () => this.world_(stage);
@@ -208,7 +212,7 @@ class Park extends Phaser.Scene {
     if (t === 'home') { this.home(); return; }
     this.idle('select'); this.current = t === 'worlds' ? () => this.tab('worlds') : null;
     if (t === 'worlds') void this.account.loadStats();
-    el('overlay').innerHTML = t === 'worlds' ? worldsHTML(progress, wallet, this.account.stats) : t === 'shop' ? shopHTML(wallet, note) : t === 'friends' ? friendsHTML(wallet) : settingsHTML(wallet, sound.enabled, loadSeasonPick(), this.account.rows(), this.account.signedIn);
+    el('overlay').innerHTML = t === 'worlds' ? worldsHTML(progress, wallet, this.account.stats) : t === 'shop' ? shopHTML(wallet, note, closet, new Date()) : t === 'friends' ? friendsHTML(wallet, closet) : settingsHTML(wallet, sound.enabled, loadSeasonPick(), this.account.rows(), this.account.signedIn);
   }
   private stageOf(id: string): number { return ALL_PLAYABLE_SLOTS.find(l => l.id === id)?.stage ?? 1; }
   /** 遊んでいる面を、とちゅうでやめる(失敗と同じく体力が減る。設計書 25-2) */
@@ -234,6 +238,11 @@ class Park extends Phaser.Scene {
     if (inModal && ok && this.tiredFrom === 'level') { this.begin(this.level); return; }
     if (inModal) { this.tired(this.tiredFrom); return; }
     this.tab('shop', ok ? '体力が回復した！' : 'シルバーコインが たりません。');
+  }
+  private buyCostume(id: string) {
+    const r = closet.buy(id, new Date());
+    const name = costumeOf(id)?.name ?? '';
+    this.tab('shop', r === 'ok' ? `${name}を 手に入れた！ なかまで 着せかえられるよ` : r === 'poor' ? 'ゴールドコインが たりません。' : r === 'closed' ? 'いまは 買えません(季節の衣装です)。' : '');
   }
   private toast(text: string) { el('message').textContent = text; window.setTimeout(() => { if (el('message').textContent === text) el('message').textContent = ''; }, 2000); }
   private begin(level: LevelDefinition) {

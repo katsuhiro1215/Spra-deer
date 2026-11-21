@@ -1,4 +1,4 @@
-/** Spruの向き。dr=右下, dl=左下, ur=右上, ul=左上（下=画面の手前、上=奥）。 */
+/** Spraの向き。dr=右下, dl=左下, ur=右上, ul=左上（下=画面の手前、上=奥）。 */
 export type Facing = 'down' | 'up' | 'dr' | 'dl' | 'ur' | 'ul';
 
 /**

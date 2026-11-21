@@ -4,7 +4,8 @@ import { STAGES } from './game/levels.ts';
 import type { Progress } from './progress.ts';
 import { POTION, STAMINA_MAX, STAMINA_FAIL, waitText, type Wallet } from './wallet.ts';
 import pkg from '../package.json';
-import { SEASONS, currentSeason, type SeasonPick } from './season.ts';
+import { SEASONS, currentSeason, type Season, type SeasonPick } from './season.ts';
+import { COSTUMES, WHO, onSale, type Closet, type Who } from './closet.ts';
 import { statsLine } from './account/screens.ts';
 import type { Stats } from './account/api.ts';
 
@@ -65,34 +66,48 @@ function shell(w: Wallet, tab: Tab, body: string, extraClass = ''): string {
   return `<div class="screen home-screen ${extraClass}">${head(w)}<div class="hs-body">${body}</div>${nav(tab)}</div>`;
 }
 
-/** トップ画面(ブランド共通: 左上ロゴ・右上バージョン・中央にアプリ名と「はじめる」・下に規約) */
-export function titleHTML(): string {
-  return `<div class="screen title-screen"><div class="title-corner"><span class="hs-mark">S</span><span class="title-version">${APP_VERSION}</span></div><div class="title-head"><h2 class="wordmark" aria-label="Spraと鹿。"><span class="w-spru">Spra</span><span class="w-to">と</span><span class="w-deer">鹿</span><span class="w-dot">。</span></h2><p class="subtitle">奈良を、鹿と大冒険。</p></div><div class="hero"><img class="hero-fawn" src="/assets/hero/fawn.png" alt="子鹿"><img class="hero-spru" src="/assets/hero/spru.png" alt="Spra"><img class="hero-stag" src="/assets/hero/stag.png" alt="雄鹿"><span class="speech">いっしょに、いこう！</span></div><div class="hill"><button class="play" data-action="home">はじめる</button><nav class="legal-links"><a href="/terms/">利用規約</a><a href="/privacy/">プライバシーポリシー</a></nav></div></div>`;
+/** 鹿の絵(着ている衣装があれば、その絵) */
+function fig(cls: string, who: Who, closet: Closet | null, alt = WHO[who].label): string {
+  const l = closet?.look(who) ?? { img: WHO[who].base, fit: 1 };
+  return `<img class="${cls}" src="${l.img}" alt="${alt}"${l.fit !== 1 ? ` style="--fit:${l.fit}"` : ''}>`;
+}
+
+/** 季節の背景と、Spra と鹿(トップとホームで同じ。着せ替えと季節が、そのまま両方に出る) */
+function sceneHTML(se: Season, closet: Closet | null, inner: string): string {
+  // 降ってくるもの(位置・速さ・大きさは 決まった ばらつき)
+  const fall = Array.from({ length: 16 }, (_, i) => `<i style="--x:${(i * 37) % 100}%;--d:${(i * 0.83) % 7}s;--t:${7 + ((i * 5) % 6)}s;--s:${0.7 + ((i * 3) % 5) / 8}"></i>`).join('');
+  const tree = se.tree ? `<img class="sc-tree l" src="${se.tree}" alt=""><img class="sc-tree r" src="${se.tree}" alt="">` : '';
+  return `<div class="hs-scene season-${se.key}" style="--sky1:${se.sky[0]};--sky2:${se.sky[1]};--hill1:${se.hill[0]};--hill2:${se.hill[1]}">
+    <img class="sc-far" src="${se.far}" alt="" style="width:${se.farW}cqw">
+    <div class="sc-hill"></div>${tree}
+    <div class="sc-fall ${se.fall}" aria-hidden="true">${fall}</div>
+    <div class="sc-cast">${fig('sc-stag', 'stag', closet)}${fig('sc-doe', 'doe', closet)}<img class="sc-spra" src="${se.spra ?? '/assets/hero/spru.png'}" alt="Spra">${fig('sc-fawn', 'fawn', closet)}</div>
+    ${inner}
+  </div>`;
+}
+
+/** トップ画面(ブランド共通: 左上ロゴ・右上バージョン・中央にアプリ名と「はじめる」・下に規約)。背景は ホームと同じ 季節の絵 */
+export function titleHTML(now = new Date(), closet: Closet | null = null): string {
+  const se = currentSeason(now);
+  const top = `<div class="title-corner"><span class="hs-mark">S</span><span class="title-version">${APP_VERSION}</span></div><div class="title-head"><h2 class="wordmark" aria-label="Spraと鹿。"><span class="w-spru">Spra</span><span class="w-to">と</span><span class="w-deer">鹿</span><span class="w-dot">。</span></h2><p class="subtitle">奈良を、鹿と大冒険。</p></div>`;
+  const bottom = `<div class="title-foot"><button class="play" data-action="home">はじめる</button><nav class="legal-links"><a href="/terms/">利用規約</a><a href="/privacy/">プライバシーポリシー</a></nav></div>`;
+  return `<div class="screen title-screen title-scene">${sceneHTML(se, closet, '')}${top}${bottom}</div>`;
 }
 
 /** ストーリーは、絵と遊び方ができるまで 隠す(2026-11-21 Owner) */
 export const STORY_VISIBLE = false;
 
 /** ホーム: Spra と鹿が 画面いっぱい。季節で 背景と ひとことが かわる(着せ替え)。「あそぶ」で ワールドえらびへ */
-export function homeHTML(p: Progress, w: Wallet, now = new Date(), player: string | null = null): string {
+export function homeHTML(p: Progress, w: Wallet, now = new Date(), player: string | null = null, closet: Closet | null = null): string {
   const se = currentSeason(now);
   const line = se.lines[Math.floor(now.getTime() / 60000) % se.lines.length];
   const total = WORLDS.reduce((n, wd) => n + (wd.stage ? playable(wd.stage).length : 0), 0);
   const cleared = WORLDS.reduce((n, wd) => n + (wd.stage ? p.clearedCount(wd.stage) : 0), 0);
-  // 降ってくるもの(位置・速さ・大きさは 決まった ばらつき)
-  const fall = Array.from({ length: 16 }, (_, i) => `<i style="--x:${(i * 37) % 100}%;--d:${(i * 0.83) % 7}s;--t:${7 + ((i * 5) % 6)}s;--s:${0.7 + ((i * 3) % 5) / 8}"></i>`).join('');
-  const tree = se.tree ? `<img class="sc-tree l" src="${se.tree}" alt=""><img class="sc-tree r" src="${se.tree}" alt="">` : '';
   const story = STORY_VISIBLE ? '<button class="sc-story" data-action="story">ストーリー</button>' : '';
-  const scene = `<div class="hs-scene season-${se.key}" style="--sky1:${se.sky[0]};--sky2:${se.sky[1]};--hill1:${se.hill[0]};--hill2:${se.hill[1]}">
-    <img class="sc-far" src="${se.far}" alt="" style="width:${se.farW}cqw">
-    <div class="sc-hill"></div>${tree}
-    <div class="sc-fall ${se.fall}" aria-hidden="true">${fall}</div>
-    <div class="sc-cast"><img class="sc-stag" src="/assets/hero/stag.png" alt="雄鹿"><img class="sc-spra" src="${se.spra ?? '/assets/hero/spru.png'}" alt="Spra"><img class="sc-fawn" src="/assets/hero/fawn.png" alt="子鹿"></div>
-    <p class="sc-speech"><b>Spra</b>${line}</p>
+  const inner = `<p class="sc-speech"><b>Spra</b>${line}</p>
     <div class="sc-side"><span class="sc-season">${se.label}</span><span class="sc-count">クリア<b>${cleared}</b>/ ${total}</span>${player ? `<button class="sc-player" data-action="profiles">あそぶ人: <b>${player.replace(/[<>&"]/g, '')}</b></button>` : ''}${story}</div>
-    <button class="sc-play" data-action="worlds"><small>WORLD 1〜8</small>あそぶ</button>
-  </div>`;
-  return shell(w, 'home', scene, 'home-main');
+    <button class="sc-play" data-action="worlds"><small>WORLD 1〜8</small>あそぶ</button>`;
+  return shell(w, 'home', sceneHTML(se, closet, inner), 'home-main');
 }
 
 /** ワールドえらび: ワールド1〜8のカード */
@@ -139,20 +154,38 @@ export function tiredHTML(w: Wallet, back: string): string {
   return `<div class="screen modal-screen"><div class="modal-card"><span class="eyebrow">ひと休み</span><h2>体力が たりない…</h2><p>体力が ${STAMINA_FAIL} 以上で、面を始められます。<br>回復まで <b>${waitText(w.waitToPlay)}</b>(3分で1つ回復)</p>${statusBar(w)}<button class="primary" data-action="buy-potion"${can ? '' : ' disabled'}>回復薬をつかう(シルバー${POTION.price}枚で +${POTION.heal})</button><div class="secondary-row"><button class="secondary" data-action="${back}">もどる</button></div></div></div>`;
 }
 
-export function shopHTML(w: Wallet, note = ''): string {
+export function shopHTML(w: Wallet, note = '', closet: Closet | null = null, now = new Date()): string {
   const full = w.stamina >= STAMINA_MAX;
   const can = w.coins.silver >= POTION.price && !full;
-  const items = [
+  const rows = [
     `<div class="hs-item"><span class="hs-item-pic potion"></span><div><b>回復薬</b><small>体力 +${POTION.heal}</small></div><button class="hs-buy silver" data-action="buy-potion"${can ? '' : ' disabled'}><i></i>${POTION.price}</button></div>`,
-    `<div class="hs-item soon"><span class="hs-item-pic costume"></span><div><b>衣装の鹿</b><small>桜・雪・紅葉・忍者・武者 など</small></div><span class="hs-buy gold"><i></i>準備中</span></div>`,
-    `<div class="hs-item soon"><span class="hs-item-pic chara"></span><div><b>なかまキャラクター</b><small>Lumi・Ruru で あそべる</small></div><span class="hs-buy premium"><i></i>準備中</span></div>`,
-  ].join('');
+  ];
+  // 衣装: 買える(いまの月)ものと、持っているもの。絵がまだのものは「準備中」の1行にまとめる
+  const shown = COSTUMES.filter(c => c.ready && (onSale(c, now) || closet?.has(c.id)));
+  for (const c of shown) {
+    const have = closet?.has(c.id);
+    const btn = have ? '<span class="hs-have">もっている</span>' : `<button class="hs-buy gold" data-action="buy-costume" data-id="${c.id}"${w.coins.gold >= c.gold ? '' : ' disabled'}><i></i>${c.gold}</button>`;
+    rows.push(`<div class="hs-item costume"><span class="hs-item-pic" style="background-image:url(${c.img})"></span><div><b>${c.name}</b><small>${c.months.length === 1 ? `${c.months[0]}月だけ 買える` : '季節の衣装'}</small></div>${btn}</div>`);
+  }
+  if (COSTUMES.some(c => !c.ready)) {
+    rows.push(`<div class="hs-item soon"><span class="hs-item-pic costume"></span><div><b>衣装の鹿</b><small>12月は クリスマス。ほかの季節も 順に</small></div><span class="hs-buy gold"><i></i>準備中</span></div>`);
+  }
+  rows.push(`<div class="hs-item soon"><span class="hs-item-pic chara"></span><div><b>なかまキャラクター</b><small>Lumi・Ruru で あそべる</small></div><span class="hs-buy premium"><i></i>準備中</span></div>`);
   const msg = note || (full ? '体力は満タンです。' : '');
-  return shell(w, 'shop', `<h2 class="hs-title">アイテム</h2>${msg ? `<p class="hs-note" role="status">${msg}</p>` : ''}<div class="hs-items">${items}</div><p class="hs-help">シルバー: 面の中のコイン(クリアで持ち帰り)/ゴールド: はじめてのクリア・★3/プレミアム: 各面に1枚だけ隠れている</p>`);
+  return shell(w, 'shop', `<h2 class="hs-title">アイテム</h2>${msg ? `<p class="hs-note" role="status">${msg}</p>` : ''}<div class="hs-items">${rows.join('')}</div><p class="hs-help">シルバー: 面の中のコイン(クリアで持ち帰り)/ゴールド: はじめてのクリア・★3/プレミアム: 各面に1枚だけ隠れている</p>`);
 }
 
-export function friendsHTML(w: Wallet): string {
-  return shell(w, 'friends', `<h2 class="hs-title">なかま</h2><div class="hs-friends"><img src="/assets/hero/spru.png" alt="Spra"><img src="/assets/hero/fawn.png" alt="子鹿"></div><p class="hs-note">いまの なかま: Spra・子鹿</p><p class="hs-help">衣装の鹿や、Lumi・Ruru は、アイテムで手に入るようになります(準備中)。</p>`);
+/** なかま: Spra と鹿たち。持っている衣装を 鹿ごとに 着せかえる */
+export function friendsHTML(w: Wallet, closet: Closet | null = null): string {
+  const deer = (Object.keys(WHO) as Who[]).map(who => {
+    const mine = closet?.ownedFor(who) ?? [];
+    const cur = closet?.wornId(who) ?? null;
+    const chips = mine.length
+      ? `<div class="hs-chips"><button class="hs-chip-btn" data-action="wear" data-who="${who}" data-id="" aria-pressed="${cur === null}">ふだん</button>${mine.map(c => `<button class="hs-chip-btn" data-action="wear" data-who="${who}" data-id="${c.id}" aria-pressed="${cur === c.id}">${c.name.replace(/^クリスマスの/, 'クリスマス')}</button>`).join('')}</div>`
+      : '<small class="hs-nocos">衣装は、アイテムで 手に入ります</small>';
+    return `<div class="hs-deer">${fig('', who, closet)}<b>${WHO[who].label}</b>${chips}</div>`;
+  }).join('');
+  return shell(w, 'friends', `<h2 class="hs-title">なかま</h2><div class="hs-friends"><div class="hs-deer"><img src="/assets/hero/spru.png" alt="Spra"><b>Spra</b></div>${deer}</div><p class="hs-help">衣装は、ホームと トップに 出ます(ゲームの中は いつもの すがた)。Lumi・Ruru は、アイテムで 手に入るように なります(準備中)。</p>`);
 }
 
 export function settingsHTML(w: Wallet, soundOn: boolean, season: SeasonPick = 'auto', accountRows = '', signedIn = false): string {

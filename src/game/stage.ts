@@ -49,8 +49,8 @@ export type SliderDefinition = {
   trigger?: 'jump' | 'near'; // 'jump'=ジャンプしたとき（既定）, 'near'=近づいただけで
 };
 /**
- * せんべいを狙う鹿。sense 以内にせんべい（持っているSpru、または置いたせんべい）が来ると走り出し、
- * Spruに触れると取られる。sense が 0 なら、その場から動かない（触れると取られる、見分けるための別の鹿）。
+ * せんべいを狙う鹿。sense 以内にせんべい（持っているSpra、または置いたせんべい）が来ると走り出し、
+ * Spraに触れると取られる。sense が 0 なら、その場から動かない（触れると取られる、見分けるための別の鹿）。
  */
 export type ThiefDefinition = {
   id: string; kind: 'stag' | 'doe' | 'fawn'; x: number; y: number;

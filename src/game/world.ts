@@ -39,7 +39,7 @@ export type Thrown = Point & { fx: number; fy: number; tx: number; ty: number; t
 export type LineWalker = { id: string; line: number; kind: LineDefinition['kind']; x: number; y: number; dir: 1 | -1; walked: number };
 /** コイン。taken=取った。 */
 export type Coin = CoinDefinition & { taken: boolean };
-/** 迷子の鹿。lost=まだ見つけていない, follow=ついてくる（Spruが通った道を、少し遅れてたどる）。 */
+/** 迷子の鹿。lost=まだ見つけていない, follow=ついてくる（Spraが通った道を、少し遅れてたどる）。 */
 export type Follower = { kind: RescueDefinition['kind']; x: number; y: number; dir: 1 | -1; state: 'lost' | 'follow'; walked: number; trail: Point[] };
 export type Outcome = 'playing' | 'poop' | 'fall' | 'water' | 'wall' | 'caught' | 'stolen' | 'dirty' | 'hit' | 'lost' | 'clear';
 export type World = {
@@ -178,7 +178,7 @@ function stepChasers(w: World, dt: number) {
 }
 const BAIT_EAT = 2.6, BAIT_ARRIVE = 18;
 /**
- * せんべいを狙う鹿。sense 以内にせんべいがあると走り出す。持っているSpruと、置かれたせんべいのうち、近いほうへ向かう。
+ * せんべいを狙う鹿。sense 以内にせんべいがあると走り出す。持っているSpraと、置かれたせんべいのうち、近いほうへ向かう。
  * 置かれたせんべいに着くと、eat 秒だけ食べて、また追いかける。
  */
 function stepThieves(w: World, dt: number) {
@@ -229,7 +229,7 @@ function stepCrossers(w: World) {
   });
 }
 const FOLLOW_STEP = 4;
-/** 迷子の鹿は、見つけると、Spruが通った道を lag だけ遅れてたどる。 */
+/** 迷子の鹿は、見つけると、Spraが通った道を lag だけ遅れてたどる。 */
 function stepFollower(w: World) {
   const f = w.follower, def = w.level.rescue, p = w.player;
   if (!f || !def) return;
