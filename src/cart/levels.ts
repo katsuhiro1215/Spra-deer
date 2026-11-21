@@ -1,5 +1,5 @@
 // WORLD 8「鹿と暴走トロッコ」の面(線路のデータ)。面を足すときは、ここにデータを足す。
-import { Track, type Coin, type TrackDef } from './track.ts';
+import { Track, type Coin, type Fork, type Gap, type Pursuit, type Terrain, type TrackDef } from './track.ts';
 
 export type CartLevel = {
   id: string; title: string; summary: string;
@@ -784,308 +784,192 @@ export const CART_LEVELS: CartLevel[] = [LEVEL_8_1, LEVEL_8_2, LEVEL_8_3, LEVEL_
 // 鹿の乗ったトロッコが、坂を勝手に下っていく。Spra のトロッコで追いついて連結し、谷のふち(cliff)より手前で止める。
 // 分かれ道は、鹿のトロッコが行った側(鈴の音・見えるトロッコ)へ体を傾ける。まちがえると古いレールで おそくなる。
 // チェックポイントは無い(追いかけっこは、はじめから)。
+// 2026-11-22 Owner: 「コースが短い・外ばかりで単調」→ 約3000m に のばし、鉱山のトンネルを多く、最高速も上げた。
+// 面は「区間の並び」で書き、分かれ道・障害物・コインの位置は pursuitTrack が計算する(長さを変えても ずれない)。
 
 /**
- * 8-11 Spraの鹿を おいかけろ(緑の森。約1500m)。いちばん基本の形: 分かれ道 2つ・岩と枝・急カーブ 2つ。
- * さいごは急な下りで、谷のふちへ(止めるのに長い距離が要る)。
+ * 追いかけっこの1区間。turn があればカーブ。fork=この まっすぐな区間に分かれ道(鹿が行く側)。
+ * obs=障害物([区間の頭からの距離, 種類, 枝の向き])。premium=プレミアムコイン(区間の頭からの距離。岩の上を跳ぶ所)。
+ * gap=線路の切れ目([区間の頭からの距離, 長さ])。cliff=谷(この区間の頭が 谷のふち)
  */
-const LEVEL_8_11: CartLevel = {
-  id: '8-11', title: 'Spraの鹿を おいかけろ', summary: '暴走トロッコに乗った Spraの鹿を、谷の手前で止める',
-  intro: 'Spraの鹿の トロッコが 走りだした！ 追いかけて！',
-  goalName: '谷の手前で 止める',
-  notes: [
-    { s: 380, text: '分かれ道！ 鈴の音が する方へ 体を かたむけて' },
-  ],
-  track: {
-    segments: [
-      { len: 90, slope: -2, terrain: 'forest', name: '若葉の森' },
-      { len: 210, slope: -7, terrain: 'hillL', name: '若葉の下り坂' },
-      { len: 110, slope: -3, turn: 70, terrain: 'hillL', name: 'しげみのカーブ' },
-      { len: 200, slope: -5, terrain: 'forest', name: '分かれ道の森' },
-      { len: 130, slope: -5, turn: -75, terrain: 'cut', name: 'こけむした切り通し' },
-      { len: 200, slope: -8, terrain: 'hillR', name: 'みどりの急坂' },
-      { len: 120, slope: -3, turn: 80, terrain: 'forest', name: '大きなカーブ' },
-      { len: 220, slope: -5, terrain: 'ridge', name: '尾根の分かれ道' },
-      { len: 200, slope: -7, terrain: 'forest', name: 'がけへの 一直線' },
-      { len: 140, slope: -2, terrain: 'gorge', name: '谷' },
-    ],
-    gaps: [{ from: 1490, to: 1580 }],
-    obstacles: [
-      { s: 250, kind: 'rock' },
-      { s: 735, kind: 'branch', side: 1 },
-      { s: 900, kind: 'rock' },
-      { s: 1010, kind: 'branch', side: -1 },
-      { s: 1340, kind: 'log' },
-    ],
-    coins: [
-      ...line(30, 120, 9),
-      ...line(320, 390, 8, -1),
-      ...line(620, 700, 8),
-      ...air([[903, 2.7, 'premium']]),
-      ...line(1100, 1150, 8, 1),
-      ...line(1360, 1440, 8),
-    ],
-    pursuit: {
-      friend: 'spra', lead: 120, deerCap: 27.5, deerStart: 22, cliff: 1490,
-      forks: [{ at: 440, len: 130, correct: 1 }, { at: 1180, len: 150, correct: -1 }],
-    },
-  },
+type PSec = {
+  len: number; slope: number; turn?: number; terrain?: Terrain; name?: string;
+  fork?: -1 | 1; obs?: [number, 'rock' | 'log' | 'branch', (-1 | 1)?][]; premium?: number; gap?: [number, number];
+  fog?: number; snow?: boolean; dusk?: number; cliff?: boolean;
 };
+/** 分かれ道は、まっすぐな区間の 頭から35m の所から(前後のカーブと はなす) */
+const FORK_IN = 35;
+/** 跳ぶもの(岩・倒木・切れ目)は、まっすぐな区間の 頭から20m〜終わりの45m手前まで(速いと1回で30m以上とぶ。カーブに着地しない) */
+const JUMP_IN = 20, JUMP_OUT = 45;
 
-/**
- * 8-12 Lumiの鹿を おいかけろ(黄色い いちょうの森・霧。約1640m)。特徴: 霧で前のトロッコが見えにくい。
- * 分かれ道は 3つ。たよりは 鈴の音と🔔だけ。
- */
-const LEVEL_8_12: CartLevel = {
-  id: '8-12', title: 'Lumiの鹿を おいかけろ', summary: '霧の いちょう坂。見えない分かれ道は、鈴の音で',
-  intro: 'Lumiの鹿の トロッコが 霧の中へ！ 鈴の音を たよりに 追いかけて！',
-  goalName: '谷の手前で 止める',
-  notes: [
-    { s: 380, text: '霧の分かれ道！ 見えなくても、鈴の音が する方へ' },
-  ],
-  track: {
-    segments: [
-      { len: 90, slope: -2, terrain: 'forest', fog: 0.2, name: 'いちょうの森' },
-      { len: 200, slope: -7, terrain: 'hillL', fog: 0.4, name: '黄色い下り坂' },
-      { len: 100, slope: -3, turn: 70, terrain: 'hillL', fog: 0.6, name: '霧のカーブ' },
-      { len: 220, slope: -4, terrain: 'forest', fog: 0.9, name: '霧の分かれ道' },
-      { len: 120, slope: -3, turn: -80, terrain: 'cut', fog: 0.6, name: '切り通し' },
-      { len: 200, slope: -8, terrain: 'hillR', fog: 0.4, name: 'いちょうの急坂' },
-      { len: 200, slope: -4, terrain: 'ridge', fog: 1, name: 'まっ白な尾根' },
-      { len: 110, slope: -3, turn: 75, terrain: 'forest', fog: 0.6, name: '大きなカーブ' },
-      { len: 220, slope: -5, terrain: 'forest', fog: 0.9, name: '最後の分かれ道' },
-      { len: 180, slope: -7, terrain: 'forest', fog: 0.3, name: 'がけへの 一直線' },
-      { len: 140, slope: -2, terrain: 'gorge', name: '谷' },
-    ],
-    gaps: [{ from: 1640, to: 1730 }],
-    obstacles: [
-      { s: 240, kind: 'rock' },
-      { s: 780, kind: 'branch', side: -1 },
-      { s: 870, kind: 'rock' },
-      { s: 1200, kind: 'branch', side: 1 },
-      { s: 1500, kind: 'log' },
-    ],
-    coins: [
-      ...line(30, 120, 9),
-      ...line(320, 380, 8, -1),
-      ...line(640, 720, 8),
-      ...air([[873, 2.7, 'premium']]),
-      ...line(900, 950, 8, 1),
-      ...line(1140, 1180, 8),
-      ...line(1420, 1480, 8),
-      ...line(1520, 1600, 8),
-    ],
-    pursuit: {
-      friend: 'lumi', lead: 135, deerCap: 27.5, deerStart: 22, cliff: 1640,
-      forks: [{ at: 430, len: 130, correct: -1 }, { at: 965, len: 120, correct: 1 }, { at: 1280, len: 120, correct: -1 }],
-    },
-  },
-};
+function pursuitTrack(secs: PSec[], pu: Omit<Pursuit, 'forks' | 'cliff'>, vMax: number): TrackDef {
+  const segments: TrackDef['segments'] = [], obstacles: TrackDef['obstacles'] = [], coins: C[] = [], gaps: Gap[] = [], forks: Fork[] = [];
+  let s = 0, cliff = 0;
+  for (const g of secs) {
+    segments.push({ len: g.len, slope: g.slope, turn: g.turn, terrain: g.terrain, name: g.name, fog: g.fog, snow: g.snow, dusk: g.dusk });
+    if (g.cliff) { cliff = s; gaps.push({ from: s, to: s + 90 }); }
+    if (g.fork) forks.push({ at: s + FORK_IN, len: Math.min(170, g.len - 2 * FORK_IN), correct: g.fork });
+    const jumps = [...(g.obs ?? []).filter(o => o[1] !== 'branch').map(o => o[0]), ...(g.gap ? [g.gap[0], g.gap[0] + g.gap[1]] : [])];
+    if (jumps.length && (g.turn || g.fork || jumps.some(at => at < JUMP_IN || at > g.len - JUMP_OUT))) throw new Error(`跳ぶものは まっすぐな所に: ${g.name}`);
+    for (const [at, kind, side] of g.obs ?? []) obstacles.push(side ? { s: s + at, kind, side } : { s: s + at, kind });
+    if (g.gap) gaps.push({ from: s + g.gap[0], to: s + g.gap[0] + g.gap[1] });
+    if (g.premium !== undefined) coins.push({ s: s + g.premium, side: 0, h: 2.7, kind: 'premium' });
+    // コイン: 分かれ道・谷では出さない。障害物・切れ目の近くは あける。トンネルの中は 左右に寄せる(傾けて取る)
+    if (!g.fork && !g.cliff) {
+      const tunnel = g.terrain === 'tunnel';
+      for (let q = s + 14; q < s + g.len - 12; q += 11) {
+        const near = (g.obs ?? []).some(([at]) => Math.abs(s + at - q) < 14) || (g.gap && q > s + g.gap[0] - 14 && q < s + g.gap[0] + g.gap[1] + 10) || (g.premium !== undefined && Math.abs(s + g.premium - q) < 6);
+        if (!near) coins.push({ s: q, side: tunnel && !g.turn ? (Math.floor(q / 60) % 2 ? 1 : -1) : 0, h: 0.9 });
+      }
+    }
+    s += g.len;
+  }
+  coins.sort((a, b) => a.s - b.s);
+  return { vMax, segments, gaps, obstacles, coins, pursuit: { ...pu, cliff, forks } };
+}
 
-/**
- * 8-13 Momoの鹿を おいかけろ(さくら並木。約1550m)。特徴: 分かれ道が 4つ。息をつく間もなく、右へ左へ。
- */
-const LEVEL_8_13: CartLevel = {
-  id: '8-13', title: 'Momoの鹿を おいかけろ', summary: 'さくら並木の、分かれ道が 4つ',
-  intro: 'Momoの鹿の トロッコが さくら並木へ！ 分かれ道が 多いよ！',
-  goalName: '谷の手前で 止める',
-  notes: [
-    { s: 250, text: '分かれ道が 4つ！ 毎回 鈴の音を 聞いて' },
-  ],
-  track: {
-    segments: [
-      { len: 80, slope: -2, terrain: 'forest', name: 'さくらの駅' },
-      { len: 180, slope: -7, terrain: 'hillL', name: '花びらの下り坂' },
-      { len: 200, slope: -4, terrain: 'forest', name: '一つめの分かれ道' },
-      { len: 100, slope: -3, turn: 75, terrain: 'hillR', name: 'さくらのカーブ' },
-      { len: 200, slope: -5, terrain: 'ridge', name: '二つめの分かれ道' },
-      { len: 110, slope: -3, turn: -80, terrain: 'cut', name: '切り通し' },
-      { len: 200, slope: -6, terrain: 'forest', name: '三つめの分かれ道' },
-      { len: 100, slope: -3, turn: 70, terrain: 'hillL', name: '花の丘' },
-      { len: 220, slope: -5, terrain: 'forest', name: '四つめの分かれ道' },
-      { len: 160, slope: -7, terrain: 'forest', name: 'がけへの 一直線' },
-      { len: 140, slope: -2, terrain: 'gorge', name: '谷' },
-    ],
-    gaps: [{ from: 1550, to: 1640 }],
-    obstacles: [
-      // 障害物は まっすぐな所だけ(カーブの中の枝は、外へ傾くことになり 速さを落とすため)
-      { s: 200, kind: 'rock' },
-      { s: 440, kind: 'branch', side: -1 },
-      { s: 740, kind: 'branch', side: 1 },
-      { s: 1045, kind: 'branch', side: -1 },
-      { s: 1360, kind: 'rock' },
-      { s: 1440, kind: 'log' },
-    ],
-    coins: [
-      ...line(30, 120, 9),
-      ...air([[203, 2.7, 'premium']]),
-      ...line(470, 500, 6),
-      ...line(740, 780, 8, 1),
-      ...line(1060, 1100, 8),
-      ...line(1360, 1420, 8),
-      ...line(1460, 1530, 8),
-    ],
-    pursuit: {
-      friend: 'momo', lead: 150, deerCap: 27.5, deerStart: 22, cliff: 1550,
-      forks: [{ at: 300, len: 110, correct: 1 }, { at: 600, len: 110, correct: -1 }, { at: 910, len: 110, correct: -1 }, { at: 1210, len: 120, correct: 1 }],
-    },
-  },
-};
+/** 追いかけっこの面を作る */
+const pursuit = (id: string, friend: string, name: string, summary: string, intro: string, note: string, secs: PSec[], lead: number, deerCap: number, vMax = 33): CartLevel => ({
+  id, title: `${name}を おいかけろ`, summary, intro, goalName: '谷の手前で 止める',
+  notes: [{ s: 60, text: note }],
+  track: pursuitTrack(secs, { friend, lead, deerCap, deerStart: 24 }, vMax),
+});
 
-/**
- * 8-14 Kuruの鹿を おいかけろ(茶色い くりの林。約1560m)。特徴: 倒木・落石・枝が たくさん。
- * ぶつかると がくんと おそくなる(ハートも へる)。よけながら 追いつく。
- */
-const LEVEL_8_14: CartLevel = {
-  id: '8-14', title: 'Kuruの鹿を おいかけろ', summary: 'くりの林は、倒木と落石だらけ',
-  intro: 'Kuruの鹿の トロッコが くりの林へ！ 倒木や 落石に 気をつけて！',
-  goalName: '谷の手前で 止める',
-  notes: [
-    { s: 140, text: '障害物が たくさん！ ぶつかると おそくなるよ' },
-  ],
-  track: {
-    segments: [
-      { len: 90, slope: -2, terrain: 'forest', name: 'くりの林' },
-      { len: 220, slope: -8, terrain: 'hillL', name: '落石の坂' },
-      { len: 100, slope: -3, turn: -70, terrain: 'cut', name: '切り通し' },
-      { len: 220, slope: -5, terrain: 'forest', name: '分かれ道の林' },
-      { len: 200, slope: -8, terrain: 'hillR', name: '枝の トンネル' },
-      { len: 110, slope: -3, turn: 80, terrain: 'forest', name: '大きなカーブ' },
-      { len: 200, slope: -6, terrain: 'ridge', name: '倒木の尾根' },
-      { len: 220, slope: -5, terrain: 'forest', name: '最後の分かれ道' },
-      { len: 200, slope: -8, terrain: 'forest', name: 'がけへの 一直線' },
-      { len: 140, slope: -2, terrain: 'gorge', name: '谷' },
-    ],
-    gaps: [{ from: 1560, to: 1650 }],
-    obstacles: [
-      { s: 180, kind: 'rock' },
-      { s: 260, kind: 'log' },
-      { s: 680, kind: 'branch', side: 1 },
-      { s: 740, kind: 'rock' },
-      { s: 790, kind: 'branch', side: -1 },
-      { s: 990, kind: 'log' },
-      { s: 1060, kind: 'rock' },
-      { s: 1110, kind: 'branch', side: 1 },
-      { s: 1400, kind: 'rock' },
-      { s: 1470, kind: 'log' },
-    ],
-    coins: [
-      ...line(30, 120, 9),
-      ...line(200, 240, 8),
-      ...air([[263, 2.4, 'premium']]),
-      ...line(640, 670, 6, -1),
-      ...line(1010, 1050, 8),
-      ...line(1340, 1390, 8),
-      ...line(1490, 1540, 8),
-    ],
-    pursuit: {
-      friend: 'kuru', lead: 120, deerCap: 27.5, deerStart: 22, cliff: 1560,
-      forks: [{ at: 450, len: 130, correct: 1 }, { at: 1180, len: 140, correct: -1 }],
-    },
-  },
-};
+/** 8-11 Spraの鹿(緑の森と 鉱山。基本: 分かれ道3つ・トンネル3つ・岩と倒木) */
+const LEVEL_8_11 = pursuit('8-11', 'spra', 'Spraの鹿', '緑の森と 鉱山を ぬけて、暴走トロッコを 止めろ', 'Spraの鹿の トロッコが 走りだした！ 追いかけて！', '分かれ道は 鈴の音が する方へ。トンネルは 暗いよ', [
+  { len: 90, slope: -2, terrain: 'forest', name: '若葉の森' },
+  { len: 220, slope: -8, terrain: 'hillL', name: '若葉の下り坂', obs: [[120, 'rock']] },
+  { len: 110, slope: -3, turn: 70, terrain: 'hillL', name: 'しげみのカーブ' },
+  { len: 230, slope: -4, terrain: 'forest', name: '分かれ道の森', fork: 1 },
+  { len: 160, slope: -6, terrain: 'tunnel', name: '鉱山トンネル', obs: [[70, 'rock']] },
+  { len: 120, slope: -4, turn: -45, terrain: 'tunnel', name: '曲がる坑道' },
+  { len: 200, slope: -8, terrain: 'hillR', name: 'みどりの急坂', obs: [[60, 'branch', 1], [130, 'rock']] },
+  { len: 110, slope: -3, turn: -75, terrain: 'cut', name: 'こけむした切り通し' },
+  { len: 240, slope: -5, terrain: 'ridge', name: '尾根の分かれ道', fork: -1 },
+  { len: 200, slope: -7, terrain: 'tunnel', name: 'ふかい坑道', obs: [[50, 'log'], [140, 'rock']] },
+  { len: 120, slope: -4, turn: 55, terrain: 'tunnel', name: '坑道の大カーブ' },
+  { len: 170, slope: -9, terrain: 'forest', name: '森への 一直線', obs: [[80, 'rock']], premium: 83 },
+  { len: 120, slope: -3, turn: 80, terrain: 'forest', name: '大きなカーブ' },
+  { len: 240, slope: -5, terrain: 'forest', name: '最後の分かれ道', fork: 1 },
+  { len: 180, slope: -6, terrain: 'tunnel', name: '出口の坑道', obs: [[90, 'log']] },
+  { len: 100, slope: -4, turn: -45, terrain: 'tunnel' },
+  { len: 240, slope: -8, terrain: 'forest', name: 'がけへの 急坂', obs: [[90, 'rock'], [160, 'branch', -1]] },
+  { len: 110, slope: -3, turn: -70, terrain: 'hillL', name: 'がけっぷちのカーブ' },
+  { len: 220, slope: -6, terrain: 'ridge', name: 'がけへの 一直線', obs: [[100, 'log']] },
+  { len: 160, slope: -2, terrain: 'gorge', name: '谷', cliff: true },
+], 400, 31);
 
-/**
- * 8-15 Pikoの鹿を おいかけろ(夕焼けの もみじ谷。約1460m)。特徴: レールの切れ目が 4つ。
- * 前のトロッコは とびこえていく。Spra も ジャンプで ついていく(おそいと 届かない)。
- */
-const LEVEL_8_15: CartLevel = {
-  id: '8-15', title: 'Pikoの鹿を おいかけろ', summary: '夕焼けの もみじ谷。切れたレールを とびこえて',
-  intro: 'Pikoの鹿の トロッコが 切れたレールを とびこえた！ ジャンプで ついていこう！',
-  goalName: '谷の手前で 止める',
-  notes: [
-    { s: 180, text: 'レールの切れ目！ ふちで ジャンプ' },
-  ],
-  track: {
-    // 切れ目は 前半(連結より前)だけ。連結してブレーキをかけたあとに 切れ目が来ると、とびこせないため
-    segments: [
-      { len: 90, slope: -2, terrain: 'forest', dusk: 0.3, name: 'もみじの森' },
-      { len: 260, slope: -7, terrain: 'hillL', dusk: 0.35, name: '切れたレールの坂' },
-      { len: 100, slope: -3, turn: 75, terrain: 'hillR', dusk: 0.4, name: '夕焼けのカーブ' },
-      { len: 220, slope: -4, terrain: 'forest', dusk: 0.5, name: '分かれ道の森' },
-      { len: 200, slope: -6, terrain: 'canyon', dusk: 0.6, name: 'もみじ谷の 古い橋' },
-      { len: 110, slope: -3, turn: -75, terrain: 'cut', dusk: 0.7, name: '切り通し' },
-      { len: 220, slope: -4, terrain: 'ridge', dusk: 0.8, name: '尾根の分かれ道' },
-      { len: 100, slope: -3, turn: 70, terrain: 'forest', dusk: 0.9, name: '大きなカーブ' },
-      { len: 200, slope: -7, terrain: 'forest', dusk: 0.95, name: 'がけへの 一直線' },
-      { len: 140, slope: -2, terrain: 'gorge', dusk: 1, name: '谷' },
-    ],
-    gaps: [
-      { from: 170, to: 180 },
-      { from: 280, to: 292 },
-      { from: 710, to: 724 },
-      { from: 790, to: 802 },
-      { from: 1500, to: 1590 },
-    ],
-    obstacles: [
-      { s: 120, kind: 'rock' },
-      { s: 1240, kind: 'branch', side: 1 },
-      { s: 1400, kind: 'log' },
-    ],
-    coins: [
-      ...line(30, 100, 9),
-      ...arc(169, 181, 3, 2),
-      ...arc(278, 294, 3, 2.4),
-      ...line(380, 440, 8, 1),
-      ...arc(708, 726, 3, 2.4),
-      ...air([[796, 2.6, 'premium']]),
-      ...line(830, 870, 8),
-      ...line(1340, 1390, 8),
-    ],
-    pursuit: {
-      friend: 'piko', lead: 140, deerCap: 27, deerStart: 22, cliff: 1500,
-      forks: [{ at: 490, len: 130, correct: -1 }, { at: 1020, len: 130, correct: 1 }],
-    },
-  },
-};
 
-/**
- * 8-16 Ruruの鹿を おいかけろ(水色の 氷の谷・雪。約1520m)。特徴: 雪で ブレーキが 半分しか きかない。
- * 連結してから 止まるまでが長い。うんと早く 追いつかないと、谷へ。
- */
-const LEVEL_8_16: CartLevel = {
-  id: '8-16', title: 'Ruruの鹿を おいかけろ', summary: '雪の氷の谷。ブレーキが ききにくい',
-  intro: 'Ruruの鹿の トロッコが 雪の谷へ！ 雪で ブレーキが ききにくいよ。早く 追いついて！',
-  goalName: '谷の手前で 止める',
-  notes: [
-    { s: 380, text: '雪の分かれ道！ 鈴の音が する方へ' },
-    { s: 1250, text: '雪で すべる！ 連結したら すぐ ブレーキ' },
-  ],
-  track: {
-    segments: [
-      { len: 90, slope: -2, terrain: 'ridge', snow: true, name: '氷の駅' },
-      { len: 220, slope: -8, terrain: 'hillL', snow: true, name: '雪の下り坂' },
-      { len: 100, slope: -3, turn: 70, terrain: 'cut', snow: true, name: '雪のカーブ' },
-      { len: 220, slope: -5, terrain: 'ridge', snow: true, name: '雪の分かれ道' },
-      { len: 200, slope: -7, terrain: 'hillR', snow: true, name: 'つららの坂' },
-      { len: 110, slope: -3, turn: -80, terrain: 'forest', snow: true, name: '大きなカーブ' },
-      { len: 220, slope: -4, terrain: 'ridge', snow: true, name: '氷の尾根の分かれ道' },
-      { len: 100, slope: -3, turn: 75, terrain: 'hillL', snow: true, name: '雪の丘' },
-      { len: 260, slope: -6, terrain: 'ridge', snow: true, name: 'がけへの 一直線' },
-      { len: 140, slope: -2, terrain: 'gorge', snow: true, name: '氷の谷' },
-    ],
-    gaps: [{ from: 1520, to: 1610 }],
-    obstacles: [
-      { s: 200, kind: 'rock' },
-      { s: 700, kind: 'rock' },
-      { s: 770, kind: 'branch', side: 1 },
-      { s: 1330, kind: 'log' },
-    ],
-    coins: [
-      ...line(30, 120, 9),
-      ...line(320, 390, 8, -1),
-      ...air([[703, 2.7, 'premium']]),
-      ...line(720, 760, 8),
-      ...line(1130, 1170, 8),
-      ...line(1270, 1320, 8),
-      ...line(1350, 1450, 10),
-    ],
-    pursuit: {
-      friend: 'ruru', lead: 145, deerCap: 27, deerStart: 22, cliff: 1520,
-      forks: [{ at: 450, len: 130, correct: 1 }, { at: 980, len: 130, correct: -1 }],
-    },
-  },
-};
+/** 8-12 Lumiの鹿(黄色い いちょうの森と 霧。霧で前が見えない。分かれ道は 霧の中に3つ。たよりは 鈴の音) */
+const LEVEL_8_12 = pursuit('8-12', 'lumi', 'Lumiの鹿', '霧の いちょう坂と 鉱山。見えない分かれ道は、鈴の音で', 'Lumiの鹿の トロッコが 霧の中へ！ 鈴の音を たよりに 追いかけて！', '霧の分かれ道は、見えなくても 鈴の音が する方へ', [
+  { len: 90, slope: -2, terrain: 'forest', fog: 0.2, name: 'いちょうの森' },
+  { len: 220, slope: -8, terrain: 'hillL', fog: 0.4, name: '黄色い下り坂', obs: [[110, 'rock']] },
+  { len: 110, slope: -3, turn: 70, terrain: 'hillL', fog: 0.6, name: '霧のカーブ' },
+  { len: 240, slope: -4, terrain: 'forest', fog: 0.95, name: '霧の分かれ道', fork: -1 },
+  { len: 180, slope: -6, terrain: 'tunnel', name: '金色の坑道', obs: [[60, 'log'], [130, 'rock']] },
+  { len: 110, slope: -4, turn: -50, terrain: 'tunnel', name: '曲がる坑道' },
+  { len: 200, slope: -8, terrain: 'hillR', fog: 0.5, name: 'いちょうの急坂', obs: [[70, 'branch', -1], [140, 'rock']], premium: 143 },
+  { len: 110, slope: -3, turn: -70, terrain: 'cut', fog: 0.7, name: '切り通し' },
+  { len: 240, slope: -4, terrain: 'ridge', fog: 1, name: 'まっ白な尾根', fork: 1 },
+  { len: 200, slope: -7, terrain: 'tunnel', name: '霧よけの坑道', obs: [[50, 'rock'], [150, 'log']] },
+  { len: 120, slope: -4, turn: 60, terrain: 'tunnel', name: '坑道の大カーブ' },
+  { len: 180, slope: -8, terrain: 'forest', fog: 0.4, name: '黄色い一直線', obs: [[90, 'rock']] },
+  { len: 110, slope: -3, turn: 75, terrain: 'forest', fog: 0.7, name: '大きなカーブ' },
+  { len: 240, slope: -5, terrain: 'forest', fog: 0.95, name: '最後の霧の分かれ道', fork: -1 },
+  { len: 180, slope: -6, terrain: 'tunnel', name: '出口の坑道', obs: [[80, 'log']] },
+  { len: 100, slope: -4, turn: -50, terrain: 'tunnel' },
+  { len: 240, slope: -8, terrain: 'forest', fog: 0.3, name: 'がけへの 急坂', obs: [[80, 'rock'], [170, 'branch', 1]] },
+  { len: 110, slope: -3, turn: -65, terrain: 'hillL', fog: 0.5, name: 'がけっぷちのカーブ' },
+  { len: 220, slope: -6, terrain: 'ridge', fog: 0.2, name: 'がけへの 一直線', obs: [[110, 'log']] },
+  { len: 160, slope: -2, terrain: 'gorge', name: '谷', cliff: true },
+], 420, 31);
+
+/** 8-13 Momoの鹿(さくら並木と 鉱山。分かれ道が 5つ) */
+const LEVEL_8_13 = pursuit('8-13', 'momo', 'Momoの鹿', 'さくら並木と 鉱山。分かれ道が 5つ', 'Momoの鹿の トロッコが さくら並木へ！ 分かれ道が 多いよ！', '分かれ道が 5つ！ 毎回 鈴の音を 聞いて', [
+  { len: 80, slope: -2, terrain: 'forest', name: 'さくらの駅' },
+  { len: 200, slope: -8, terrain: 'hillL', name: '花びらの下り坂', obs: [[100, 'rock']], premium: 103 },
+  { len: 230, slope: -4, terrain: 'forest', name: '一つめの分かれ道', fork: 1 },
+  { len: 110, slope: -3, turn: 70, terrain: 'hillR', name: 'さくらのカーブ' },
+  { len: 230, slope: -5, terrain: 'ridge', name: '二つめの分かれ道', fork: -1 },
+  { len: 180, slope: -6, terrain: 'tunnel', name: '花の坑道', obs: [[60, 'rock'], [130, 'log']] },
+  { len: 110, slope: -4, turn: -55, terrain: 'tunnel', name: '曲がる坑道' },
+  { len: 230, slope: -5, terrain: 'forest', name: '三つめの分かれ道', fork: -1 },
+  { len: 110, slope: -3, turn: -60, terrain: 'cut', name: '切り通し' },
+  { len: 180, slope: -8, terrain: 'hillL', name: '花吹雪の急坂', obs: [[60, 'branch', 1], [120, 'rock']] },
+  { len: 230, slope: -5, terrain: 'forest', name: '四つめの分かれ道', fork: 1 },
+  { len: 200, slope: -7, terrain: 'tunnel', name: 'ふかい坑道', obs: [[60, 'log'], [140, 'rock']] },
+  { len: 110, slope: -4, turn: 65, terrain: 'tunnel', name: '坑道の大カーブ' },
+  { len: 230, slope: -5, terrain: 'forest', name: '五つめの分かれ道', fork: 1 },
+  { len: 110, slope: -3, turn: 60, terrain: 'hillL', name: '花の丘' },
+  { len: 240, slope: -8, terrain: 'forest', name: 'がけへの 急坂', obs: [[80, 'rock'], [160, 'branch', -1]] },
+  { len: 160, slope: -6, terrain: 'tunnel', name: '最後の坑道', obs: [[70, 'log']] },
+  { len: 220, slope: -6, terrain: 'ridge', name: 'がけへの 一直線', obs: [[100, 'rock']] },
+  { len: 160, slope: -2, terrain: 'gorge', name: '谷', cliff: true },
+], 400, 31);
+
+/** 8-14 Kuruの鹿(茶色い くりの林と 落石の鉱山。障害物が とても多い。ぶつかると がくんと おそくなる) */
+const LEVEL_8_14 = pursuit('8-14', 'kuru', 'Kuruの鹿', 'くりの林と 落石の鉱山。倒木と落石だらけ', 'Kuruの鹿の トロッコが くりの林へ！ 倒木や 落石に 気をつけて！', '障害物が たくさん！ ぶつかると おそくなるよ', [
+  { len: 90, slope: -2, terrain: 'forest', name: 'くりの林' },
+  { len: 240, slope: -8, terrain: 'hillL', name: '落石の坂', obs: [[60, 'rock'], [130, 'log'], [190, 'rock']] },
+  { len: 110, slope: -3, turn: -70, terrain: 'cut', name: '切り通し' },
+  { len: 230, slope: -5, terrain: 'forest', name: '分かれ道の林', fork: 1 },
+  { len: 220, slope: -6, terrain: 'tunnel', name: '落石の坑道', obs: [[40, 'rock'], [100, 'log'], [160, 'rock']] },
+  { len: 110, slope: -4, turn: 50, terrain: 'tunnel', name: '曲がる坑道' },
+  { len: 220, slope: -8, terrain: 'hillR', name: '枝の トンネル', obs: [[40, 'branch', 1], [80, 'branch', -1], [120, 'rock'], [170, 'log']], premium: 123 },
+  { len: 110, slope: -3, turn: 75, terrain: 'forest', name: '大きなカーブ' },
+  { len: 230, slope: -5, terrain: 'ridge', name: '尾根の分かれ道', fork: -1 },
+  { len: 240, slope: -7, terrain: 'tunnel', name: 'くずれた坑道', obs: [[40, 'log'], [90, 'rock'], [140, 'log'], [190, 'rock']] },
+  { len: 110, slope: -4, turn: -55, terrain: 'tunnel' },
+  { len: 220, slope: -6, terrain: 'ridge', name: '倒木の尾根', obs: [[40, 'log'], [100, 'branch', 1], [160, 'rock']] },
+  { len: 110, slope: -3, turn: -60, terrain: 'hillL', name: 'くりのカーブ' },
+  { len: 230, slope: -5, terrain: 'forest', name: '最後の分かれ道', fork: 1 },
+  { len: 200, slope: -6, terrain: 'tunnel', name: '出口の坑道', obs: [[50, 'rock'], [140, 'log']] },
+  { len: 240, slope: -8, terrain: 'forest', name: 'がけへの 急坂', obs: [[50, 'branch', -1], [100, 'rock'], [180, 'log']] },
+  { len: 160, slope: -2, terrain: 'gorge', name: '谷', cliff: true },
+], 360, 31);
+
+/** 8-15 Pikoの鹿(夕焼けの もみじ谷と 鉱山。レールの切れ目が 5つ。切れ目は 前半だけ(連結してブレーキをかけたあとに来ると、とびこせない)) */
+const LEVEL_8_15 = pursuit('8-15', 'piko', 'Pikoの鹿', '夕焼けの もみじ谷。切れたレールを とびこえて', 'Pikoの鹿の トロッコが 切れたレールを とびこえた！ ジャンプで ついていこう！', 'レールの切れ目！ ふちで ジャンプ', [
+  { len: 90, slope: -2, terrain: 'forest', dusk: 0.2, name: 'もみじの森' },
+  { len: 240, slope: -7, terrain: 'hillL', dusk: 0.25, name: '切れたレールの坂', gap: [80, 10], obs: [[180, 'rock']] },
+  { len: 110, slope: -3, turn: 75, terrain: 'hillR', dusk: 0.3, name: '夕焼けのカーブ' },
+  { len: 230, slope: -4, terrain: 'forest', dusk: 0.35, name: '分かれ道の森', fork: -1 },
+  { len: 220, slope: -6, terrain: 'canyon', dusk: 0.4, name: 'もみじ谷の 古い橋', gap: [70, 14], obs: [[160, 'log']] },
+  { len: 180, slope: -6, terrain: 'tunnel', name: '夕焼けの坑道', obs: [[60, 'rock'], [120, 'log']] },
+  { len: 110, slope: -4, turn: -50, terrain: 'tunnel' },
+  { len: 220, slope: -6, terrain: 'canyon', dusk: 0.5, name: '二つめの古い橋', gap: [60, 12], premium: 160, obs: [[157, 'rock']] },
+  { len: 110, slope: -3, turn: -70, terrain: 'cut', dusk: 0.55, name: '切り通し' },
+  { len: 230, slope: -4, terrain: 'ridge', dusk: 0.6, name: '尾根の分かれ道', fork: 1 },
+  { len: 220, slope: -6, terrain: 'canyon', dusk: 0.65, name: '三つめの古い橋', gap: [70, 12] },
+  { len: 200, slope: -6, terrain: 'tunnel', name: 'ふかい坑道', obs: [[60, 'log'], [140, 'rock']] },
+  { len: 110, slope: -4, turn: 60, terrain: 'tunnel' },
+  { len: 230, slope: -5, terrain: 'forest', dusk: 0.8, name: '最後の分かれ道', fork: -1 },
+  { len: 110, slope: -3, turn: 65, terrain: 'forest', dusk: 0.85, name: '大きなカーブ' },
+  { len: 240, slope: -8, terrain: 'forest', dusk: 0.9, name: 'がけへの 急坂', obs: [[80, 'rock'], [160, 'branch', 1]] },
+  { len: 200, slope: -6, terrain: 'ridge', dusk: 0.95, name: 'がけへの 一直線', obs: [[100, 'log']] },
+  { len: 160, slope: -2, terrain: 'gorge', dusk: 1, name: '谷', cliff: true },
+], 380, 31);
+
+/** 8-16 Ruruの鹿(水色の 氷の谷と こおった坑道。雪で ブレーキが 半分しか きかない。うんと早く 追いつかないと 止まれない) */
+const LEVEL_8_16 = pursuit('8-16', 'ruru', 'Ruruの鹿', '雪の谷と こおった坑道。ブレーキが ききにくい', 'Ruruの鹿の トロッコが 雪の谷へ！ 雪で ブレーキが ききにくいよ。早く 追いついて！', '雪で すべる！ 連結したら すぐ ブレーキ', [
+  { len: 90, slope: -2, terrain: 'ridge', snow: true, name: '氷の駅' },
+  { len: 230, slope: -8, terrain: 'hillL', snow: true, name: '雪の下り坂', obs: [[110, 'rock']] },
+  { len: 110, slope: -3, turn: 70, terrain: 'cut', snow: true, name: '雪のカーブ' },
+  { len: 230, slope: -5, terrain: 'ridge', snow: true, name: '雪の分かれ道', fork: 1 },
+  { len: 200, slope: -6, terrain: 'tunnel', snow: true, name: 'こおった坑道', obs: [[60, 'rock'], [140, 'log']] },
+  { len: 110, slope: -4, turn: -50, terrain: 'tunnel', snow: true },
+  { len: 200, slope: -7, terrain: 'hillR', snow: true, name: 'つららの坂', obs: [[60, 'branch', 1], [120, 'rock']], premium: 123 },
+  { len: 110, slope: -3, turn: -75, terrain: 'forest', snow: true, name: '大きなカーブ' },
+  { len: 230, slope: -4, terrain: 'ridge', snow: true, name: '氷の尾根の分かれ道', fork: -1 },
+  { len: 220, slope: -7, terrain: 'tunnel', snow: true, name: '氷の坑道', obs: [[50, 'log'], [150, 'rock']] },
+  { len: 110, slope: -4, turn: 55, terrain: 'tunnel', snow: true },
+  { len: 200, slope: -8, terrain: 'hillL', snow: true, name: '雪の急坂', obs: [[90, 'rock']] },
+  { len: 110, slope: -3, turn: 75, terrain: 'hillL', snow: true, name: '雪の丘' },
+  { len: 230, slope: -5, terrain: 'ridge', snow: true, name: '最後の分かれ道', fork: 1 },
+  { len: 180, slope: -6, terrain: 'tunnel', snow: true, name: '出口の坑道', obs: [[80, 'log']] },
+  { len: 260, slope: -6, terrain: 'ridge', snow: true, name: 'がけへの 一直線', obs: [[90, 'rock'], [180, 'branch', -1]] },
+  { len: 160, slope: -2, terrain: 'gorge', snow: true, name: '氷の谷', cliff: true },
+], 360, 31);
 
 export const PURSUIT_LEVELS: CartLevel[] = [LEVEL_8_11, LEVEL_8_12, LEVEL_8_13, LEVEL_8_14, LEVEL_8_15, LEVEL_8_16];
 export const cartById = (id: string): CartLevel | undefined => CART_LEVELS.find(l => l.id === id) ?? PURSUIT_LEVELS.find(l => l.id === id);

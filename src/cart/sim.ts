@@ -41,10 +41,10 @@ export const BAL = {
   couple: 3, coupledBrake: 0.7, wrongCap: 0.7, forkLean: 0.3, stopV: 0.6, deerCurve: 0.85, hitchGap: 2.6,
 } as const;
 
-/** 追いかけっこの ★: 谷のふちまでの道のりの、どこで追いついたか(早いほど多い) */
+/** 追いかけっこの ★: 谷のふちまでの道のりの、どこで追いついたか(早いほど多い。コースを約3000mに のばしたので 80%・90%) */
 export function pursuitStars(hitchS: number, cliff: number): 1 | 2 | 3 {
   const k = hitchS / cliff;
-  return k <= 0.7 ? 3 : k <= 0.85 ? 2 : 1;
+  return k <= 0.8 ? 3 : k <= 0.9 ? 2 : 1;
 }
 
 /** ジャンプ台から平らな所へ飛んだときの、とぶ距離(boost=台の上でジャンプした) */
