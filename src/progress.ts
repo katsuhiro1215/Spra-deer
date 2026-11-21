@@ -11,8 +11,8 @@ const V2_KEY = 'spra-deer:progress:v2';
 const OLD_KEY = 'spra-deer:progress:v1';
 const FROM_V1: Record<string, string> = { '1-6': '2-3', '1-7': '1-8', '1-8': '2-4', '1-9': '2-5' };
 const UNCHANGED_V1 = new Set(['1-1', '1-2', '1-3', '1-4', '1-5', '1-10']);
-/** 開発中は、すべての面を最初から遊べる。公開前に false に戻す（前の面をクリアすると次の面が開く、本来の動きになる）。 */
-export const UNLOCK_ALL = true;
+/** 開発中は true にして、すべての面を最初から遊べるようにする(テスト用)。公開のいまは false: 前の面をクリアすると次の面が開く、本来の動き。 */
+export const UNLOCK_ALL = false;
 const empty = (): LevelRecord => ({ best: null, attempts: 0, clears: 0 });
 const count = (n: unknown) => (typeof n === 'number' && Number.isSafeInteger(n) && n >= 0 ? n : 0);
 

@@ -1,9 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import type { ReactNode } from 'react';
 
-// 公開のお試しのあいだは、検索に載せない。正式に公開するとき、この1行を消す(設計書 38章)
 export const metadata: Metadata = {
-  robots: { index: false, follow: false },
   title: 'Spraと鹿。｜足元には、ご用心。',
   description: '鹿のうんこをよけて、ゴールへ。…その道、ほんとうに安全？ Spraと鹿。奈良公園が舞台の縦画面ゲーム。',
   icons: { icon: '/favicon.svg' },
