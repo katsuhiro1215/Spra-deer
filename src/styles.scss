@@ -127,7 +127,9 @@ $rounded: 'M PLUS Rounded 1c', 'Zen Maru Gothic', 'Hiragino Maru Gothic ProN', '
   .hs-wstate { margin-top: auto; font-weight: 800; font-size: max(11px, 2.7cqw); background: #ffffff38; border-radius: 99px; padding: .4cqw 2cqw; }
   &:active:not(.locked):not(.soon) { transform: translateY(.6cqw); box-shadow: 0 .4cqw 0 color-mix(in srgb, var(--wc) 70%, #000); }
   &.done .hs-wstate::before { content: '★ '; color: #fff3a0; }
-  &.locked, &.soon { filter: saturate(.35) brightness(.95); cursor: default; } }
+  /* ロック中も、子供向けなので 明るい色のまま(色をくすませない)。ロックは「🔒 あと3面」で伝える */
+  &.locked { filter: saturate(.9) brightness(1.04); cursor: default; }
+  &.soon { filter: saturate(.6); cursor: default; } }
 .hs-nav { display: flex; justify-content: space-around; background: #fffdf3; border-top: .6cqw solid #e8dfc2; padding-bottom: env(safe-area-inset-bottom);
   button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .4cqw; flex: 1; min-height: max(52px, 15cqw); border: 0; background: none; font-family: $rounded; font-weight: 900; font-size: max(11px, 2.7cqw); color: #8a9479;
     svg { width: max(22px, 6.4cqw); height: max(22px, 6.4cqw); fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
