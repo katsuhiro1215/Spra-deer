@@ -1,8 +1,0 @@
-.legal { max-width: 720px; margin: 0 auto; padding: 24px 16px 64px; font-family: 'Zen Maru Gothic', sans-serif; color: #35452c; line-height: 1.9; background: #f6fbea; min-height: 100vh; }
-.legal h1 { font-family: 'M PLUS Rounded 1c', sans-serif; font-weight: 900; font-size: 28px; color: #3b7f26; margin: 12px 0; }
-.legal h2 { font-family: 'M PLUS Rounded 1c', sans-serif; font-weight: 800; font-size: 18px; margin: 28px 0 6px; }
-.legal a { color: #2d6a1b; }
-.legal ul, .legal ol { padding-left: 1.4em; }
-.legal-back { display: inline-block; font-weight: 700; }
-.legal-draft { background: #fff4c8; border: 2px solid #f0cf5a; border-radius: 12px; padding: 10px 14px; font-size: 14px; }
-.legal-foot { margin-top: 40px; font-size: 13px; opacity: .75; }

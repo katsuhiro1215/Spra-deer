@@ -205,7 +205,7 @@ class Park extends Phaser.Scene {
     el('hud').hidden = el('controls').hidden = true; el('message').textContent = '';
     el('game-wrap').classList.toggle('menu', mode === 'select');
   }
-  private title() { this.idle('title'); el('overlay').innerHTML = titleHTML(new Date(), closet); }
+  private title() { this.idle('title'); el('overlay').innerHTML = titleHTML(new Date()); }
   private account!: AccountController;
   /** いま出している画面(記録が かわったときに かきなおす) */
   private current: (() => void) | null = null;

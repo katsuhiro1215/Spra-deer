@@ -3,7 +3,7 @@ import type { Board, Profile, Stats } from './api.ts';
 import type { Account } from './store.ts';
 
 const esc = (s: string): string => s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
-const LEGAL = '<a href="https://go.spra.jp/terms" target="_blank" rel="noreferrer">Spra Go の利用規約</a>・<a href="https://go.spra.jp/privacy" target="_blank" rel="noreferrer">プライバシーポリシー</a>・<a href="/terms/" target="_blank">Spraと鹿。の利用規約</a>';
+const LEGAL = '<a href="https://go.spra.jp/terms" target="_blank" rel="noreferrer">Spra Go の利用規約</a>・<a href="https://go.spra.jp/privacy" target="_blank" rel="noreferrer">プライバシーポリシー</a>';
 const msgLine = (msg: string) => (msg ? `<p class="ac-msg" role="alert">${esc(msg)}</p>` : '');
 const card = (body: string) => `<div class="screen modal-screen ac-screen"><div class="modal-card ac-card">${body}</div></div>`;
 

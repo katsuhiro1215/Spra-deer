@@ -252,3 +252,11 @@ span.hs-buy { background: #eee6cf; box-shadow: none; color: #7a7260; }
 .hs-mark { background: #fff; box-shadow: 0 .5cqw 1.4cqw #0002; img { width: 70%; height: auto; display: block; } }
 /* 音のボタン: 指で押しやすい大きさ。トップの「はじめる」の下の帯にかぶらない */
 #sound { min-height: 44px; min-width: 56px; z-index: 12; }
+
+/* トップ: 画像(Spra Go・Tane と同じ形)。画像は横いっぱいで下にそろえ、上の足りない分は 空の色でうめる(画面が縦長でも切れない) */
+.title-img { background: var(--tbg, #2790f2); overflow: hidden; }
+.title-img .title-bg { position: absolute; left: 0; bottom: 0; width: 100%; height: auto; display: block; -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 9%); mask-image: linear-gradient(to bottom, transparent 0, #000 9%); }
+.title-img .title-head, .title-img .title-corner, .title-img .title-foot { z-index: 3; }
+.title-night .subtitle { color: #fff; text-shadow: 0 .4cqw 1.2cqw #00104080; }
+.title-night .wordmark { text-shadow: 0 .6cqw 0 #ffffffb0, 0 1.2cqw 2.4cqw #00104080; }
+.title-img .legal-links a { color: #fff; text-shadow: 0 .3cqw .8cqw #1d3a12, 0 0 1.4cqw #1d3a12; }

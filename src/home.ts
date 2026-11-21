@@ -86,12 +86,23 @@ function sceneHTML(se: Season, closet: Closet | null, inner: string): string {
   </div>`;
 }
 
-/** トップ画面(ブランド共通: 左上ロゴ・右上バージョン・中央にアプリ名と「はじめる」・下に規約)。背景は ホームと同じ 季節の絵 */
-export function titleHTML(now = new Date(), closet: Closet | null = null): string {
-  const se = currentSeason(now);
+/** 規約・プライバシーポリシーは Spra Go のページ(Tane と同じ。内容を1か所にそろえる) */
+const T = '<a href="https://go.spra.jp/terms" target="_blank" rel="noreferrer">';
+const P = '<a href="https://go.spra.jp/privacy" target="_blank" rel="noreferrer">';
+
+/** トップの画像(季節に関わらず1枚。12月だけ クリスマスの夜の絵)。上と下は、文字とボタンのために あけてある */
+export const TOP_IMAGES = {
+  normal: { src: '/assets/top/top-nara.webp', sky: '#2790f2', night: false },
+  xmas: { src: '/assets/top/top-xmas.webp', sky: '#012088', night: true },
+};
+export const topImageOf = (now: Date) => (now.getMonth() === 11 ? TOP_IMAGES.xmas : TOP_IMAGES.normal);
+
+/** トップ画面(ブランド共通: 左上ロゴ・右上バージョン・中央にアプリ名と「はじめる」・下に規約。規約は Spra Go のページ) */
+export function titleHTML(now = new Date()): string {
+  const t = topImageOf(now);
   const top = `<div class="title-corner"><span class="hs-mark"><img src="/assets/logo.svg" alt="Spra"></span><span class="title-version">${APP_VERSION}</span></div><div class="title-head"><h2 class="wordmark" aria-label="Spraと鹿。"><span class="w-spru">Spra</span><span class="w-to">と</span><span class="w-deer">鹿</span><span class="w-dot">。</span></h2><p class="subtitle">奈良を、鹿と大冒険。</p></div>`;
-  const bottom = `<div class="title-foot"><button class="play" data-action="home">はじめる</button><nav class="legal-links"><a href="/terms/">利用規約</a><a href="/privacy/">プライバシーポリシー</a></nav></div>`;
-  return `<div class="screen title-screen title-scene">${sceneHTML(se, closet, '')}${top}${bottom}</div>`;
+  const bottom = `<div class="title-foot"><button class="play" data-action="home">はじめる</button><nav class="legal-links">${T}利用規約</a>${P}プライバシーポリシー</a></nav></div>`;
+  return `<div class="screen title-screen title-img${t.night ? ' title-night' : ''}" style="--tbg:${t.sky}"><img class="title-bg" src="${t.src}" alt="">${top}${bottom}</div>`;
 }
 
 /** ストーリーは、絵と遊び方ができるまで 隠す(2026-11-21 Owner) */
@@ -190,5 +201,5 @@ export function friendsHTML(w: Wallet, closet: Closet | null = null): string {
 
 export function settingsHTML(w: Wallet, soundOn: boolean, season: SeasonPick = 'auto', accountRows = '', signedIn = false): string {
   const seasons = (['auto', 'spring', 'summer', 'autumn', 'winter'] as const).map(k => `<button class="hs-chip-btn" data-action="season" data-season="${k}" aria-pressed="${k === season}">${k === 'auto' ? '自動' : SEASONS[k].label}</button>`).join('');
-  return shell(w, 'settings', `<h2 class="hs-title">せってい</h2><div class="hs-settings"><button class="hs-row" data-action="sound" aria-pressed="${soundOn}"><span>音(BGM・効果音)</span><b>${soundOn ? 'ON' : 'OFF'}</b></button><div class="hs-row hs-season-row"><span>ホームの 季節</span><div class="hs-chips">${seasons}</div></div>${accountRows}<a class="hs-row" href="/terms/"><span>利用規約</span><b>›</b></a><a class="hs-row" href="/privacy/"><span>プライバシーポリシー</span><b>›</b></a><div class="hs-row"><span>バージョン</span><b>${APP_VERSION}</b></div></div><p class="hs-help">${signedIn ? '記録・体力・コインは、あそぶ人ごとに このブラウザに保存されます。クリアの記録(タイム・★)は Spra Go にも あずけるので、ほかの 端末でも 引きつげます。' : '記録・体力・コインは、このブラウザに保存されます。'}${w.canSave ? '' : '(この環境では保存できません)'}</p>`);
+  return shell(w, 'settings', `<h2 class="hs-title">せってい</h2><div class="hs-settings"><button class="hs-row" data-action="sound" aria-pressed="${soundOn}"><span>音(BGM・効果音)</span><b>${soundOn ? 'ON' : 'OFF'}</b></button><div class="hs-row hs-season-row"><span>ホームの 季節</span><div class="hs-chips">${seasons}</div></div>${accountRows}<a class="hs-row" href="https://go.spra.jp/terms" target="_blank" rel="noreferrer"><span>利用規約</span><b>›</b></a><a class="hs-row" href="https://go.spra.jp/privacy" target="_blank" rel="noreferrer"><span>プライバシーポリシー</span><b>›</b></a><div class="hs-row"><span>バージョン</span><b>${APP_VERSION}</b></div></div><p class="hs-help">${signedIn ? '記録・体力・コインは、あそぶ人ごとに このブラウザに保存されます。クリアの記録(タイム・★)は Spra Go にも あずけるので、ほかの 端末でも 引きつげます。' : '記録・体力・コインは、このブラウザに保存されます。'}${w.canSave ? '' : '(この環境では保存できません)'}</p>`);
 }
