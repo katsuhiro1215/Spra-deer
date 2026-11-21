@@ -9,13 +9,19 @@ function memoryStore(): Storage {
 }
 const dec = new Date(2026, 11, 5);
 const nov = new Date(2026, 10, 25);
-const withArt = <T>(f: () => T): T => { const was = COSTUMES.map(c => c.ready); COSTUMES.forEach(c => { c.ready = true; }); try { return f(); } finally { COSTUMES.forEach((c, i) => { c.ready = was[i]; }); } };
+const withReady = <T>(ready: boolean, f: () => T): T => { const was = COSTUMES.map(c => c.ready); COSTUMES.forEach(c => { c.ready = ready; }); try { return f(); } finally { COSTUMES.forEach((c, i) => { c.ready = was[i]; }); } };
+const withArt = <T>(f: () => T): T => withReady(true, f);
 
-test('衣装: 絵が届くまでは 買えない(準備中)', () => {
+test('衣装: 絵が届くまで(ready=false)は 買えない(準備中)', () => withReady(false, () => {
   const st = memoryStore(), w = new Wallet(() => 0, st, ''); w.earn('gold', 999);
   const c = new Closet(w, st, '');
   assert.equal(c.buy('xmas-stag', dec), 'closed');
   assert.equal(w.coins.gold, 999);
+}));
+
+test('衣装: クリスマスの3体の絵が public/assets/costume/ に ある', async () => {
+  const { existsSync } = await import('node:fs');
+  for (const c of COSTUMES) assert.ok(!c.ready || existsSync(new URL(`../public${c.img}`, import.meta.url)), c.img);
 });
 
 test('衣装: 12月だけ 買える。買うとゴールドが減って 着る。持てば あとは いつでも着られる', () => withArt(() => {

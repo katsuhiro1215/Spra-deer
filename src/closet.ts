@@ -29,9 +29,9 @@ export type Costume = {
 
 /** 12月限定のクリスマス(依頼文: rooms/Spra/dev/SpraDeer/xmas/prompts/ready/)。値段は 遊ぶ速さを見て決め直す */
 export const COSTUMES: Costume[] = [
-  { id: 'xmas-stag', name: 'クリスマスの雄鹿', who: 'stag', img: '/assets/costume/xmas-stag.webp', gold: 150, months: [12], ready: false },
-  { id: 'xmas-doe', name: 'クリスマスの雌鹿', who: 'doe', img: '/assets/costume/xmas-doe.webp', gold: 150, months: [12], ready: false },
-  { id: 'xmas-fawn', name: 'クリスマスの子鹿', who: 'fawn', img: '/assets/costume/xmas-fawn.webp', gold: 120, months: [12], ready: false },
+  { id: 'xmas-stag', name: 'クリスマスの雄鹿', who: 'stag', img: '/assets/costume/xmas-stag.webp', gold: 150, months: [12], ready: true },
+  { id: 'xmas-doe', name: 'クリスマスの雌鹿', who: 'doe', img: '/assets/costume/xmas-doe.webp', gold: 150, months: [12], ready: true },
+  { id: 'xmas-fawn', name: 'クリスマスの子鹿', who: 'fawn', img: '/assets/costume/xmas-fawn.webp', gold: 120, months: [12], ready: true },
 ];
 
 export const costumeOf = (id: string): Costume | undefined => COSTUMES.find(c => c.id === id);
