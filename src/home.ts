@@ -6,7 +6,7 @@ import { POTION, STAMINA_MAX, STAMINA_FAIL, waitText, type Wallet } from './wall
 import pkg from '../package.json';
 import { SEASONS, currentSeason, type Season, type SeasonPick } from './season.ts';
 import { COSTUMES, WHO, onSale, type Closet, type Who } from './closet.ts';
-import { FRIENDS, standOf } from './friends.ts';
+import { FRIENDS, standOf, unlockedBy } from './friends.ts';
 import { statsLine } from './account/screens.ts';
 import type { Stats } from './account/api.ts';
 
@@ -30,7 +30,7 @@ export const WORLDS: { no: number; name: string; play: string; stage?: number; c
 ];
 
 const stageOf = (stage: number) => STAGES.find(s => s.stage === stage);
-const playable = (stage: number) => (stageOf(stage)?.slots ?? []).filter(s => s.level || s.runnerId);
+const playable = (stage: number) => (stageOf(stage)?.slots ?? []).filter(s => (s.level || s.runnerId) && !s.bonus);
 
 const fmtMin = (ms: number) => {
   const s = Math.ceil(ms / 1000);
@@ -151,7 +151,8 @@ export function worldHTML(stage: number, p: Progress, w: Wallet, ex: WorldExtras
   const cards = slots.map(slot => {
     if (!slot.level && !slot.runnerId) return `<div class="level-card soon"><b>${slot.id}</b><span class="lv-name">${slot.title}<small>準備中</small></span></div>`;
     const record = p.get(slot.id), open = p.isUnlocked(slot.id), login = open && !!ex.needsLogin?.(slot.id);
-    const status = !open ? 'ロック中' : login ? '🔑 ログインで あそべる' : record.best !== null ? `ベスト ${record.best.toFixed(1)}秒` : '未クリア';
+    const fr = unlockedBy(slot.id);
+    const status = !open ? (fr ? `🔒 ${fr.name}を 仲間にすると` : 'ロック中') : login ? '🔑 ログインで あそべる' : record.best !== null ? `ベスト ${record.best.toFixed(1)}秒` : '未クリア';
     const action = login ? 'need-login' : slot.runnerId ? 'run' : 'start';
     const card = `<button class="level-card${record.clears ? ' done' : ''}${login ? ' need-login' : ''}" data-action="${action}" data-level="${slot.id}"${open ? '' : ' disabled'}><b>${slot.id}</b><span class="lv-name">${slot.title}<small>${slot.summary}</small>${statsLine(ex.stats ?? null, slot.id)}</span><span class="lv-best">${status}</span></button>`;
     return ex.ranking ? `<div class="level-row">${card}<button class="lv-rank" data-action="ranking" data-level="${slot.id}" aria-label="${slot.id} の ランキング">🏆</button></div>` : card;

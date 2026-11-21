@@ -94,7 +94,7 @@ export class CartRun {
   /** 前を走る、鹿の乗ったトロッコの位置・速さ */
   deerS = 0; deerV = 0;
   /** 連結したか、連結した時刻(この時間が ★ と記録になる) */
-  coupled = false; hitchT = 0;
+  coupled = false; hitchT = 0; hitchS = 0;
   /** 今いる分かれ道で、入った側(-1 左・1 右。分かれ道でなければ 0)と、まちがった側か */
   lane: -1 | 0 | 1 = 0; wrong = false;
   private fork: Fork | null = null;
@@ -361,7 +361,7 @@ export class CartRun {
       if (this.deerS >= pu.cliff) { this.fail('lost', 'deerLost'); return; }
       // 追いついた: 地面の上で、分かれ道の外なら 連結
       if (this.deerS - this.s <= BAL.couple && !this.air && !this.fork) {
-        this.coupled = true; this.hitchT = this.t; this.dashT = 0;
+        this.coupled = true; this.hitchT = this.t; this.hitchS = this.s; this.dashT = 0;
         this.v = (this.v + this.deerV) / 2; // ぶつかって つながる(速さは2台の間)
         this.events.push({ kind: 'hitch' });
       }

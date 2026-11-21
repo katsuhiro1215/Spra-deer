@@ -42,6 +42,16 @@ export const unlockedBy = (levelId: string): Friend | undefined => FRIENDS.find(
 /** 保存の置き場(closet.ts と同じ。ゲームのページ(別ページ)からも 相棒を読めるように、ここで直接読む) */
 const CLOSET_KEY = 'spra-deer:closet:v1';
 
+/** その仲間の鹿を持っているか(専用の面を開くか)。ゲームのページからも読めるように、保存から直接読む */
+export function ownsFriend(id: string, store?: Storage | null, scope = storageScope()): boolean {
+  try {
+    const st = store === undefined ? (typeof localStorage === 'undefined' ? null : localStorage) : store;
+    if (!st) return false;
+    const s = JSON.parse(st.getItem(scope + CLOSET_KEY) || 'null') as { friends?: unknown } | null;
+    return !!s && Array.isArray(s.friends) && s.friends.includes(id);
+  } catch { return false; }
+}
+
 /** いまの相棒(持っていないものは なし)。走るゲームのページが、はじまるときに読む */
 export function readBuddy(store?: Storage | null, scope = storageScope()): FriendId | null {
   try {

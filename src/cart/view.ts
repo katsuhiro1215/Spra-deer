@@ -2,6 +2,7 @@
 // 走りのルールは sim.ts。ここは、その結果を絵にするだけ。
 import * as THREE from 'three';
 import { readBuddy, runFramePath } from '../friends.ts';
+import { FORK_W, forkShape } from './track.ts';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { BRIDGED, COLLAPSE_AT, type Gap, type Track } from './track.ts';
@@ -120,6 +121,8 @@ export class CartView {
   private spra!: THREE.Mesh;
   private deer!: THREE.Mesh;
   private deerTex: THREE.Texture[] = [];
+  /** 追いかけっこ: 前のトロッコ・乗っている鹿・鈴・車輪 */
+  private lead: THREE.Group | null = null; private leadRider: THREE.Mesh | null = null; private leadBell: THREE.Mesh | null = null; private leadWheels: THREE.Object3D[] = [];
   private shadowCart!: THREE.Mesh;
   private shadowDeer!: THREE.Mesh;
   private coinMesh: Record<'silver' | 'gold' | 'premium', THREE.InstancedMesh>;
@@ -355,13 +358,14 @@ export class CartView {
   }
 
   /** 線路にそった帯(砂利の道床・橋の板・レール)。ranges の区間だけ作る。half=幅の半分、off=横ずれ、y=高さ、thick=厚み(0 なら面だけ)。 */
-  private ribbon(ranges: [number, number][], half: number, off: number, y: number, thick: number, vScale: number): THREE.BufferGeometry {
+  private ribbon(ranges: [number, number][], half: number, offset: number | ((s: number) => number), y: number, thick: number, vScale: number): THREE.BufferGeometry {
     const pos: number[] = [], uv: number[] = [], idx: number[] = [], f = this.f;
     for (const [a, b] of ranges) {
       const n = Math.max(1, Math.ceil(b - a)), base = pos.length / 3, per = thick > 0 ? 4 : 2;
       for (let i = 0; i <= n; i++) {
         const s = a + ((b - a) * i) / n;
         this.frame(s, f);
+        const off = typeof offset === 'number' ? offset : offset(s);
         const push = (side: number, dy: number, tu: number) => {
           this.v1.copy(f.o).addScaledVector(f.r, off + side * half).addScaledVector(f.u, y + dy);
           pos.push(this.v1.x, this.v1.y, this.v1.z); uv.push(tu, s * vScale);
@@ -388,7 +392,9 @@ export class CartView {
     let from: number | null = null;
     for (let s = -45; s <= this.track.total; s++) {
       const bridge = this.track.terrain(Math.max(0, s)).depth > 1.2;
-      const ok = !this.track.inGap(s) && (kind === 'all' || (kind === 'bridge') === bridge);
+      // 分かれ道の中は、まん中の線路を描かない(左右2本を buildForks で描く)
+      const fk = this.track.forkAt(s), inFork = !!fk && s > fk.at + 1 && s < fk.at + fk.len - 1;
+      const ok = !this.track.inGap(s) && !inFork && (kind === 'all' || (kind === 'bridge') === bridge);
       if (ok && from === null) from = s;
       if (!ok && from !== null) { out.push([from, s - (this.track.inGap(s) ? 1 : 0)]); from = null; }
     }
@@ -417,19 +423,45 @@ export class CartView {
     const mat = new THREE.MeshStandardMaterial({ map: wood, roughness: 0.95 });
     const geo = new THREE.BoxGeometry(2.05, 0.13, 0.26);
     const spots: number[] = [];
-    for (let s = -44; s < this.track.total; s += 0.85) if (!this.track.inGap(s) && !this.track.gaps.some(g => Math.abs(s - g.from) < 0.25 || Math.abs(s - g.to) < 0.25)) spots.push(s);
+    for (let s = -44; s < this.track.total; s += 0.85) if (!this.track.inGap(s) && !this.track.forkAt(s) && !this.track.gaps.some(g => Math.abs(s - g.from) < 0.25 || Math.abs(s - g.to) < 0.25)) spots.push(s);
     const mesh = new THREE.InstancedMesh(geo, mat, spots.length);
     const rnd = mulberry(77), c = new THREE.Color();
     spots.forEach((s, i) => {
       const f = this.frame(s, this.f);
       this.m1.makeBasis(f.r, f.u, this.v1.copy(f.t).negate()).setPosition(this.v2.copy(f.o).addScaledVector(f.u, -0.03));
       mesh.setMatrixAt(i, this.m1);
-      const mark = this.track.gaps.some(g => !g.collapse && s < g.from && g.from - s < 9);
+      const mark = this.track.gaps.some(g => !g.collapse && g.from !== this.track.pursuit?.cliff && s < g.from && g.from - s < 9);
       mesh.setColorAt(i, mark ? c.setHex(Math.floor(s / 0.85) % 2 ? 0xffd23a : 0xff7b2e) : c.setScalar(0.82 + rnd() * 0.36));
     });
     mesh.castShadow = true; mesh.receiveShadow = true; mesh.frustumCulled = false;
     this.scene.add(mesh);
     this.disposables.push(geo, mat, wood);
+    if (this.track.pursuit) this.buildForks(bedMat, railMat, geo, mat);
+  }
+
+  /** 分かれ道: 左右2本の線路(道床・レール・枕木)。どちらも同じ見た目(見た目で正解が分からないように) */
+  private buildForks(bedMat: THREE.Material, railMat: THREE.Material, sleeperGeo: THREE.BufferGeometry, sleeperMat: THREE.Material): void {
+    for (const fk of this.track.pursuit!.forks) {
+      const span: [number, number][] = [[fk.at, fk.at + fk.len]];
+      for (const lane of [-1, 1]) {
+        const lx = (s: number) => lane * FORK_W * forkShape(fk, s);
+        const bed = new THREE.Mesh(this.ribbon(span, 1.55, lx, -0.06, 0.34, 0.4), bedMat);
+        bed.receiveShadow = true; bed.frustumCulled = false; this.scene.add(bed); this.disposables.push(bed.geometry);
+        for (const side of [-1, 1]) {
+          const rail = new THREE.Mesh(this.ribbon(span, 0.045, (s: number) => lx(s) + side * RAIL, RAIL_TOP, 0.13, 0.5), railMat);
+          rail.castShadow = true; rail.frustumCulled = false; this.scene.add(rail); this.disposables.push(rail.geometry);
+        }
+        const spots: number[] = [];
+        for (let s = fk.at; s < fk.at + fk.len; s += 0.85) spots.push(s);
+        const mesh = new THREE.InstancedMesh(sleeperGeo, sleeperMat, spots.length);
+        spots.forEach((s, i) => {
+          const f = this.frame(s, this.f);
+          this.m1.makeBasis(f.r, f.u, this.v1.copy(f.t).negate()).setPosition(this.v2.copy(f.o).addScaledVector(f.u, -0.03).addScaledVector(f.r, lx(s)));
+          mesh.setMatrixAt(i, this.m1);
+        });
+        mesh.receiveShadow = true; mesh.frustumCulled = false; this.scene.add(mesh);
+      }
+    }
   }
 
   // ---- トンネル: 岩の内壁・入口の石の門・山の上面・壁のランタン ----
@@ -1028,13 +1060,15 @@ export class CartView {
     const iron = new THREE.MeshStandardMaterial({ color: 0x3a3d43, roughness: 0.5, metalness: 0.7 });
     const box = new THREE.BoxGeometry(1, 1, 1);
     this.disposables.push(wood, woodMat, iron, box);
+    let into: THREE.Group = this.cart; // 部品を足す先(追いかけっこでは、前のトロッコも同じ形で作る)
     const part = (mat: THREE.Material, sx: number, sy: number, sz: number, x: number, y: number, z: number, rx = 0, rz = 0) => {
       const m = new THREE.Mesh(box, mat);
       m.scale.set(sx, sy, sz); m.position.set(x, y, z); m.rotation.set(rx, 0, rz); m.castShadow = true;
-      this.cart.add(m);
+      into.add(m);
       return m;
     };
     const Y = RAIL_TOP; // レールの上面
+    const body = (wheels: THREE.Object3D[]) => {
     part(iron, 1.16, 0.1, 1.9, 0, Y + 0.42, 0); // 台枠
     part(woodMat, 1.2, 0.07, 1.84, 0, Y + 0.5, 0); // 床
     for (const side of [-1, 1]) part(woodMat, 0.07, 0.66, 1.9, side * 0.66, Y + 0.82, 0, 0, side * -0.13); // 横の板(上が開いている)
@@ -1049,19 +1083,37 @@ export class CartView {
     const light = new THREE.MeshStandardMaterial({ color: 0x9a9da3, roughness: 0.4, metalness: 0.8 });
     this.disposables.push(wheelGeo, flangeGeo, spokeGeo, axleGeo, light);
     for (const z of [-0.62, 0.62]) {
-      const axle = new THREE.Mesh(axleGeo, iron); axle.position.set(0, Y + 0.27, z); this.cart.add(axle);
+      const axle = new THREE.Mesh(axleGeo, iron); axle.position.set(0, Y + 0.27, z); into.add(axle);
       for (const side of [-1, 1]) {
         const w = new THREE.Group();
         const tyre = new THREE.Mesh(wheelGeo, iron), flange = new THREE.Mesh(flangeGeo, iron); flange.position.x = -side * 0.05;
         const sp1 = new THREE.Mesh(spokeGeo, light), sp2 = new THREE.Mesh(spokeGeo, light); sp1.position.x = sp2.position.x = side * 0.05; sp2.rotation.x = Math.PI / 2;
         tyre.castShadow = true;
         w.add(tyre, flange, sp1, sp2); w.position.set(side * RAIL, Y + 0.27, z);
-        this.cart.add(w); this.wheels.push(w);
+        into.add(w); wheels.push(w);
       }
     }
-    // 鹿につなぐ、2本の棒(ながえ)と、胸の横木
-    for (const side of [-1, 1]) part(woodMat, 0.08, 0.08, 3.1, side * 0.56, Y + 0.78, -2.45, -0.03);
-    part(woodMat, 1.2, 0.08, 0.08, 0, Y + 0.82, -3.95);
+    };
+    body(this.wheels);
+    // 鹿につなぐ、2本の棒(ながえ)と、胸の横木(追いかけっこでは、鹿が引かないので 出さない)
+    const pulls = !this.track.pursuit;
+    for (const side of [-1, 1]) part(woodMat, 0.08, 0.08, 3.1, side * 0.56, Y + 0.78, -2.45, -0.03).visible = pulls;
+    part(woodMat, 1.2, 0.08, 0.08, 0, Y + 0.82, -3.95).visible = pulls;
+    // 追いかけっこ: 前を走る、仲間の鹿が乗ったトロッコ(同じ形)
+    const pu = this.track.pursuit;
+    if (pu) {
+      this.lead = new THREE.Group(); into = this.lead; body(this.leadWheels); into = this.cart;
+      const ft = loadTex(runFramePath(pu.friend, 0));
+      const fm = new THREE.MeshBasicMaterial({ map: ft, transparent: true, alphaTest: 0.35, side: THREE.DoubleSide, toneMapped: false });
+      const rider = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), fm);
+      rider.scale.set(1.25, 1.67, 1); rider.position.set(0, Y + 1.5, 0.1);
+      this.lead.add(rider); this.leadRider = rider;
+      // 鈴(分かれ道の手がかり。音は game.ts が鳴らす)
+      const bell = new THREE.Mesh(new THREE.SphereGeometry(0.13, 12, 10), new THREE.MeshStandardMaterial({ color: 0xffd23a, emissive: 0xb07a00, emissiveIntensity: 0.6, metalness: 0.6, roughness: 0.3 }));
+      bell.position.set(0, Y + 1.25, 0.99); this.lead.add(bell); this.leadBell = bell;
+      this.scene.add(this.lead);
+      this.disposables.push(ft, fm, rider.geometry, bell.geometry, bell.material as THREE.Material);
+    }
     // ブレーキのレバー(左)と、ランタン(右うしろ)
     const lever = new THREE.Group(); lever.position.set(-0.8, Y + 0.6, 0.35);
     const lv = new THREE.Mesh(box, iron); lv.scale.set(0.05, 0.9, 0.05); lv.position.y = 0.45;
@@ -1086,6 +1138,7 @@ export class CartView {
     const deerMat = new THREE.MeshBasicMaterial({ map: this.deerTex[0], transparent: true, alphaTest: 0.35, side: THREE.DoubleSide, toneMapped: false });
     this.deer = new THREE.Mesh(plane, deerMat);
     this.deer.scale.set(1.75, 2.5, 1);
+    this.deer.visible = !this.track.pursuit; // 追いかけっこでは、鹿は前のトロッコに乗っている
     this.cart.add(this.deer);
     this.disposables.push(spraTex, spraMat, deerMat, ...this.deerTex);
 
@@ -1194,6 +1247,20 @@ export class CartView {
   /** ゆらす(着地・ぶつかったとき)。 */
   bump(amount: number): void { this.shake = Math.max(this.shake, amount); }
 
+  /** 追いかけっこ: 前のトロッコを、線路の上(分かれ道では正しい側)に置く。谷へ落ちたら、まっさかさま */
+  private placeLead(run: CartRun, dt: number): void {
+    const lead = this.lead!, tr = this.track, f = this.frame(run.deerS, this.f3);
+    const fk = tr.forkAt(run.deerS), lx = fk ? fk.correct * FORK_W * forkShape(fk, run.deerS) : 0;
+    lead.position.copy(f.o).addScaledVector(f.r, lx);
+    this.m1.makeBasis(f.r, f.u, this.v1.copy(f.t).negate());
+    lead.quaternion.setFromRotationMatrix(this.m1);
+    if (run.reason === 'lost') { const k = this.failT; lead.position.y -= 8 * k * k; lead.rotateX(-Math.min(1.2, k * 1.6)); }
+    const vv = run.coupled ? run.v : run.deerV;
+    for (const w of this.leadWheels) w.rotation.x -= (vv * dt) / 0.27;
+    if (this.leadRider) this.leadRider.position.y = RAIL_TOP + 1.5 + Math.abs(Math.sin(this.time * 9)) * 0.05 * Math.min(1, vv / 20);
+    if (this.leadBell) this.leadBell.rotation.z = Math.sin(this.time * 14) * 0.5;
+  }
+
   private resize(): void {
     const w = this.host.clientWidth || 360, h = this.host.clientHeight || 640;
     this.renderer.setSize(w, h, false);
@@ -1250,6 +1317,7 @@ export class CartView {
     this.deer.position.set(run.lean * 0.12, RAIL_TOP + 1.2 + gallop, -DEER_AHEAD);
     this.deer.rotation.set(run.air ? 0.25 : run.dashT > 0 ? -0.14 : 0, 0, -run.lean * 0.1);
     this.deer.scale.set(1.75, 2.5 * (run.dashT > 0 ? 1.05 : 1), 1);
+    if (this.lead) this.placeLead(run, dt);
 
     // 影(地面がある所だけ)
     const place = (mesh: THREE.Mesh, s: number, w: number, d: number) => {
@@ -1263,6 +1331,7 @@ export class CartView {
     };
     place(this.shadowCart, run.s, 2.6, 3.4);
     place(this.shadowDeer, run.s + DEER_AHEAD, 1.8, 2.6);
+    if (this.track.pursuit) this.shadowDeer.visible = false;
 
     // 遠い区間の木・岩は描かない(霧の先・通りすぎた後ろ)
     for (const c of this.chunks) c.mesh.visible = c.to > run.s - 70 && c.from < run.s + 450;
@@ -1394,8 +1463,8 @@ export class CartView {
     this.lookD += (clamp(20 - sharp * 480, 8, 20) - this.lookD) * Math.min(1, dt * 3);
     const back = this.frame(run.s - 7.6 - speed * 1.6, this.f2), ahead = this.frame(run.s + this.lookD, this.f3);
     const lift = Math.max(0, run.height) * 0.55 + (failed && run.reason === 'fall' ? 1.5 : 0);
-    const wantPos = this.v1.copy(back.o).addScaledVector(back.u, 3.9 + lift).addScaledVector(back.r, -run.lean * 0.5);
-    const wantLook = this.v3().copy(ahead.o).addScaledVector(ahead.u, 1.3 + Math.max(0, run.height) * 0.4);
+    const wantPos = this.v1.copy(back.o).addScaledVector(back.u, 3.9 + lift).addScaledVector(back.r, -run.lean * 0.5 + run.laneX);
+    const wantLook = this.v3().copy(ahead.o).addScaledVector(ahead.u, 1.3 + Math.max(0, run.height) * 0.4).addScaledVector(ahead.r, run.laneX);
     if (failed && run.reason !== 'broken') wantLook.copy(this.cart.position);
     // 大岩・なだれに追いつかれたときは、後ろの高い所から見おろす(鹿とSpraは後ろ姿の絵なので、前からは見ない)
     if (failed && run.reason === 'caught') {

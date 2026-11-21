@@ -4,7 +4,8 @@ import { Wallet, clearRewards, waitText, STAMINA_MAX, STAMINA_FAIL } from '../wa
 import { CART_BGM, RunnerAudio } from '../runner/audio.ts';
 import { CART_LEVELS, trackOf, type CartLevel } from './levels.ts';
 import { COLLAPSE_AT } from './track.ts';
-import { BAL, CartRun, rampReach, type CartEvent, type Input } from './sim.ts';
+import { BAL, CartRun, pursuitStars, rampReach, type CartEvent, type Input } from './sim.ts';
+import { friendOf } from '../friends.ts';
 import { CartView } from './view.ts';
 
 const STEP = 1 / 120;
@@ -17,6 +18,9 @@ const FAIL_TEXT: Record<string, [string, string]> = {
   broken: ['トロッコが こわれた…', '岩と 倒木は ジャンプ。枝は、反対へ 体を かたむけて よけよう'],
   caught: ['大岩に 追いつかれた…', '上り坂は ダッシュ！ 鹿せんべいを 食べると、鹿が 全力で 走るよ'],
   caughtAvalanche: ['なだれに のみこまれた…', '止まらずに すべりおりよう。ダッシュで なだれを ふりきれ！'],
+  // 追いかけっこ
+  cliff: ['止まりきれずに、谷へ…！', '連結したら すぐ ブレーキ！ 早く 追いつくほど、止める きょりが 長く とれるよ'],
+  lost: ['間に合わなかった… 鹿のトロッコが 谷へ', 'こぐ(ダッシュ)を どんどん使おう。分かれ道は 鈴の音が する方へ'],
 };
 const CHASER_NAME = { boulder: '大岩', avalanche: 'なだれ' } as const;
 
@@ -30,7 +34,11 @@ export function startCart(root: HTMLElement, level: CartLevel): () => void {
   if (premiumTaken) track.coins = track.coins.filter(c => c.kind !== 'premium');
   const silverTotal = track.coins.filter(c => c.kind === undefined).length;
   const view = new CartView(q('stage'), track);
-  const nextLevel = CART_LEVELS[CART_LEVELS.findIndex(l => l.id === level.id) + 1];
+  // 次の面(追いかけっこの面は、ボーナスなので 次は無い)
+  const idx = CART_LEVELS.findIndex(l => l.id === level.id);
+  const nextLevel = idx >= 0 ? CART_LEVELS[idx + 1] as CartLevel | undefined : undefined;
+  // 追いかけっこ(仲間の鹿の面): 鹿は 前のトロッコに乗っている。ダッシュは Spra が こぐ
+  const pu = track.pursuit, friendName = pu ? friendOf(pu.friend)?.name ?? '鹿' : '';
   const obstacleById = new Map(track.obstacles.map(o => [o.id, o]));
 
   // チェックポイント: 通ったときの状態を覚えておき、失敗したら、そこから続けられる
@@ -50,6 +58,14 @@ export function startCart(root: HTMLElement, level: CartLevel): () => void {
   q('lv-goal').textContent = level.goalName;
   q('s-title').textContent = level.title;
   q('s-lead').textContent = level.summary;
+  if (pu) {
+    q('dash').innerHTML = '<b>こぐ</b><small>Spraが 加速</small>';
+    q('dash').setAttribute('aria-label', 'こぐ');
+    const how = root.querySelector('.ks-how');
+    if (how) how.innerHTML = `<li><b>こぐ</b> Spraが こいで 加速。どんどん 使おう(Shift)</li><li><b>◀ ▶</b> 分かれ道は、鈴の音が する方へ かたむける(← →)</li><li><b>ブレーキ</b> 追いついて 連結したら、谷の手前で 止める(↓ / S)</li><li><b>ジャンプ</b> 岩・倒木を とびこえる(スペース)</li>`;
+    q('chase').classList.add('pursuit');
+    const dt_ = q('r-time').previousElementSibling; if (dt_) dt_.textContent = '追いつくまで';
+  }
   q('s-prem').textContent = premiumTaken ? '◆ この面の プレミアムコインは 取ったよ' : '◆ この面には プレミアムコインが 1まい かくれている';
 
   let run = new CartRun(track);
@@ -107,6 +123,27 @@ export function startCart(root: HTMLElement, level: CartLevel): () => void {
     if (freq !== undefined) l.filter.frequency.setTargetAtTime(freq, ac.currentTime, 0.1);
   };
   let nextClack = 0;
+  /** 鈴(追いかけっこ): pan=-1 左〜1 右。分かれ道では、鹿のトロッコが行った側から聞こえる */
+  const bell = (pan: number, vol: number) => {
+    if (!ac) return;
+    const sp = ac.createStereoPanner(); sp.pan.value = Math.max(-1, Math.min(1, pan));
+    sp.connect(audio.out ?? ac.destination);
+    for (const [f, v, d] of [[1568, 1, 0.9], [2349, 0.5, 0.6], [3136, 0.25, 0.4]] as const) {
+      const t0 = ac.currentTime, o = ac.createOscillator(), g = ac.createGain();
+      o.type = 'sine'; o.frequency.value = f;
+      g.gain.setValueAtTime(vol * v, t0); g.gain.exponentialRampToValueAtTime(0.0001, t0 + d);
+      o.connect(g).connect(sp); o.start(t0); o.stop(t0 + d + 0.02);
+    }
+  };
+  let nextBell = 0;
+  /** 鈴の聞こえる向き: 鹿のトロッコが分かれ道の中なら、その側。まだなら、まん中(前) */
+  const bellSide = (): number => {
+    if (!pu) return 0;
+    const fk = track.forkAt(run.deerS) ?? pu.forks.find(f => f.at > run.s && f.at <= run.deerS + 5);
+    return fk && run.s < fk.at + fk.len ? fk.correct : 0;
+  };
+  let bellEl: HTMLElement | null = null;
+  if (pu) { bellEl = document.createElement('div'); bellEl.className = 'ct-bell'; bellEl.textContent = '🔔'; bellEl.hidden = true; q('stage').after(bellEl); }
   const sound = (e: CartEvent) => {
     switch (e.kind) {
       case 'coin': tone(1180, 1760, 0.13, 'triangle', 0.07); break;
@@ -126,6 +163,10 @@ export function startCart(root: HTMLElement, level: CartLevel): () => void {
       case 'chase': thud(1.4, 0.55, 140); tone(70, 45, 1.4, 'sawtooth', 0.05); break;
       case 'chaseEnd': thud(1.2, 0.5, 120, 0.25); break;
       case 'caught': thud(1.2, 0.7, 260); tone(120, 35, 0.9, 'sawtooth', 0.09); break;
+      case 'forkRight': tone(880, 1320, 0.18, 'triangle', 0.06); break;
+      case 'forkWrong': thud(0.5, 0.3, 700); tone(300, 180, 0.3, 'square', 0.04); break;
+      case 'hitch': thud(0.35, 0.6, 900); tone(520, 1040, 0.3, 'triangle', 0.08, 0.05); break;
+      case 'deerLost': tone(620, 60, 1.2, 'triangle', 0.09); break;
       case 'clear': audio.stopMusic(); audio.jingle('clear'); break;
       case 'fail': audio.stopMusic(); audio.jingle('fail'); break;
     }
@@ -151,6 +192,13 @@ export function startCart(root: HTMLElement, level: CartLevel): () => void {
       // ずれた線路の上: 空中で、ずれた側へ傾ける
       const sg = track.shiftGapNear(s);
       return sg ? [sg.shift! > 0 ? '右へ かたむけて ▶ 線路が ずれてる！' : '◀ 左へ かたむけて 線路が ずれてる！', 'jump'] : ['', ''];
+    }
+    // 追いかけっこ: 連結したら止める / 分かれ道 / まちがえた
+    if (pu) {
+      if (run.coupled) return v > BAL.stopV ? [`ブレーキ！ 谷まで あと ${Math.max(0, Math.round(pu.cliff - s))}m`, 'red'] : ['', ''];
+      if (run.wrong) return ['まちがえた！ おそい…', 'red'];
+      const fk = pu.forks.find(f => f.at + 1 > s && f.at - s < v * 2.2 + 14);
+      if (fk) return ['分かれ道！ 鈴の方へ', 'yellow'];
     }
     // ジャンプ台
     const ramp = track.obstacles.find(o => o.kind === 'ramp' && o.s > s - 0.5 && o.s - s < v * 2.2 + 12);
@@ -238,8 +286,26 @@ export function startCart(root: HTMLElement, level: CartLevel): () => void {
     const cue = msg.includes('◀') ? 'left' : msg.includes('▶') ? 'right' : '';
     if (elPad.dataset.cue !== cue) elPad.dataset.cue = cue;
     // 後ろから追ってくるものとの距離(近いほど、バーがのびて赤くなる)
+    if (pu) {
+      const on = run.phase === 'running';
+      elChase.hidden = !on;
+      if (on && !run.coupled) {
+        const d = run.gapToDeer;
+        elChaseName.textContent = `${friendName}まで`;
+        elChaseM.textContent = `${Math.round(d)}m`;
+        elChaseBar.style.width = `${Math.max(0, Math.min(1, 1 - d / pu.lead)) * 100}%`;
+        elChase.classList.toggle('close', d < 20);
+      } else if (on) {
+        const d = Math.max(0, pu.cliff - run.s);
+        elChaseName.textContent = '谷まで';
+        elChaseM.textContent = `${Math.round(d)}m`;
+        elChaseBar.style.width = `${Math.max(0, Math.min(1, 1 - d / 300)) * 100}%`;
+        elChase.classList.toggle('close', d < 80);
+      }
+      if (bellEl) { const side = run.phase === 'running' && !run.coupled ? bellSide() : 0; bellEl.hidden = side === 0; bellEl.dataset.side = side > 0 ? 'right' : 'left'; }
+    }
     const ch = run.phase === 'running' ? run.chaser : null;
-    elChase.hidden = !ch;
+    if (!pu) elChase.hidden = !ch;
     if (ch) {
       const d = Math.max(0, run.s - ch.s - BAL.catchDist);
       elChaseName.textContent = CHASER_NAME[ch.kind];
@@ -259,11 +325,11 @@ export function startCart(root: HTMLElement, level: CartLevel): () => void {
   let resultTimer = 0;
   const showResult = () => {
     const cleared = run.phase === 'cleared';
-    const stars = cleared ? Math.max(1, run.lives) : 0;
+    const stars = cleared ? (pu ? pursuitStars(run.hitchS, pu.cliff) : Math.max(1, run.lives)) : 0;
     let newBest = false;
     if (cleared && !recorded) {
       recorded = true;
-      newBest = progress.clear(level.id, run.t, !continued, stars); // 途中から続けたときは、タイムを記録しない
+      newBest = progress.clear(level.id, pu ? run.hitchT : run.t, !continued, stars); // 追いかけっこは、追いつくまでの時間 // 途中から続けたときは、タイムを記録しない
       const got = clearRewards(wallet, level.id, { silver: run.coins, gold: run.gold, star3: stars === 3 });
       const prem = run.premium && wallet.takePremium(level.id);
       q('r-reward').textContent = `+${got.silver} シルバー` + (got.gold ? `　+${got.gold} ゴールド` : '') + (prem ? '　+1 プレミアム！' : '');
@@ -276,12 +342,12 @@ export function startCart(root: HTMLElement, level: CartLevel): () => void {
     }
     paintStamina();
     const best = progress.get(level.id).best, why = FAIL_TEXT[run.reason === 'caught' && run.caughtBy === 'avalanche' ? 'caughtAvalanche' : run.reason];
-    q('r-title').textContent = cleared ? `${level.goalName}に とうちゃく！` : why?.[0] ?? 'ざんねん…';
+    q('r-title').textContent = cleared ? (pu ? `${friendName}を 止めた！` : `${level.goalName}に とうちゃく！`) : why?.[0] ?? 'ざんねん…';
     q('r-tip').textContent = cleared ? '' : why?.[1] ?? '';
     q('r-stars').textContent = cleared ? '★'.repeat(stars) + '☆'.repeat(3 - stars) : '';
     q('r-coins').textContent = `${run.coins} / ${silverTotal}` + (run.gold ? `　金 ${run.gold}` : '') + (run.premium ? '　◆' : '');
     q('r-max').textContent = `${Math.round(run.maxV * KMH)} km/h`;
-    q('r-time').textContent = cleared ? `${run.t.toFixed(1)} 秒${continued ? '（途中から）' : newBest ? '（ベスト更新！）' : ''}` : `${Math.floor(run.progress * 100)} % まで`;
+    q('r-time').textContent = cleared && pu ? `${run.hitchT.toFixed(1)} 秒${newBest ? '（ベスト！）' : ''}` : cleared ? `${run.t.toFixed(1)} 秒${continued ? '（途中から）' : newBest ? '（ベスト更新！）' : ''}` : `${Math.floor(run.progress * 100)} % まで`;
     q('r-best').textContent = best === null ? '—' : `${best.toFixed(1)} 秒`;
     const cont = q<HTMLButtonElement>('cont');
     cont.hidden = cleared || !saved;
@@ -418,7 +484,7 @@ export function startCart(root: HTMLElement, level: CartLevel): () => void {
       const k = Math.abs(((seg.turn ?? 0) * Math.PI) / 180 / seg.len);
       if (k > 0.015) hint('sharp', '急カーブ！ ブレーキで 速さを おとして、内がわへ 体を かたむけよう', 3600);
       else if (k > 0.007) hint('curve', 'カーブでは ◀ ▶ で 内がわへ 体を かたむけると、速いまま 回れるよ', 3600);
-      if ((seg.slope ?? 0) >= 3 && seg.len >= 50) hint('up', '上り坂！ ダッシュで 鹿に がんばってもらおう', 3200);
+      if (!pu && (seg.slope ?? 0) >= 3 && seg.len >= 50) hint('up', '上り坂！ ダッシュで 鹿に がんばってもらおう', 3200);
       if ((seg.slope ?? 0) <= -8) hint('down', '急な下り坂！ どんどん 速くなるよ', 2600);
       if (seg.wind) hint('wind', '強い 横風！ 風上へ 体を かたむけて こらえよう', 3400);
       if (seg.terrain === 'tunnel') hint('tunnel', 'トンネルだ！ 中は 暗いよ。明かりを たよりに', 3000);
@@ -456,7 +522,11 @@ export function startCart(root: HTMLElement, level: CartLevel): () => void {
         view.bump(0.5);
         const o = e.id !== undefined ? obstacleById.get(e.id) : undefined;
         toast(o?.kind === 'branch' ? '枝に ぶつかった！ ◀ ▶ で 枝の 反対へ かたむけると よけられるよ' : o?.kind === 'log' ? '倒木に ぶつかった！' : '岩に ぶつかった！', o?.kind === 'branch' ? 3200 : 1800);
-      } else if (e.kind === 'dash') toast('鹿の ダッシュ！', 1200);
+      } else if (e.kind === 'dash') { if (pu) hint('pump', 'Spraが こいだ！ こぐ を どんどん 使って 追いつこう', 2400); else toast('鹿の ダッシュ！', 1200); }
+      else if (e.kind === 'forkRight') toast('こっちだ！ 鈴の音の方', 1400);
+      else if (e.kind === 'forkWrong') { view.bump(0.3); toast('まちがえた！ 古いレールだ… 次の合流まで がまん', 2200); }
+      else if (e.kind === 'hitch') { view.bump(0.6); toast(`つかまえた！ ブレーキで 止めて！`, 2600); }
+      else if (e.kind === 'deerLost') toast(`${friendName}の トロッコが 谷へ…！`, 2600);
       else if (e.kind === 'senbei') toast('もぐもぐ！ 鹿の 全力疾走！', 1300);
       else if (e.kind === 'chase' && run.chaser) {
         chaseKind = run.chaser.kind; view.bump(0.4);
@@ -466,12 +536,17 @@ export function startCart(root: HTMLElement, level: CartLevel): () => void {
       else if (e.kind === 'derail') view.bump(0.7);
       else if (e.kind === 'gold') toast('ゴールドコイン！', 1300);
       else if (e.kind === 'premium') { view.bump(0.15); toast('◆ プレミアムコイン！！ ゴールまで もちかえろう', 2800); }
-      else if (e.kind === 'clear') toast(`${level.goalName}に とうちゃく！`, 4000);
+      else if (e.kind === 'clear') toast(pu ? `止まった！ ${friendName}を 助けた！` : `${level.goalName}に とうちゃく！`, 4000);
       else if (e.kind === 'coin') { elCoins.classList.remove('ks-pop'); void elCoins.offsetWidth; elCoins.classList.add('ks-pop'); }
     }
     const running = run.phase === 'running', speed = Math.min(1, run.v / BAL.vDash);
     if (running) {
       hints();
+      // 鈴: 前のトロッコから 鳴る(近いほど大きい。分かれ道では、行った側から)
+      if (pu && !run.coupled && run.t >= nextBell) {
+        nextBell = run.t + 0.55;
+        bell(bellSide() * 0.9, 0.05 * Math.max(0.3, Math.min(1, 1 - run.gapToDeer / 260)));
+      }
       track.checkpoints.forEach((c, i) => {
         if (run.s >= c.s && !run.air && (!saved || saved.s < c.s)) {
           saved = { s: c.s, name: c.name, t: run.t, coins: run.coins, gold: run.gold, premium: run.premium, collected: new Set(run.collected) };

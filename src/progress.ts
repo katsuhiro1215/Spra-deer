@@ -1,4 +1,5 @@
 import { ALL_PLAYABLE_SLOTS } from './game/levels.ts';
+import { ownsFriend, unlockedBy } from './friends.ts';
 import { swapWorld34 } from './renumber.ts';
 import { claimGuest, storageScope } from './account/store.ts';
 import { playEnded, playStarted } from './account/plays.ts';
@@ -108,12 +109,17 @@ export class Progress {
     const slot = ALL_PLAYABLE_SLOTS.find(l => l.id === id);
     if (!slot) return false;
     if (this.unlockAll) return true;
-    const same = ALL_PLAYABLE_SLOTS.filter(l => l.stage === slot.stage);
+    // 仲間の鹿の面(8-11 など): その鹿を持っていれば、順番に関係なく開く
+    const fr = unlockedBy(id);
+    if (fr) return this.ownsFriend(fr.id);
+    const same = ALL_PLAYABLE_SLOTS.filter(l => l.stage === slot.stage && !l.bonus);
     const pos = same.indexOf(slot);
     if (pos > 0) return this.get(same[pos - 1].id).clears > 0;
     return true; // ワールドの最初の面
   }
   /** ワールドが開くまでに、前のワールドで要るクリア数。いまは、どのワールドも最初から開いている(常に 0) */
   stageOpenNeeds(_stage: number): number { return 0; }
-  clearedCount(stage: number): number { return ALL_PLAYABLE_SLOTS.filter(l => l.stage === stage && this.get(l.id).clears > 0).length; }
+  clearedCount(stage: number): number { return ALL_PLAYABLE_SLOTS.filter(l => l.stage === stage && !l.bonus && this.get(l.id).clears > 0).length; }
+  /** 仲間の鹿を持っているか(テストでは差しかえる) */
+  ownsFriend: (id: string) => boolean = id => ownsFriend(id);
 }

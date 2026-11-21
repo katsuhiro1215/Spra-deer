@@ -5,6 +5,7 @@ import { Loading } from '../Loading';
 import '../run/run.css';
 import './cart.css';
 import { needsLogin } from '../../account/store.ts';
+import { ownsFriend, unlockedBy } from '../../friends.ts';
 
 // WORLD 8「鹿と暴走トロッコ」の画面の土台。見た目の共通部分は、3D走り(run.css)と同じものを使う
 export function CartShell() {
@@ -21,6 +22,9 @@ export function CartShell() {
       const level = levels.cartById(id) ?? levels.CART_LEVELS[0];
       // ログインが要る面(各ワールドの3面目から)は、ホームのログインへ(設計書 37章)
       if (needsLogin(level.id)) { location.replace('/#login'); return; }
+      // 仲間の鹿の面は、その鹿を持っているときだけ
+      const fr = unlockedBy(level.id);
+      if (fr && !ownsFriend(fr.id)) { location.replace('/#worlds'); return; }
       stop = game.startCart(ref.current, level);
       setReady(true);
     });

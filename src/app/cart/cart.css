@@ -313,3 +313,31 @@
   .ct-pad[data-cue='left'] .l,
   .ct-pad[data-cue='right'] .r { animation: none; transform: scale(1.25); }
 }
+
+/* 追いかけっこ: 前のトロッコまでの距離(速さの下、左)と、鈴の聞こえる向き(音を切っていても分かるように) */
+.ct-chase.pursuit {
+  right: auto;
+  left: 14px;
+  top: 206px;
+}
+.ct-bell {
+  position: absolute;
+  top: 42%;
+  font-size: 34px;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.45));
+  animation: ct-bell-ring 0.55s ease-in-out infinite alternate;
+  pointer-events: none;
+}
+.ct-bell[hidden] {
+  display: none;
+}
+.ct-bell[data-side='left'] {
+  left: 10px;
+}
+.ct-bell[data-side='right'] {
+  right: 10px;
+}
+@keyframes ct-bell-ring {
+  from { transform: rotate(-18deg); }
+  to { transform: rotate(18deg); }
+}

@@ -106,3 +106,16 @@ test('仲間の鹿: 絵が すべてそろっている(立ち姿と走り4コマ
     for (let i = 0; i < 4; i++) assert.ok(existsSync(new URL(`../public${runFramePath(f.id, i)}`, import.meta.url)), `${f.id} run ${i}`);
   }
 });
+
+test('仲間の鹿の面: その鹿を持っていれば 順番に関係なく開く。持っていなければ 開かない。クリア数の合計には入らない', async () => {
+  const { Progress } = await import('../src/progress.ts');
+  const p = new Progress();
+  p.unlockAll = false;
+  p.ownsFriend = () => false;
+  assert.equal(p.isUnlocked('8-11'), false);
+  p.ownsFriend = id => id === 'spra';
+  assert.equal(p.isUnlocked('8-11'), true, 'Spraの鹿で 8-11 が開く(8-10 をクリアしていなくても)');
+  const before = p.clearedCount(8);
+  p.clear('8-11', 30, true, 3);
+  assert.equal(p.clearedCount(8), before, 'ボーナスの面は、クリア数に数えない');
+});
