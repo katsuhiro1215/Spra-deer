@@ -47,7 +47,7 @@ export function statusBar(w: Wallet): string {
 }
 
 function head(w: Wallet): string {
-  return `<header class="hs-head"><button class="hs-brand" data-action="title" aria-label="トップへ"><span class="hs-mark">S</span><span class="hs-name">Spraと鹿。</span></button>${statusBar(w)}</header>`;
+  return `<header class="hs-head"><button class="hs-brand" data-action="title" aria-label="トップへ"><span class="hs-mark"><img src="/assets/logo.svg" alt="Spra"></span><span class="hs-name">Spraと鹿。</span></button>${statusBar(w)}</header>`;
 }
 
 export type Tab = 'home' | 'worlds' | 'shop' | 'friends' | 'settings';
@@ -81,7 +81,7 @@ function sceneHTML(se: Season, closet: Closet | null, inner: string): string {
     <img class="sc-far" src="${se.far}" alt="" style="width:${se.farW}cqw">
     <div class="sc-hill"></div>${tree}
     <div class="sc-fall ${se.fall}" aria-hidden="true">${fall}</div>
-    <div class="sc-cast">${fig('sc-stag', 'stag', closet)}${fig('sc-doe', 'doe', closet)}<img class="sc-spra" src="${se.spra ?? '/assets/hero/spru.png'}" alt="Spra">${fig('sc-fawn', 'fawn', closet)}</div>
+    <div class="sc-cast">${fig('sc-stag', 'stag', closet)}<img class="sc-spra" src="${se.spra ?? '/assets/hero/spru.png'}" alt="Spra">${fig('sc-fawn', 'fawn', closet)}</div>
     ${inner}
   </div>`;
 }
@@ -89,7 +89,7 @@ function sceneHTML(se: Season, closet: Closet | null, inner: string): string {
 /** トップ画面(ブランド共通: 左上ロゴ・右上バージョン・中央にアプリ名と「はじめる」・下に規約)。背景は ホームと同じ 季節の絵 */
 export function titleHTML(now = new Date(), closet: Closet | null = null): string {
   const se = currentSeason(now);
-  const top = `<div class="title-corner"><span class="hs-mark">S</span><span class="title-version">${APP_VERSION}</span></div><div class="title-head"><h2 class="wordmark" aria-label="Spraと鹿。"><span class="w-spru">Spra</span><span class="w-to">と</span><span class="w-deer">鹿</span><span class="w-dot">。</span></h2><p class="subtitle">奈良を、鹿と大冒険。</p></div>`;
+  const top = `<div class="title-corner"><span class="hs-mark"><img src="/assets/logo.svg" alt="Spra"></span><span class="title-version">${APP_VERSION}</span></div><div class="title-head"><h2 class="wordmark" aria-label="Spraと鹿。"><span class="w-spru">Spra</span><span class="w-to">と</span><span class="w-deer">鹿</span><span class="w-dot">。</span></h2><p class="subtitle">奈良を、鹿と大冒険。</p></div>`;
   const bottom = `<div class="title-foot"><button class="play" data-action="home">はじめる</button><nav class="legal-links"><a href="/terms/">利用規約</a><a href="/privacy/">プライバシーポリシー</a></nav></div>`;
   return `<div class="screen title-screen title-scene">${sceneHTML(se, closet, '')}${top}${bottom}</div>`;
 }

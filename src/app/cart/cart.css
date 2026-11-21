@@ -91,14 +91,17 @@
 
 /* 今やること(ブレーキ！・ジャンプ！など) */
 .ct-alert {
+  /* 線路が見えるように、合図は 画面の上のほうの右はしに出す(台車の上には出さない) */
   position: absolute;
-  left: 50%;
-  bottom: 222px;
-  transform: translate(-50%, 0) scale(0.9);
+  right: 12px;
+  top: 168px;
+  max-width: 62%;
+  transform-origin: right center;
+  transform: scale(0.9);
   padding: 6px 18px;
   border-radius: 999px;
   font-weight: 900;
-  font-size: 19px;
+  font-size: 17px;
   white-space: nowrap;
   color: #fff;
   background: rgba(40, 40, 40, 0.75);
@@ -108,7 +111,7 @@
 }
 .ct-alert.on {
   opacity: 1;
-  transform: translate(-50%, 0) scale(1);
+  transform: scale(1);
 }
 .ct-alert[data-tone='red'] {
   background: rgba(216, 52, 44, 0.94);
@@ -120,17 +123,26 @@
 }
 .ct-alert[data-tone='jump'] {
   background: rgba(255, 122, 42, 0.96);
-  font-size: 26px;
+  font-size: 22px;
 }
 @keyframes ct-pulse {
   to {
-    transform: translate(-50%, 0) scale(1.08);
+    transform: scale(1.08);
   }
 }
 .ct-toast {
-  top: 196px;
-  font-size: 16px;
-  padding: 8px 16px;
+  /* ヒントも、線路の上ではなく、上の札の すぐ下へ */
+  top: 100px;
+  left: auto;
+  right: 12px;
+  max-width: 52%;
+  transform: translate(0, -8px);
+  font-size: 15px;
+  padding: 6px 14px;
+  opacity: 0.92;
+}
+.ks-toast.ct-toast.on {
+  transform: none;
 }
 .ct-tip {
   margin: 0 0 10px;
@@ -276,7 +288,7 @@
     width: 104px;
   }
   .ct-alert {
-    bottom: 176px;
+    top: 168px;
   }
 }
 /* せまい画面では、上の札は面の番号だけ(区間の名前は、速さの下に出ている) */

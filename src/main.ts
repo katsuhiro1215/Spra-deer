@@ -31,7 +31,13 @@ type Track = 'home' | 'play' | 'clear' | 'fail';
 const SOUND_KEY = 'spra-deer:sound:v1';
 class Sound {
   // 2Dの面は、はじめは音なし。前にONにした人は、ONのまま(最初のタップで鳴りはじめる)
-  enabled = (() => { try { return localStorage.getItem(SOUND_KEY) === 'on'; } catch { return false; } })();
+  // はじめての人は ON(3D走りと同じ。'off' にした人だけ鳴らさない)。最初のタップで 鳴りはじめる
+  enabled = (() => { try { return localStorage.getItem(SOUND_KEY) !== 'off'; } catch { return true; } })();
+  /** ボタンを押したときの効果音(Tane・Spra Go と同じ「決める」「選ぶ」) */
+  sfx(name: 'decide' | 'select') {
+    if (!this.enabled) return;
+    try { const a = new Audio(`/assets/sfx/${name}.mp3`); a.volume = .6; void a.play().catch(() => { /* 音は任意 */ }); } catch { /* 音は任意 */ }
+  }
   /** ブラウザの決まりで鳴らせなかった曲を、タップのあとで鳴らし直す */
   retry() { const want = this.want; this.current = null; this.want = null; this.syncMusic(); this.want = want; this.syncMusic(); }
   private context?: AudioContext;
@@ -157,6 +163,9 @@ class Park extends Phaser.Scene {
       const action = button?.dataset.action, target = levelById(button?.dataset.level ?? '');
       if (!action || button?.getAttribute('aria-disabled') === 'true') return;
       if (this.account.handle(action, button!)) return;
+      // 決める(はじめる・あそぶ)と、選ぶ(ほかのボタン)で 音を分ける
+      if (action === 'home' || action === 'worlds') sound.sfx('decide');
+      else if (['tab', 'world', 'start', 'next', 'run', 'select', 'buy-costume', 'buy-potion', 'wear'].includes(action)) sound.sfx('select');
       if (action === 'select') { this.abandon(); this.world_(this.stageOf(this.level.id)); }
       if (action === 'home') { this.abandon(); this.home(); }
       if (action === 'tab') this.tab(button!.dataset.tab as Tab);

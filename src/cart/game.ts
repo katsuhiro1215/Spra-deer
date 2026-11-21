@@ -358,9 +358,13 @@ export function startCart(root: HTMLElement, level: CartLevel): () => void {
   };
   /** 指がボタンの外へ出ても、離すまで押した扱いにする(できない環境では、何もしない)。 */
   const capture = (el: HTMLElement, ev: PointerEvent) => { try { el.setPointerCapture(ev.pointerId); } catch { /* そのまま */ } };
-  const sideOf = (ev: PointerEvent): 'left' | 'right' => {
+  // 左右の境目で指が少しずれても、向きが入れかわらないようにする(押した所で決め、逆側へ パッド幅の1/8 以上 動いたときだけ変える)
+  const sideOf = (ev: PointerEvent, prev?: 'left' | 'right'): 'left' | 'right' => {
     const r = elPad.getBoundingClientRect();
-    return ev.clientX < r.left + r.width / 2 ? 'left' : 'right';
+    const n = (ev.clientX - (r.left + r.width / 2)) / (r.width / 2);
+    if (prev === 'left') return n > 0.25 ? 'right' : 'left';
+    if (prev === 'right') return n < -0.25 ? 'left' : 'right';
+    return n < 0 ? 'left' : 'right';
   };
   const onPadDown = (ev: PointerEvent) => {
     ev.preventDefault(); capture(elPad, ev);
@@ -368,7 +372,7 @@ export function startCart(root: HTMLElement, level: CartLevel): () => void {
   };
   const onPadMove = (ev: PointerEvent) => {
     if (!padPointers.has(ev.pointerId)) return;
-    const side = sideOf(ev);
+    const side = sideOf(ev, padPointers.get(ev.pointerId));
     if (padPointers.get(ev.pointerId) !== side) { padPointers.delete(ev.pointerId); padPointers.set(ev.pointerId, side); applyDir(); }
   };
   const onPadUp = (ev: PointerEvent) => { padPointers.delete(ev.pointerId); applyDir(); };

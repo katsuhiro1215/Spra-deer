@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { Loading } from '../Loading';
 import '../run/run.css';
 import './lost.css';
 import { needsLogin } from '../../account/store.ts';
@@ -8,6 +9,7 @@ import { needsLogin } from '../../account/store.ts';
 // WORLD 7「鹿のまいご探し」の画面の土台。見た目の共通部分は、3D走り(run.css)と同じものを使う
 export function LostShell() {
   const ref = useRef<HTMLDivElement>(null);
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
     let stop: (() => void) | undefined;
@@ -19,6 +21,7 @@ export function LostShell() {
       // ログインが要る面(各ワールドの3面目から)は、ホームのログインへ(設計書 37章)
       if (needsLogin(id)) { location.replace('/#login'); return; }
       stop = game.startLost(ref.current, levels.lostById(id) ?? levels.LOST_LEVELS[0]);
+      setReady(true);
     });
     return () => {
       cancelled = true;
@@ -27,6 +30,8 @@ export function LostShell() {
   }, []);
 
   return (
+    <>
+      <Loading done={ready} />
     <div className="ks-root lo-root" ref={ref}>
       <div className="ks-frame">
         <div className="ks-stage" data-ks="stage" />
@@ -122,5 +127,6 @@ export function LostShell() {
         </div>
       </div>
     </div>
+    </>
   );
 }

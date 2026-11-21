@@ -346,9 +346,14 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
     applyDir();
   };
 
-  const sideOf = (ev: PointerEvent): 'left' | 'right' => {
+  // 左右の境目(まん中)で指が少しずれても、向きが入れかわらないようにする。
+  // 押した所で向きを決め、逆の側へ 半分の4分の1(パッドの幅の1/8)以上 動いたときだけ変える。
+  const sideOf = (ev: PointerEvent, prev?: 'left' | 'right'): 'left' | 'right' => {
     const r = padEl.getBoundingClientRect();
-    return ev.clientX < r.left + r.width / 2 ? 'left' : 'right';
+    const n = (ev.clientX - (r.left + r.width / 2)) / (r.width / 2); // -1(左はし)〜1(右はし)
+    if (prev === 'left') return n > 0.25 ? 'right' : 'left';
+    if (prev === 'right') return n < -0.25 ? 'left' : 'right';
+    return n < 0 ? 'left' : 'right';
   };
   const onPadDown = (ev: PointerEvent) => {
     ev.preventDefault();
@@ -359,7 +364,7 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
   };
   const onPadMove = (ev: PointerEvent) => {
     if (!padPointers.has(ev.pointerId)) return;
-    const side = sideOf(ev);
+    const side = sideOf(ev, padPointers.get(ev.pointerId));
     if (padPointers.get(ev.pointerId) !== side) {
       padPointers.delete(ev.pointerId);
       padPointers.set(ev.pointerId, side); // 向きを変えた指を、最後に押した扱いにする

@@ -161,6 +161,8 @@ export class SumoView {
     if (!width || !height) return;
     this.renderer.setSize(width, height, false);
     this.camera.aspect = width / height;
+    // 縦長の画面(スマホ)では、画角を広げる。土俵のはばが画面に入るように、下の update() で距離も引く
+    this.camera.fov = this.camera.aspect < 0.9 ? 46 : 36;
     this.camera.updateProjectionMatrix();
   }
 
@@ -371,12 +373,15 @@ export class SumoView {
     if (sm.map !== this.spraTex[mood]) { sm.map = this.spraTex[mood]; sm.needsUpdate = true; }
     this.spra.position.y = 0.75 + (mood === 1 ? Math.max(0, Math.sin(t * 8)) * 0.25 : 0);
     // カメラ: 押し合いの中心を、ななめ後ろの上から。吹っ飛ぶ鹿がいたら、少し追う
-    const aspect = this.camera.aspect, dist = 13 * Math.max(1, 0.62 / aspect) ** 0.6;
+    // 縦長(スマホ)は、土俵のはば(押し合いの両はしを含めて 約10)が横に入るまで引く。広い画面は今のまま
+    const aspect = this.camera.aspect;
+    const dist = aspect < 0.9 ? Math.max(13, 10.6 / aspect) : 13 * Math.max(1, 0.62 / aspect) ** 0.6;
+    const camY = 4.6 + Math.max(0, dist - 13) * 0.4;
     const fly = this.flyers.find(f => !f.temp && f.t < 2.5);
     const lookX = fly ? c * 0.25 + fly.x * 0.5 : c * 0.6;
     const look = new THREE.Vector3(lookX, fly ? 1.05 + Math.max(0, fly.y) * 0.5 : 1.05, 0);
     const zoom = fly ? 1.2 : 1;
-    const pos = new THREE.Vector3(look.x + Math.sin(CAM_YAW) * dist * zoom, 4.6 * zoom, Math.cos(CAM_YAW) * dist * zoom);
+    const pos = new THREE.Vector3(look.x + Math.sin(CAM_YAW) * dist * zoom, camY * zoom, Math.cos(CAM_YAW) * dist * zoom);
     if (this.camPos.lengthSq() === 0) { this.camPos.copy(pos); this.camLook.copy(look); }
     this.camPos.lerp(pos, 0.08); this.camLook.lerp(look, 0.08);
     this.camera.position.copy(this.camPos);

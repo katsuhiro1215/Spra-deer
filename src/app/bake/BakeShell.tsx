@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { Loading } from '../Loading';
 import '../run/run.css';
 import './bake.css';
 import { needsLogin } from '../../account/store.ts';
@@ -8,6 +9,7 @@ import { needsLogin } from '../../account/store.ts';
 // WORLD 2「鹿せんべい大作戦」(せんべい屋台)の画面の土台。見た目の共通部分は、3D走り(run.css)と同じものを使う
 export function BakeShell() {
   const ref = useRef<HTMLDivElement>(null);
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
     let stop: (() => void) | undefined;
@@ -24,6 +26,7 @@ export function BakeShell() {
       // ログインが要る面(各ワールドの3面目から)は、ホームのログインへ(設計書 37章)
       if (needsLogin(level.id)) { location.replace('/#login'); return; }
       stop = levels.isRelay(level) ? relayMod.startRelay(ref.current, level, starterOf) : starterOf(level)(ref.current, level);
+      setReady(true);
     });
     return () => {
       cancelled = true;
@@ -32,6 +35,8 @@ export function BakeShell() {
   }, []);
 
   return (
+    <>
+      <Loading done={ready} />
     <div className="ks-root bk-root" ref={ref}>
       <div className="ks-frame" data-ks="frame">
         <div className="ks-stage" data-ks="stage" />
@@ -169,5 +174,6 @@ export function BakeShell() {
         </div>
       </div>
     </div>
+    </>
   );
 }

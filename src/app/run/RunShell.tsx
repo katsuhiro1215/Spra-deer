@@ -1,11 +1,13 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { Loading } from '../Loading';
 import './run.css';
 import { needsLogin } from '../../account/store.ts';
 
 export function RunShell() {
   const ref = useRef<HTMLDivElement>(null);
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
     let stop: (() => void) | undefined;
@@ -18,6 +20,7 @@ export function RunShell() {
       // ログインが要る面(各ワールドの3面目から)は、ホームのログインへ(設計書 37章)
       if (needsLogin(level.id)) { location.replace('/#login'); return; }
       stop = game.startRunner(ref.current, level);
+      setReady(true);
     });
     return () => {
       cancelled = true;
@@ -26,6 +29,8 @@ export function RunShell() {
   }, []);
 
   return (
+    <>
+      <Loading done={ready} />
     <div className="ks-root" ref={ref}>
       <div className="ks-frame">
         <div className="ks-stage" data-ks="stage" />
@@ -129,5 +134,6 @@ export function RunShell() {
         </div>
       </div>
     </div>
+    </>
   );
 }
