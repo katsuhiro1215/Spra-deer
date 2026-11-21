@@ -428,6 +428,9 @@ test('level data is sound: unique ids, safe start, final chapter, reachable gaps
   assert.ok(STAGES[2].slots.length >= 1 && STAGES[2].slots.every(s => s.page === '/sweep/')); // 3=3D掃除(/sweep/。作った面だけ)
   assert.deepEqual(STAGES.slice(3, 5).map(g => g.slots.length), [10, 10]); // 4=3D走り(作る枠を含む) 5=ジャンプ(/jump/。準備中の枠を含む。2026-11-21)
   assert.ok(STAGES[4].slots.filter(s => s.runnerId).every(s => s.page === '/jump/'));
+  const w7 = STAGES.find(g => g.stage === 7)!; // 7=まいご探し(/lost/。準備中の枠を含む。2026-11-21)
+  assert.equal(w7.slots.length, 10);
+  assert.ok(w7.slots.filter(s => s.runnerId).every(s => s.page === '/lost/'));
   for (const level of PLAYABLE.filter(l => l.delivery)) {
     for (const t of level.delivery!.thieves) assert.ok(Math.hypot(t.x - level.start.x, t.y - level.start.y) > 350, `${level.id}: ${t.id} too close to start`);
     if (level.delivery!.thieves.length) assert.ok(level.hints.caught, `${level.id}: needs a stolen hint`);

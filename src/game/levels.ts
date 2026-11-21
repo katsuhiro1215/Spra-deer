@@ -4,6 +4,7 @@ import { RUNNER_LEVELS } from '../runner/levels.ts';
 import { CART_LEVELS, CART_PLANNED } from '../cart/levels.ts';
 import { SUMO_LEVELS, SUMO_PLANNED } from '../sumo/levels.ts';
 import { JUMP_LEVELS, JUMP_PLANNED } from '../jump/levels.ts';
+import { LOST_LEVELS, LOST_PLANNED } from '../lost/levels.ts';
 import { BAKE_LEVELS } from '../bake/levels.ts';
 import { SWEEP_LEVELS } from '../sweep/levels.ts';
 import type { ChaserDefinition, CoinDefinition, CrosserDefinition, CrossDefinition, DeliveryDefinition, HedgeDefinition, PondDefinition, RescueDefinition, StoneDefinition, SweepDefinition, GoalDefinition, Point, RainDefinition, SliderDefinition, TrapDefinition, WallDefinition } from './stage.ts';
@@ -1088,6 +1089,13 @@ export const STAGES: { stage: number; title: string; slots: LevelSlot[] }[] = [
     stage: 6, title: '鹿ずもう', slots: [
       ...SUMO_LEVELS.map(l => ({ id: l.id, title: l.title, summary: l.summary, runnerId: l.id, page: '/sumo/' })),
       ...SUMO_PLANNED.map(l => ({ id: l.id, title: l.title, summary: '準備中' })),
+    ],
+  },
+  // WORLD 7 は、2Dの まいご探し(/lost/)。夜の奈良公園で、子鹿を お母さんの ところへ(設計書 35章。2026-11-21 Owner決定)
+  {
+    stage: 7, title: '鹿のまいご探し', slots: [
+      ...LOST_LEVELS.map(l => ({ id: l.id, title: l.title, summary: l.summary, runnerId: l.id, page: '/lost/' })),
+      ...LOST_PLANNED.map(l => ({ id: l.id, title: l.title, summary: '準備中' })),
     ],
   },
   // WORLD 8 は、Three.js の3Dトロッコ(/cart/)。作った面は cart/levels.ts、まだの面は名前だけの「準備中」

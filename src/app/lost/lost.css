@@ -1,0 +1,61 @@
+/* WORLD 7「鹿のまいご探し」だけの見た目(共通部分は run.css)。クラス名は lo- で始める */
+
+.lo-root .ks-stage {
+  background: #070b20;
+  touch-action: none;
+}
+.lo-fawns {
+  color: #ffe9a8;
+  font-weight: 900;
+  font-size: 14px;
+}
+.lo-oil .ks-progress-fill {
+  background: linear-gradient(90deg, #ff9a3a, #ffd36b);
+  transition: background 0.4s;
+}
+.lo-oil .ks-progress-fill.low {
+  background: linear-gradient(90deg, #d9481f, #ff8a3a);
+  animation: lo-blink 0.9s ease-in-out infinite;
+}
+@keyframes lo-blink {
+  50% {
+    opacity: 0.55;
+  }
+}
+.lo-oil .ks-progress-goal {
+  font-size: 12px;
+}
+.lo-toast {
+  top: 112px;
+  width: min(86%, 330px);
+  padding: 7px 12px;
+  font-size: 14px;
+  line-height: 1.35;
+}
+.lo-howto {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: max(14px, env(safe-area-inset-bottom));
+  margin: 0;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 800;
+  color: rgba(255, 255, 255, 0.7);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+}
+.lo-lesson {
+  margin: 6px 0 10px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: #fff4d6;
+  color: #8a5a12;
+  font-size: 13px;
+  font-weight: 800;
+}
+.lo-tip {
+  font-size: 13px;
+  font-weight: 800;
+  opacity: 0.85;
+}

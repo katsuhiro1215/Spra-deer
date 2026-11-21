@@ -17,10 +17,10 @@ export const WORLDS: { no: number; name: string; play: string; stage?: number; c
   { no: 2, name: '鹿せんべい大作戦', play: '焼いて、積んで、投げて くばる', stage: 2, color: '#e99a2c' },
   { no: 3, name: '奈良公園、大掃除！', play: 'ほうきで、まとめて片付け', stage: 3, color: '#3aa6c9' },
   { no: 4, name: '鹿、走る。', play: '3Dで、奈良から大阪湾へ', stage: 4, color: '#e0533d' },
-  // 5 は Spra が主役のジャンプ(2026-11-21)。7 は、Spra が主役の新しいゲームを考え中
+  // 5 は Spra が主役のジャンプ、7 は Spra が主役の まいご探し(どちらも 2026-11-21)
   { no: 5, name: '鹿の背中で ぴょんぴょん', play: '鹿に 乗って、上へ 上へ', stage: 5, color: '#c98a4b' },
   { no: 6, name: '鹿ずもう', play: 'いろんな鹿と、押し合い勝負', stage: 6, color: '#d36aa6' },
-  { no: 7, name: 'ひみつのワールド', play: 'Spraの 新しい あそび(考え中)', color: '#7a6ad8' },
+  { no: 7, name: '鹿のまいご探し', play: 'ちょうちんで、子鹿を 見つけて 帰す', stage: 7, color: '#7a6ad8' },
   { no: 8, name: '鹿と暴走トロッコ', play: '鹿が引いて、Spraが止める', stage: 8, color: '#6b8f3a' },
 ];
 
