@@ -6,6 +6,7 @@ import { POTION, STAMINA_MAX, STAMINA_FAIL, waitText, type Wallet } from './wall
 import pkg from '../package.json';
 import { SEASONS, currentSeason, type Season, type SeasonPick } from './season.ts';
 import { COSTUMES, WHO, onSale, type Closet, type Who } from './closet.ts';
+import { FRIENDS, standOf } from './friends.ts';
 import { statsLine } from './account/screens.ts';
 import type { Stats } from './account/api.ts';
 
@@ -81,7 +82,7 @@ function sceneHTML(se: Season, closet: Closet | null, inner: string): string {
     <img class="sc-far" src="${se.far}" alt="" style="width:${se.farW}cqw">
     <div class="sc-hill"></div>${tree}
     <div class="sc-fall ${se.fall}" aria-hidden="true">${fall}</div>
-    <div class="sc-cast">${fig('sc-stag', 'stag', closet)}<img class="sc-spra" src="${se.spra ?? '/assets/hero/spru.png'}" alt="Spra">${fig('sc-fawn', 'fawn', closet)}</div>
+    <div class="sc-cast">${fig('sc-stag', 'stag', closet)}<img class="sc-spra" src="${se.spra ?? '/assets/hero/spru.png'}" alt="Spra">${closet?.buddyStand ? `<img class="sc-fawn sc-buddy" src="${closet.buddyStand}" alt="${closet.buddyFriend?.name ?? '相棒'}">` : fig('sc-fawn', 'fawn', closet)}</div>
     ${inner}
   </div>`;
 }
@@ -181,9 +182,15 @@ export function shopHTML(w: Wallet, note = '', closet: Closet | null = null, now
   if (COSTUMES.some(c => !c.ready)) {
     rows.push(`<div class="hs-item soon"><span class="hs-item-pic costume"></span><div><b>衣装の鹿</b><small>12月は クリスマス。ほかの季節も 順に</small></div><span class="hs-buy gold"><i></i>準備中</span></div>`);
   }
-  rows.push(`<div class="hs-item soon"><span class="hs-item-pic chara"></span><div><b>なかまキャラクター</b><small>Lumi・Ruru で あそべる</small></div><span class="hs-buy premium"><i></i>準備中</span></div>`);
+  // 仲間の鹿(プレミアムコイン)
+  for (const f of FRIENDS) {
+    const have = closet?.hasFriend(f.id);
+    const btn = have ? '<span class="hs-have">もっている</span>' : `<button class="hs-buy premium" data-action="buy-friend" data-id="${f.id}"${w.coins.premium >= f.premium ? '' : ' disabled'}><i></i>${f.premium}</button>`;
+    const note = f.unlocks.length ? `${f.color}の鹿・専用の面(準備中)` : `${f.color}の鹿・走る相棒になる`;
+    rows.push(`<div class="hs-item friend"><span class="hs-item-pic" style="background-image:url(${standOf(f.id)})"></span><div><b>${f.name}</b><small>${note}</small></div>${btn}</div>`);
+  }
   const msg = note || (full ? '体力は満タンです。' : '');
-  return shell(w, 'shop', `<h2 class="hs-title">アイテム</h2>${msg ? `<p class="hs-note" role="status">${msg}</p>` : ''}<div class="hs-items">${rows.join('')}</div><p class="hs-help">シルバー: 面の中のコイン(クリアで持ち帰り)/ゴールド: はじめてのクリア・★3/プレミアム: 各面に1枚だけ隠れている</p>`);
+  return shell(w, 'shop', `<h2 class="hs-title">アイテム</h2>${msg ? `<p class="hs-note" role="status">${msg}</p>` : ''}<div class="hs-items">${rows.join('')}</div><p class="hs-help">シルバー: 面の中のコイン(クリアで持ち帰り)/ゴールド: はじめてのクリア・★3/プレミアム: 各面に1枚だけ隠れている(仲間の鹿を仲間にできる)</p>`);
 }
 
 /** なかま: Spra と鹿たち。持っている衣装を 鹿ごとに 着せかえる */
@@ -196,7 +203,15 @@ export function friendsHTML(w: Wallet, closet: Closet | null = null): string {
       : '<small class="hs-nocos">衣装は、アイテムで 手に入ります</small>';
     return `<div class="hs-deer">${fig('', who, closet)}<b>${WHO[who].label}</b>${chips}</div>`;
   }).join('');
-  return shell(w, 'friends', `<h2 class="hs-title">なかま</h2><div class="hs-friends"><div class="hs-deer"><img src="/assets/hero/spru.png" alt="Spra"><b>Spra</b></div>${deer}</div><p class="hs-help">衣装は、ホームと トップに 出ます(ゲームの中は いつもの すがた)。Lumi・Ruru は、アイテムで 手に入るように なります(準備中)。</p>`);
+  // 仲間の鹿: 走る相棒を えらぶ(WORLD 4・8 で走る鹿が かわる)。持っていない鹿は かげだけ
+  const cur = closet?.buddyId ?? null;
+  const pals = FRIENDS.map(f => {
+    const have = closet?.hasFriend(f.id);
+    if (!have) return `<div class="hs-pal locked"><img src="${standOf(f.id)}" alt=""><b>？？？</b><small>アイテムで 仲間に</small></div>`;
+    return `<button class="hs-pal" data-action="buddy" data-id="${f.id}" aria-pressed="${cur === f.id}"><img src="${standOf(f.id)}" alt="${f.name}"><b>${f.name}</b><small>${cur === f.id ? '走っています' : '相棒にする'}</small></button>`;
+  }).join('');
+  const palHead = `<h3 class="hs-sub">仲間の鹿 <small>(WORLD 4・8 で 走る相棒)</small></h3><div class="hs-pals">${pals}</div>${cur ? '<button class="hs-chip-btn hs-pal-off" data-action="buddy" data-id="">ふだんの鹿に もどす</button>' : ''}`;
+  return shell(w, 'friends', `<h2 class="hs-title">なかま</h2><div class="hs-friends"><div class="hs-deer"><img src="/assets/hero/spru.png" alt="Spra"><b>Spra</b></div>${deer}</div>${palHead}<p class="hs-help">衣装は ホームに 出ます(ゲームの中の Spra は いつもの すがた)。仲間の鹿は、プレミアムコインで アイテムから 仲間に できます。</p>`);
 }
 
 export function settingsHTML(w: Wallet, soundOn: boolean, season: SeasonPick = 'auto', accountRows = '', signedIn = false): string {

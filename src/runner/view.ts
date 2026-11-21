@@ -1,6 +1,7 @@
 // 3D走りゲームの表示(Three.js)。ルールの計算は sim.ts、ここは見た目だけ。
 // 面ごとの空・光・天候・景色は RunnerLevel.theme で切り替える。
 import * as THREE from 'three';
+import { readBuddy, runFramePath } from '../friends.ts';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { BRIDGE_HALF, FISH_X0, FISH_X1, GOAL_GAP, RAMP_DROP, ROAD_HALF, bridgeSway, hillY, roadHeading, roadX, roadY, type Course, type Obstacle } from './course.ts';
 import { CRITTERS, type CritterDef } from './critters.ts';
@@ -232,7 +233,8 @@ export class KasugaView {
     }
 
     // 鹿の絵(走る鹿・歩く鹿)。ゴールの景色(奈良公園の鹿)でも使うので、先に読む
-    for (let i = 0; i < 4; i++) this.runTex.push(loadTex(`${ASSET}/kasuga/run_${i}.png`));
+    const buddy = readBuddy(); // 仲間の鹿を相棒にしていれば、その鹿が走る(見た目だけ)
+    for (let i = 0; i < 4; i++) this.runTex.push(loadTex(runFramePath(buddy, i)));
     for (const k of ['doe_l', 'doe_r']) this.walkTex[k] = [0, 1, 2, 3].map((i) => loadTex(`${ASSET}/deer-walk/${k}_${i}.png`));
 
     this.buildGround();

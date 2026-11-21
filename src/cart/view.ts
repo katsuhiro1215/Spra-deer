@@ -1,6 +1,7 @@
 // WORLD 8「鹿と暴走トロッコ」の描画(three.js)。山の地形・線路・木の橋・トロッコ・鹿・Spra・カメラ。
 // 走りのルールは sim.ts。ここは、その結果を絵にするだけ。
 import * as THREE from 'three';
+import { readBuddy, runFramePath } from '../friends.ts';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { BRIDGED, COLLAPSE_AT, type Gap, type Track } from './track.ts';
@@ -1080,7 +1081,8 @@ export class CartView {
     this.spra = new THREE.Mesh(plane, spraMat);
     this.spra.scale.set(0.78, 1.56, 1);
     this.cart.add(this.spra);
-    for (let i = 0; i < 4; i++) this.deerTex.push(loadTex(`${ASSET}/kasuga/run_${i}.png`));
+    const buddy = readBuddy(); // 仲間の鹿を相棒にしていれば、その鹿が引く(見た目だけ)
+    for (let i = 0; i < 4; i++) this.deerTex.push(loadTex(runFramePath(buddy, i)));
     const deerMat = new THREE.MeshBasicMaterial({ map: this.deerTex[0], transparent: true, alphaTest: 0.35, side: THREE.DoubleSide, toneMapped: false });
     this.deer = new THREE.Mesh(plane, deerMat);
     this.deer.scale.set(1.75, 2.5, 1);

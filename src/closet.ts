@@ -2,6 +2,7 @@
 // 買った衣装と、着ている衣装は、あそぶ人ごとに この端末へ保存する(コイン・体力と同じ保存の場所の決まり)。
 import type { Wallet } from './wallet.ts';
 import { claimGuest, storageScope } from './account/store.ts';
+import { friendOf, standOf, unlockedBy, type Friend, type FriendId } from './friends.ts';
 
 export type Who = 'stag' | 'doe' | 'fawn';
 
@@ -38,7 +39,7 @@ export const costumeOf = (id: string): Costume | undefined => COSTUMES.find(c =>
 export const onSale = (c: Costume, now: Date): boolean => c.ready && c.months.includes(now.getMonth() + 1);
 
 const KEY = 'spra-deer:closet:v1';
-type Saved = { owned: string[]; worn: Partial<Record<Who, string>> };
+type Saved = { owned: string[]; worn: Partial<Record<Who, string>>; friends?: string[]; buddy?: string };
 
 function storage(): Storage | null {
   try { return typeof localStorage === 'undefined' ? null : localStorage; } catch { return null; }
@@ -49,6 +50,9 @@ export type BuyResult = 'ok' | 'owned' | 'closed' | 'poor' | 'unknown';
 export class Closet {
   private owned = new Set<string>();
   private worn: Partial<Record<Who, string>> = {};
+  /** 仲間にした鹿(プレミアムコイン)と、走るゲームに出す相棒 */
+  private friends = new Set<FriendId>();
+  private buddy: FriendId | null = null;
   private store: Storage | null;
   private readonly key: string;
   private wallet: Wallet;
@@ -63,6 +67,8 @@ export class Closet {
       const s = JSON.parse(store.getItem(this.key) || 'null') as Partial<Saved> | null;
       if (s && typeof s === 'object') {
         if (Array.isArray(s.owned)) for (const id of s.owned) if (typeof id === 'string' && costumeOf(id)) this.owned.add(id);
+        if (Array.isArray(s.friends)) for (const id of s.friends) if (typeof id === 'string' && friendOf(id)) this.friends.add(id as FriendId);
+        if (typeof s.buddy === 'string' && this.friends.has(s.buddy as FriendId)) this.buddy = s.buddy as FriendId;
         if (s.worn && typeof s.worn === 'object') {
           for (const who of Object.keys(WHO) as Who[]) {
             const id = s.worn[who];
@@ -75,7 +81,7 @@ export class Closet {
 
   private save(): void {
     if (!this.store) return;
-    const s: Saved = { owned: [...this.owned], worn: { ...this.worn } };
+    const s: Saved = { owned: [...this.owned], worn: { ...this.worn }, friends: [...this.friends], buddy: this.buddy ?? undefined };
     try { this.store.setItem(this.key, JSON.stringify(s)); } catch { /* 保存できない環境 */ }
   }
 
@@ -106,6 +112,36 @@ export class Closet {
   takeOff(who: Who): void {
     delete this.worn[who];
     this.save();
+  }
+
+  // ---- 仲間の鹿(プレミアムコイン) ----
+  hasFriend(id: FriendId): boolean { return this.friends.has(id); }
+  get buddyId(): FriendId | null { return this.buddy; }
+  get buddyFriend(): Friend | undefined { return friendOf(this.buddy); }
+  /** 相棒の立ち姿(いなければ null) */
+  get buddyStand(): string | null { return this.buddy ? standOf(this.buddy) : null; }
+  /** プレミアムコインで仲間にする。買えたら そのまま相棒にする */
+  buyFriend(id: FriendId): BuyResult {
+    const f = friendOf(id);
+    if (!f) return 'unknown';
+    if (this.friends.has(id)) return 'owned';
+    if (!this.wallet.spend('premium', f.premium)) return 'poor';
+    this.friends.add(id);
+    this.buddy = id;
+    this.save();
+    return 'ok';
+  }
+  /** 走る相棒を えらぶ(null で ふだんの鹿)。持っていないものは えらべない */
+  setBuddy(id: FriendId | null): boolean {
+    if (id !== null && !this.friends.has(id)) return false;
+    this.buddy = id;
+    this.save();
+    return true;
+  }
+  /** 持っている鹿のおかげで開く面か(専用の面) */
+  levelUnlocked(levelId: string, owner = (id: FriendId) => this.friends.has(id)): boolean {
+    const f = unlockedBy(levelId);
+    return !f || owner(f.id);
   }
 
   /** 着ている絵(無ければ ふだんの絵)と、体の大きさの合わせ */

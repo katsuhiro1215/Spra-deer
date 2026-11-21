@@ -262,3 +262,15 @@ span.hs-buy { background: #eee6cf; box-shadow: none; color: #7a7260; }
 .title-night .subtitle { color: #fff; text-shadow: 0 .4cqw 1.2cqw #00104080; }
 .title-night .wordmark { text-shadow: 0 .6cqw 0 #ffffffb0, 0 1.2cqw 2.4cqw #00104080; }
 .title-img .legal-links a { color: #fff; text-shadow: 0 .3cqw .8cqw #1d3a12, 0 0 1.4cqw #1d3a12; }
+
+/* 仲間の鹿(お店・なかま・ホーム) */
+.hs-item.friend .hs-item-pic { background-color: #f3ecd6; background-size: contain; }
+.hs-sub { margin: 4cqw 0 1.6cqw; font-family: $rounded; font-weight: 900; font-size: max(15px, 4cqw); color: #3b7f26; small { font-size: .7em; font-weight: 700; color: #6c7f5c; } }
+.hs-pals { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2.4cqw; }
+.hs-pal { display: flex; flex-direction: column; align-items: center; gap: .6cqw; padding: 2.4cqw 1cqw; border: 2px solid #e5dcc0; border-radius: 3.6cqw; background: #fffdf3; font-family: $rounded; color: #4a3a24;
+  img { height: 22cqw; width: auto; max-width: 100%; object-fit: contain; }
+  b { font-weight: 900; font-size: max(11px, 2.9cqw); } small { font-weight: 700; font-size: max(10px, 2.4cqw); color: #6c7f5c; }
+  &[aria-pressed='true'] { border-color: #3b9a2a; background: #eef9e6; small { color: #3b7f26; } }
+  &.locked { opacity: .6; img { filter: brightness(0) opacity(.35); } } }
+.hs-pal-off { margin-top: 2.4cqw; align-self: center; }
+.hs-scene .sc-buddy { height: 44cqw; }

@@ -5,6 +5,7 @@ import { createWorld, step, type World, type Event } from './game/world.ts';
 import { Progress } from './progress.ts';
 import { Wallet, clearRewards } from './wallet.ts';
 import { Closet, costumeOf, type Who } from './closet.ts';
+import { friendOf, type FriendId } from './friends.ts';
 import { titleHTML, homeHTML, worldsHTML, worldHTML, shopHTML, friendsHTML, settingsHTML, tiredHTML, statusBar, type Tab } from './home.ts';
 import { loadSeasonPick, saveSeasonPick, type SeasonPick } from './season.ts';
 import { AccountController } from './account/controller.ts';
@@ -165,7 +166,7 @@ class Park extends Phaser.Scene {
       if (this.account.handle(action, button!)) return;
       // 決める(はじめる・あそぶ)と、選ぶ(ほかのボタン)で 音を分ける
       if (action === 'home' || action === 'worlds') sound.sfx('decide');
-      else if (['tab', 'world', 'start', 'next', 'run', 'select', 'buy-costume', 'buy-potion', 'wear'].includes(action)) sound.sfx('select');
+      else if (['tab', 'world', 'start', 'next', 'run', 'select', 'buy-costume', 'buy-friend', 'buddy', 'buy-potion', 'wear'].includes(action)) sound.sfx('select');
       if (action === 'select') { this.abandon(); this.world_(this.stageOf(this.level.id)); }
       if (action === 'home') { this.abandon(); this.home(); }
       if (action === 'tab') this.tab(button!.dataset.tab as Tab);
@@ -176,6 +177,8 @@ class Park extends Phaser.Scene {
       if (action === 'sound') { toggleSound(); this.tab('settings'); }
       if (action === 'buy-potion') this.buyPotion();
       if (action === 'buy-costume') this.buyCostume(button!.dataset.id ?? '');
+      if (action === 'buy-friend') this.buyFriend(button!.dataset.id ?? '');
+      if (action === 'buddy') { const id = button!.dataset.id ?? ''; closet.setBuddy(id ? (id as FriendId) : null); this.tab('friends'); }
       if (action === 'wear') { const id = button!.dataset.id ?? ''; if (id) closet.wear(id); else closet.takeOff(button!.dataset.who as Who); this.tab('friends'); }
       if ((action === 'start' || action === 'next') && target && progress.isUnlocked(target.id)) this.tryBegin(target);
       // 3D走りゲームの面(WORLD 4)は、別のページ(/run/)で遊ぶ
@@ -252,6 +255,11 @@ class Park extends Phaser.Scene {
     const r = closet.buy(id, new Date());
     const name = costumeOf(id)?.name ?? '';
     this.tab('shop', r === 'ok' ? `${name}を 手に入れた！ なかまで 着せかえられるよ` : r === 'poor' ? 'ゴールドコインが たりません。' : r === 'closed' ? 'いまは 買えません(季節の衣装です)。' : '');
+  }
+  private buyFriend(id: string) {
+    const f = friendOf(id);
+    const r = f ? closet.buyFriend(f.id) : 'unknown';
+    this.tab('shop', r === 'ok' ? `${f!.name}が 仲間になった！ なかまで 相棒に えらべるよ(WORLD 4・8 で いっしょに 走る)` : r === 'poor' ? 'プレミアムコインが たりません。' : '');
   }
   private toast(text: string) { el('message').textContent = text; window.setTimeout(() => { if (el('message').textContent === text) el('message').textContent = ''; }, 2000); }
   private begin(level: LevelDefinition) {
