@@ -10,7 +10,7 @@ export interface Input {
 
 export type Phase = 'ready' | 'running' | 'cleared' | 'failed';
 export type SimEvent = {
-  kind: 'coin' | 'gold' | 'premium' | 'throw' | 'boom' | 'swoop' | 'heal' | 'jump' | 'launch' | 'land' | 'hit' | 'fall' | 'slip' | 'slow' | 'slide' | 'clear' | 'fail' | 'bell' | 'warn' | 'thunder' | 'spill' | 'charge';
+  kind: 'coin' | 'gold' | 'premium' | 'senbei' | 'throw' | 'boom' | 'swoop' | 'heal' | 'jump' | 'launch' | 'land' | 'hit' | 'fall' | 'slip' | 'slow' | 'slide' | 'clear' | 'fail' | 'bell' | 'warn' | 'thunder' | 'spill' | 'charge';
   id?: number;
 };
 
@@ -32,6 +32,10 @@ export function baseSpeed(s: number, length: number, rules: Rules = DEFAULT_RULE
 
 export class Run {
   phase: Phase = 'ready';
+  /** 失敗の理由: hearts=ハートが なくなった / late=門が しまった(時間切れ) */
+  reason: '' | 'hearts' | 'late' = '';
+  /** 食べた鹿せんべいの数 */
+  senbei = 0;
   t = 0;
   s = 0;
   x = 0;
@@ -163,7 +167,7 @@ export class Run {
     this.integrateVertical(dt);
 
     // 前進。ぶつかったあとは遅くなり、少しずつもどる
-    if (this.speedMul < 1) this.speedMul = Math.min(1, this.speedMul + dt * 0.33);
+    if (this.speedMul < 1) this.speedMul = Math.min(1, this.speedMul + dt * (this.rules.recover ?? 0.33));
     const adv = this.speed * dt;
     this.s += adv;
     this.stride += adv;
@@ -174,6 +178,11 @@ export class Run {
     if (this.phase === 'running' && this.s >= this.course.length) {
       this.phase = 'cleared';
       this.events.push({ kind: 'clear' });
+    } else if (this.phase === 'running' && this.course.timeLimit && this.t >= this.course.timeLimit) {
+      // ゴールの門が しまった
+      this.phase = 'failed';
+      this.reason = 'late';
+      this.events.push({ kind: 'fail' });
     }
   }
 
@@ -220,6 +229,7 @@ export class Run {
     this.lives -= 1;
     if (this.lives <= 0) {
       this.phase = 'failed';
+      this.reason = 'hearts';
       this.events.push({ kind: 'fail' });
     }
   }
@@ -355,7 +365,7 @@ export class Run {
       const dx = c.x - this.x;
       const ds = c.s - this.s;
       const dy = c.y - cy;
-      if (dx * dx + ds * ds + dy * dy < (c.kind === 'potion' ? 1.5 : c.kind === 'premium' ? 1.2 : 1.05) ** 2) {
+      if (dx * dx + ds * ds + dy * dy < (c.kind === 'potion' ? 1.5 : c.kind === 'senbei' ? 1.35 : c.kind === 'premium' ? 1.2 : 1.05) ** 2) {
         this.collected.add(c.id);
         if (c.kind === 'gold') {
           this.gold += 1;
@@ -363,6 +373,11 @@ export class Run {
         } else if (c.kind === 'premium') {
           this.premium = true;
           this.events.push({ kind: 'premium', id: c.id });
+        } else if (c.kind === 'senbei') {
+          // 鹿せんべい: 食べると しばらく速く走る(ジャンプ台のダッシュと同じ)
+          this.senbei += 1;
+          this.boost = BOOST_TIME;
+          this.events.push({ kind: 'senbei', id: c.id });
         } else if (c.kind === 'potion') {
           // 回復薬: ハートが1つふえる(3つまで)
           this.lives = Math.min(MAX_LIVES, this.lives + 1);

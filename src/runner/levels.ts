@@ -78,6 +78,10 @@ export interface RunnerLevel {
   bridge?: { from: number; to: number };
   /** 突進する動物が動き出すとき、法螺貝が鳴る(吉野) */
   horn?: boolean;
+  /** 仲間の鹿の面(4-11〜4-16): ゴールの門が しまるまでの秒数(時間切れで失敗)。チェックポイント・回復薬は無い */
+  gate?: number;
+  /** 仲間の鹿の面: 鹿せんべいを置く間隔(m)。食べると しばらく速い(門に間に合わせる) */
+  senbei?: number;
   /** 区間ごとの景色(at=はじまる割合)。長い面で、街→山→大都会と変える */
   scenes?: { at: number; setting: Setting; name?: string }[];
   /** チェックポイント(割合と名前)。ここを過ぎたあとに失敗すると、ここから続けられる */
@@ -374,13 +378,145 @@ export const RUNNER_LEVELS: RunnerLevel[] = [
   },
 ];
 
-export const runnerById = (id: string): RunnerLevel | undefined => RUNNER_LEVELS.find((l) => l.id === id);
+
+// ==== 仲間の鹿の面(4-11〜4-16。持っている鹿で開く。2026-11-22 Owner決定: A+C) ====
+// A: ゴールの門が しまる前に(時間制限)。鹿せんべいで速く走り、ぶつかると おくれる(もどりも おそい)
+// C: チェックポイント・回復薬なし。ハート3つ
+// 景色は、その鹿の色(Spra=緑・Lumi=黄・Momo=ピンク・Kuru=茶・Piko=オレンジ・Ruru=水色)
+const FRIEND_RULES = { speed0: 14, speed1: 22, steerAccel: 42, steerSpeed: 7.2, recover: 0.15 };
+
+/** 若草山の新緑(Spra=緑) */
+const GREEN_WAKAKUSA: Theme = {
+  ...MOUNTAIN, goal: 'summit',
+  sky: ['#3f9be6', '#93cdf3', '#d6f0dc', '#e6f5d6'],
+  fog: 0xd6efd8,
+  grass: { base: '#5fb04a', specks: ['#4fa03c', '#74c45c', '#8fd06a', '#469436'] },
+};
+/** 黄金の稲田(Lumi=黄) */
+const GOLD_FIELDS: Theme = {
+  ...MOUNTAIN, goal: 'horyuji',
+  sky: ['#5a9ee0', '#b4d4ee', '#f4e6b8', '#f8eec8'],
+  fog: 0xf2e4b8, fogNear: 70, fogFar: 300,
+  hemiSky: 0xfff2cc, hemiGround: 0xa89040,
+  sun: 0xffe6a0,
+  grass: { base: '#d0b040', specks: ['#c0a032', '#e0c45a', '#b89428', '#e8d070'] },
+};
+/** さくらの佐保川(Momo=ピンク) */
+const PINK_SAKURA: Theme = {
+  ...SPRING_PARK,
+  grass: { base: '#8ab85a', specks: ['#f2b8cc', '#f6cad8', '#7aa84c', '#f0a8c0'] },
+};
+/** くりの山の秋(Kuru=茶) */
+const BROWN_AUTUMN: Theme = {
+  ...AUTUMN_YOSHINO,
+  grass: { base: '#9a7a44', specks: ['#8a6a38', '#aa8a50', '#7a5a30', '#b8964e'] },
+  road: { base: '#a08460', specks: ['#8e7250', '#b2966e', '#7e6444'], rough: 1 },
+};
+/** 夕焼けの街(Piko=オレンジ) */
+const ORANGE_DUSK: Theme = {
+  ...EVENING_HEIJO,
+  sky: ['#4a4a9a', '#d0789a', '#ff9a58', '#ffc888'],
+  fog: 0xf8b888,
+  sun: 0xff9a50,
+};
+/** 氷の三輪山(Ruru=水色) */
+const ICE_OMIWA: Theme = {
+  ...SNOW_OMIWA,
+  sky: ['#6aa6dc', '#a8d0ee', '#d8ecf8', '#eaf5fc'],
+  fog: 0xdcecf6,
+  grass: { base: '#a8c8d8', specks: ['#98bccc', '#c0dcea', '#e6f2f8'] },
+};
+
+export const FRIEND_RUN_LEVELS: RunnerLevel[] = [
+  {
+    id: '4-11', title: 'Spraの鹿と 若草山', summary: '新緑の山道。門が しまる前に 駆けのぼれ',
+    intro: '門が しまる前に ゴール！ せんべいで 加速！',
+    length: 1100, seed: 20261122, difficulty: 0.75,
+    extra: ['ramp', 'critterSleep', 'critterCross', 'critterHop', 'critterCharge'], critters: ['tanuki', 'fox', 'squirrel', 'rabbit'],
+    opening: ['hole', 'ramp', 'critterSleep', 'poop'],
+    rules: FRIEND_RULES,
+    curve: { amp: 24, wave: 230 },
+    hills: [{ at: 0.1, h: 0 }, { at: 0.3, h: 6 }, { at: 0.45, h: 4 }, { at: 0.7, h: 14 }, { at: 0.88, h: 18 }],
+    gate: 57, senbei: 55,
+    theme: GREEN_WAKAKUSA, goalName: '若草山の山頂',
+    lines: ['半分！ 門は まだ 開いてる', 'せんべいで 加速！', '山頂の門が 見えた！'],
+  },
+  {
+    id: '4-12', title: 'Lumiの鹿と 黄金の田んぼ', summary: '黄色い田んぼ道。光る輪(雷)を よけて',
+    intro: '光る輪は 雷！ せんべいで 加速して 門へ！',
+    length: 1150, seed: 20261123, difficulty: 0.75,
+    extra: ['thunder', 'ramp', 'critterSleep', 'critterCross', 'critterCharge'], critters: ['turtle', 'rabbit', 'puni', 'bubu'],
+    opening: ['hole', 'thunder', 'critterSleep', 'ramp'],
+    rules: FRIEND_RULES,
+    curve: { amp: 20, wave: 260 },
+    hills: [{ at: 0.1, h: 0 }, { at: 0.3, h: 3 }, { at: 0.5, h: 0 }, { at: 0.7, h: 4 }, { at: 0.88, h: 2 }],
+    gate: 60, senbei: 55,
+    theme: GOLD_FIELDS, goalName: '法隆寺',
+    lines: ['黄金の 田んぼが 続く…', '雷に 気をつけて！', '五重塔が 見えた！'],
+  },
+  {
+    id: '4-13', title: 'Momoの鹿と さくら並木', summary: '桜吹雪の川ぞい。シートと金魚を よけて',
+    intro: 'シートと 金魚に 注意！ せんべいで 加速！',
+    length: 1150, seed: 20261124, difficulty: 0.75,
+    extra: ['hanami', 'goldfish', 'critterHop', 'critterCross', 'critterCharge'], critters: ['rabbit', 'puni', 'bubu', 'fox'],
+    opening: ['hole', 'hanami', 'goldfish', 'poop'],
+    rules: FRIEND_RULES,
+    curve: { amp: 18, wave: 260 },
+    hills: [{ at: 0.1, h: 0 }, { at: 0.3, h: 3 }, { at: 0.5, h: 0 }, { at: 0.7, h: 4 }, { at: 0.88, h: 5 }],
+    gate: 60, senbei: 55,
+    theme: PINK_SAKURA, goalName: '奈良公園',
+    lines: ['桜の トンネル！', 'せんべいで 加速！', '奈良公園の門が 見えた！'],
+  },
+  {
+    id: '4-14', title: 'Kuruの鹿と くりの山', summary: '落ち葉の山道。法螺貝は 突進の合図',
+    intro: '法螺貝は 突進の合図！ せんべいで 加速！',
+    length: 1150, seed: 20261125, difficulty: 0.8,
+    extra: ['leafPile', 'critterCharge', 'critterSleep', 'critterCross', 'ramp'], critters: ['bear', 'tanuki', 'squirrel', 'toge'],
+    opening: ['hole', 'leafPile', 'critterCharge', 'poop'],
+    rules: FRIEND_RULES,
+    curve: { amp: 28, wave: 210 },
+    hills: [{ at: 0.08, h: 0 }, { at: 0.25, h: 8 }, { at: 0.4, h: 5 }, { at: 0.6, h: 16 }, { at: 0.88, h: 24 }],
+    horn: true,
+    gate: 60.5, senbei: 55,
+    theme: BROWN_AUTUMN, goalName: '金峯山寺',
+    lines: ['落ち葉の 山道…', 'もうすぐ 蔵王堂！', '門が しまる！ 急いで！'],
+  },
+  {
+    id: '4-15', title: 'Pikoの鹿と 夕焼けの街', summary: '夕焼けの街道。踏切と ジャンプ台',
+    intro: '踏切に 注意！ せんべいで 加速して 門へ！',
+    length: 1200, seed: 20261126, difficulty: 0.8,
+    extra: ['crossing', 'ramp', 'critterCross', 'critterCharge', 'critterSleep'], critters: ['tanuki', 'fox', 'pachi', 'bubu'],
+    opening: ['hole', 'ramp', 'poop', 'critterCross'],
+    rules: FRIEND_RULES,
+    curve: { amp: 18, wave: 250 },
+    townFrom: 0.25,
+    after: { crossing: 0.3 },
+    gate: 60, senbei: 55,
+    theme: ORANGE_DUSK, goalName: '平城宮跡',
+    lines: ['夕日が しずんでいく…', '踏切に 注意！', '朱雀門が 見えた！'],
+  },
+  {
+    id: '4-16', title: 'Ruruの鹿と 氷の三輪山', summary: '雪と氷の参道。つるつる すべる',
+    intro: 'こおりは つるつる！ せんべいで 加速！',
+    length: 1100, seed: 20261127, difficulty: 0.75,
+    extra: ['ice', 'ramp', 'critterSleep', 'critterHop', 'critterCross'], critters: ['snowy', 'frosty', 'gingi', 'rabbit'],
+    opening: ['hole', 'ice', 'critterSleep', 'ramp'],
+    rules: { ...FRIEND_RULES, steerAccel: 16, steerSpeed: 6.6 },
+    curve: { amp: 24, wave: 230 },
+    hills: [{ at: 0.12, h: 0 }, { at: 0.35, h: 7 }, { at: 0.5, h: 8 }, { at: 0.75, h: 15 }, { at: 0.88, h: 17 }],
+    gate: 58, senbei: 55,
+    theme: ICE_OMIWA, goalName: '大神神社',
+    lines: ['雪が ふってきた', 'こおりに 注意！', '大鳥居が 見えた！'],
+  },
+];
+
+export const runnerById = (id: string): RunnerLevel | undefined => RUNNER_LEVELS.find((l) => l.id === id) ?? FRIEND_RUN_LEVELS.find((l) => l.id === id);
 
 export function courseOf(level: RunnerLevel): Course {
   return buildCourse({
     seed: level.seed, length: level.length, difficulty: level.difficulty,
     extra: level.extra, critters: level.critters, opening: level.opening, rules: level.rules, curve: level.curve,
     potions: level.potions, wake: level.wake, hills: level.hills, after: level.after, bridge: level.bridge,
-    safe: level.checkpoints?.map((c) => c.at),
+    safe: level.checkpoints?.map((c) => c.at), senbei: level.senbei, timeLimit: level.gate,
   });
 }

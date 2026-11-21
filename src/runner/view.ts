@@ -1,7 +1,7 @@
 // 3D走りゲームの表示(Three.js)。ルールの計算は sim.ts、ここは見た目だけ。
 // 面ごとの空・光・天候・景色は RunnerLevel.theme で切り替える。
 import * as THREE from 'three';
-import { readBuddy, runFramePath } from '../friends.ts';
+import { readBuddy, runFramePath, unlockedBy } from '../friends.ts';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { BRIDGE_HALF, FISH_X0, FISH_X1, GOAL_GAP, RAMP_DROP, ROAD_HALF, bridgeSway, hillY, roadHeading, roadX, roadY, type Course, type Obstacle } from './course.ts';
 import { CRITTERS, type CritterDef } from './critters.ts';
@@ -233,7 +233,8 @@ export class KasugaView {
     }
 
     // 鹿の絵(走る鹿・歩く鹿)。ゴールの景色(奈良公園の鹿)でも使うので、先に読む
-    const buddy = readBuddy(); // 仲間の鹿を相棒にしていれば、その鹿が走る(見た目だけ)
+    // 仲間の鹿を相棒にしていれば、その鹿が走る(見た目だけ)。仲間の鹿の面(4-11 など)は、いつも その鹿
+    const buddy = unlockedBy(this.level.id)?.id ?? readBuddy();
     for (let i = 0; i < 4; i++) this.runTex.push(loadTex(runFramePath(buddy, i)));
     for (const k of ['doe_l', 'doe_r']) this.walkTex[k] = [0, 1, 2, 3].map((i) => loadTex(`${ASSET}/deer-walk/${k}_${i}.png`));
 
@@ -2096,6 +2097,34 @@ export class KasugaView {
       this.scene.add(g);
       this.potionObjs.push({ id: c.id, s: c.s, x: c.x, y: c.y, obj: g });
     }
+    // 鹿せんべい(仲間の鹿の面。食べると しばらく速い)。回復薬と同じく、いつもカメラのほうを向く
+    const senbei = this.course.coins.filter((c) => c.kind === 'senbei');
+    if (senbei.length) {
+      const tex = canvasTexture(128, (g2, n) => {
+        const r = n / 2;
+        g2.clearRect(0, 0, n, n);
+        g2.fillStyle = '#c58a45'; g2.beginPath(); g2.arc(r, r, r - 4, 0, 7); g2.fill();
+        g2.fillStyle = '#e8b46a'; g2.beginPath(); g2.arc(r, r, r - 12, 0, 7); g2.fill();
+        for (let i = 0; i < 40; i++) {
+          const a = i * 2.39, d = (r - 18) * Math.sqrt((i * 0.61) % 1);
+          g2.fillStyle = i % 2 ? 'rgba(160,96,40,0.5)' : 'rgba(250,220,160,0.6)';
+          g2.beginPath(); g2.arc(r + Math.cos(a) * d, r + Math.sin(a) * d, 3 + (i % 3), 0, 7); g2.fill();
+        }
+        g2.strokeStyle = 'rgba(120,70,30,0.75)'; g2.lineWidth = 5; g2.beginPath(); g2.arc(r, r, r * 0.42, 0, 7); g2.stroke();
+        g2.fillStyle = 'rgba(110,62,24,0.85)'; g2.font = 'bold 36px sans-serif'; g2.textAlign = 'center'; g2.textBaseline = 'middle'; g2.fillText('鹿', r, r + 2);
+      });
+      const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: 0.3, toneMapped: false, side: THREE.DoubleSide });
+      const geo = new THREE.PlaneGeometry(1.15, 1.15);
+      const glowMat = new THREE.SpriteMaterial({ map: this.glowTexture(), color: 0xffd27a, transparent: true, opacity: 0.75, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false });
+      for (const c of senbei) {
+        const g = new THREE.Group();
+        const glow = new THREE.Sprite(glowMat);
+        glow.scale.setScalar(2.2);
+        g.add(glow, new THREE.Mesh(geo, mat));
+        this.scene.add(g);
+        this.potionObjs.push({ id: c.id, s: c.s, x: c.x, y: c.y, obj: g });
+      }
+    }
   }
 
   /** 大仏の目が光った(罠がふえる)ときの見た目。 */
@@ -2305,7 +2334,7 @@ export class KasugaView {
     const used = [0, 0, 0];
     for (let i = 0; i < coins.length; i++) {
       const cn = coins[i];
-      if (cn.kind === 'potion') continue;
+      if (cn.kind === 'potion' || cn.kind === 'senbei') continue;
       // 取りそこねて後ろに行ったコインは、カメラの前を通らないよう消す
       if (cn.s - run.s > 170 || cn.s - run.s < -1.5 || run.collected.has(cn.id)) continue;
       const k = cn.kind === 'premium' ? 1.7 : cn.kind === 'gold' ? 1.3 : 1;

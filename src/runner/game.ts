@@ -4,6 +4,7 @@ import { Wallet, clearRewards, waitText, STAMINA_MAX, STAMINA_FAIL } from '../wa
 import type { Obstacle } from './course.ts';
 import { CRITTERS } from './critters.ts';
 import { RUNNER_LEVELS, courseOf, type RunnerLevel } from './levels.ts';
+import { unlockedBy } from '../friends.ts';
 import { Run, type Input, type SimEvent } from './sim.ts';
 import { KasugaView } from './view.ts';
 import { RunnerAudio } from './audio.ts';
@@ -48,7 +49,13 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
     [course.length * 0.8, level.lines[1]],
     [course.length * 0.92, level.lines[2]],
   ];
-  const nextLevel = RUNNER_LEVELS[RUNNER_LEVELS.findIndex((l) => l.id === level.id) + 1];
+  // 次の面(仲間の鹿の面は、ボーナスなので 次は無い)
+  const idx = RUNNER_LEVELS.findIndex((l) => l.id === level.id);
+  const nextLevel = idx >= 0 ? RUNNER_LEVELS[idx + 1] : undefined;
+  // 仲間の鹿の面: ゴールの門が しまるまでの秒数
+  const gate = course.timeLimit;
+  const friend = unlockedBy(level.id);
+  let senbeiHinted = false;
   // チェックポイント: 通過したときの状態を覚えておき、失敗したら、そこから続けられる
   type Snapshot = { s: number; name: string; coins: number; gold: number; premium: boolean; collected: Set<number>; t: number };
   const CPS = (level.checkpoints ?? []).map((c) => ({ s: c.at * course.length, name: c.name }));
@@ -66,7 +73,7 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
   q('lv-title').textContent = level.title;
   q('lv-goal').textContent = level.goalName;
   q('s-title').textContent = level.title;
-  q('s-lead').textContent = level.summary;
+  q('s-lead').textContent = gate ? `${level.summary}。門は ${gate}秒で しまる！ 鹿せんべいで 速く走ろう` : level.summary;
   q('s-prem').textContent = premiumTaken ? '◆ この面の プレミアムコインは 取ったよ' : '◆ この面には プレミアムコインが 1まい かくれている';
   let run = new Run(course);
   const byId = new Map(course.obstacles.map((o) => [o.id, o]));
@@ -99,6 +106,7 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
       case 'boom': noise(0.7, 0.22, 700); tone(130, 40, 0.5, 'sawtooth', 0.08); break;
       case 'swoop': tone(1700, 600, 0.45, 'sine', 0.05); tone(1900, 700, 0.45, 'triangle', 0.025, 0.05); break;
       case 'heal': audio.sfx('heal'); break;
+      case 'senbei': tone(660, 1320, 0.16, 'triangle', 0.08); tone(990, 1980, 0.2, 'sine', 0.05, 0.06); break;
       case 'jump': audio.sfx('jump'); break;
       // ジャンプ台のダッシュは、きらきら。坂の頂上で浮いただけなら、短い合成音
       case 'launch': if (run.boost > 0) audio.sfx('dash'); else tone(280, 980, 0.3, 'triangle', 0.08); break;
@@ -169,6 +177,13 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
   const elStatus = q('status');
   const elStart = q('start');
   const elResult = q('result');
+  // 門が しまるまでの のこり時間(仲間の鹿の面だけ)
+  let elGate: HTMLElement | null = null;
+  if (gate) {
+    elGate = document.createElement('div');
+    elGate.className = 'ks-gate';
+    elToast.before(elGate);
+  }
   let toastTimer = 0;
   const toast = (msg: string, ms = 2200) => {
     elToast.textContent = msg;
@@ -188,6 +203,11 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
     const p = `${(run.progress * 100).toFixed(1)}%`;
     elFill.style.width = p;
     elMark.style.left = p;
+    if (elGate && gate) {
+      const left = Math.max(0, gate - run.t);
+      elGate.textContent = `⛩ 門が しまるまで ${left.toFixed(1)}秒`;
+      elGate.classList.toggle('hurry', left < 10);
+    }
   };
 
   let hinted = new Set<string>();
@@ -230,13 +250,13 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
     }
     paintStamina();
     const best = progress.get(level.id).best;
-    q('r-title').textContent = cleared ? `${level.goalName}に とうちゃく！` : 'ざんねん… もうすこしだった';
+    q('r-title').textContent = cleared ? `${level.goalName}に とうちゃく！` : run.reason === 'late' ? '門が しまっちゃった…' : 'ざんねん… もうすこしだった';
     q('r-stars').textContent = cleared ? '★'.repeat(stars) + '☆'.repeat(3 - stars) : '';
     q('r-coins').textContent = `${run.coins} / ${silverTotal}` + (run.gold ? `　金 ${run.gold}` : '') + (run.premium ? '　◆' : '');
     q('r-hearts').textContent = '♥'.repeat(Math.max(0, run.lives)) || '—';
     q('r-time').textContent = cleared
       ? `${time} 秒${continued ? '（途中から）' : newBest ? '（ベスト更新！）' : ''}`
-      : `${Math.floor(run.progress * 100)} % まで`;
+      : `${Math.floor(run.progress * 100)} % まで` + (run.reason === 'late' ? '(鹿せんべいで 速く！ ぶつかると おくれるよ)' : '');
     const cont = q<HTMLButtonElement>('cont');
     cont.hidden = cleared || !saved;
     if (saved) cont.textContent = `${saved.name}から つづける`;
@@ -491,6 +511,9 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
       } else if (e.kind === 'slip') {
         view.bump(0.2);
         toast('ふんで スリップ！ 操作が逆に！', 1800);
+      } else if (e.kind === 'senbei') {
+        if (!senbeiHinted) toast(`${friend?.name ?? '鹿'}が せんべいを ぱくっ！ しばらく 速いよ`, 2000);
+        senbeiHinted = true;
       } else if (e.kind === 'heal') {
         toast('回復薬！ ハートが ふえた', 2000);
       } else if (e.kind === 'slow') {

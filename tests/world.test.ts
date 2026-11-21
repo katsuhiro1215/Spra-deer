@@ -426,7 +426,7 @@ test('level data is sound: unique ids, safe start, final chapter, reachable gaps
   // WORLD 2 は3Dのせんべい屋台(/bake/。旧ステージ2の配達は WORLD 1 へ)
   assert.ok(STAGES[1].slots.length >= 1 && STAGES[1].slots.every(s => s.page === '/bake/' && s.runnerId === s.id));
   assert.ok(STAGES[2].slots.length >= 1 && STAGES[2].slots.every(s => s.page === '/sweep/')); // 3=3D掃除(/sweep/。作った面だけ)
-  assert.deepEqual(STAGES.slice(3, 5).map(g => g.slots.length), [10, 10]); // 4=3D走り(作る枠を含む) 5=ジャンプ(/jump/。準備中の枠を含む。2026-11-21)
+  assert.deepEqual(STAGES.slice(3, 5).map(g => g.slots.length), [16, 10]); // 4=3D走り(10面 + 仲間の鹿の面 6つ) 5=ジャンプ(/jump/。準備中の枠を含む。2026-11-21)
   assert.ok(STAGES[4].slots.filter(s => s.runnerId).every(s => s.page === '/jump/'));
   const w7 = STAGES.find(g => g.stage === 7)!; // 7=まいご探し(/lost/。準備中の枠を含む。2026-11-21)
   assert.equal(w7.slots.length, 10);

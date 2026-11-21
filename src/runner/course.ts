@@ -67,9 +67,10 @@ export interface Coin {
   y: number; // 地面からの高さ(ジャンプで取るコインは高い)
   /**
    * potion=回復薬(ハートが1つふえる)/gold=ゴールドコイン(少しだけ。取りにくい所)/
-   * premium=プレミアムコイン(1つの面に1枚だけ。とても取りにくい所)。無ければ、ふつうのコイン(シルバー)
+   * premium=プレミアムコイン(1つの面に1枚だけ。とても取りにくい所)。無ければ、ふつうのコイン(シルバー)/
+   * senbei=鹿せんべい(仲間の鹿の面。食べると しばらく速く走る)
    */
-  kind?: 'potion' | 'gold' | 'premium';
+  kind?: 'potion' | 'gold' | 'premium' | 'senbei';
 }
 
 /** ゴールドコインの数(コースの長さで決める。1000mで5枚、2400mで7枚) */
@@ -81,6 +82,8 @@ export interface Rules {
   speed1: number; // ゴール手前の秒速
   steerAccel: number; // 左右の動きだしのよさ(小さいほどすべる)
   steerSpeed: number; // 左右の最高速度
+  /** ぶつかって おそくなったあと、もどる速さ(1秒あたり。無ければ 0.33。小さいほど、ぶつかると時間を失う) */
+  recover?: number;
 }
 export const DEFAULT_RULES: Rules = { speed0: 13, speed1: 20, steerAccel: 42, steerSpeed: 6.8 };
 
@@ -119,6 +122,8 @@ export interface Course {
   straights?: [number, number][];
   /** つり橋の区間(s の範囲)。幅がせまく、左右にゆれる */
   bridge?: { from: number; to: number };
+  /** ゴールの門が しまるまでの秒数(仲間の鹿の面)。これをこえると失敗 */
+  timeLimit?: number;
 }
 
 const smooth = (a: number, b: number, x: number): number => {
@@ -336,6 +341,10 @@ export interface CourseOptions {
   bridge?: { from: number; to: number };
   /** 罠を置かない所(割合。チェックポイント: ここから再スタートするので、すぐ先に罠を置かない) */
   safe?: number[];
+  /** 鹿せんべいを置く間隔(m。仲間の鹿の面)。罠から離れた、道の端の近くに置く(取りにいくと よけにくくなる) */
+  senbei?: number;
+  /** ゴールの門が しまるまでの秒数 */
+  timeLimit?: number;
 }
 
 export function buildCourse(opts: CourseOptions = {}): Course {
@@ -693,7 +702,21 @@ export function buildCourse(opts: CourseOptions = {}): Course {
     coins.push({ id: id++, s: ps, x: 0, y: 1.1, kind: 'potion' });
   }
   placeSpecialCoins(coins, obstacles, bumps, length, () => id++);
+  // 鹿せんべい: 罠の すぐそばには置かない。左右に、かわるがわる(まんなかを走っていると取れない)
+  if (opts.senbei) {
+    let side = 1;
+    for (let q = 80; q < length - 70; q += opts.senbei) {
+      let ss = q;
+      while (ss < q + opts.senbei - 10 && obstacles.some((o) => o.s < ss + 9 && o.s + o.len > ss - 9)) ss += 3;
+      if (obstacles.some((o) => o.s < ss + 9 && o.s + o.len > ss - 9)) continue;
+      for (let i = coins.length - 1; i >= 0; i--) if (coins[i].kind === undefined && Math.abs(coins[i].s - ss) < 2.5) coins.splice(i, 1);
+      coins.push({ id: id++, s: ss, x: 2.1 * side, y: 0.8, kind: 'senbei' });
+      side = -side;
+    }
+    coins.sort((a, b) => a.s - b.s);
+  }
   const course: Course = { obstacles, coins, length, rules: opts.rules, curve: opts.curve, wake: opts.wake };
+  if (opts.timeLimit) course.timeLimit = opts.timeLimit;
   if (opts.hills) course.hills = opts.hills;
   if (bumps.length) course.bumps = bumps;
   if (br) {

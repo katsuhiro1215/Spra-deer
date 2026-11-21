@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Loading } from '../Loading';
 import './run.css';
 import { needsLogin } from '../../account/store.ts';
+import { ownsFriend, unlockedBy } from '../../friends.ts';
 
 export function RunShell() {
   const ref = useRef<HTMLDivElement>(null);
@@ -19,6 +20,9 @@ export function RunShell() {
       const level = levels.runnerById(id) ?? levels.RUNNER_LEVELS[0];
       // ログインが要る面(各ワールドの3面目から)は、ホームのログインへ(設計書 37章)
       if (needsLogin(level.id)) { location.replace('/#login'); return; }
+      // 仲間の鹿の面は、その鹿を持っているときだけ
+      const fr = unlockedBy(level.id);
+      if (fr && !ownsFriend(fr.id)) { location.replace('/#worlds'); return; }
       stop = game.startRunner(ref.current, level);
       setReady(true);
     });

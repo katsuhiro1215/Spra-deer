@@ -1,6 +1,6 @@
 import { FIELD } from './stage.ts';
 import type { ArenaDefinition, HungryDefinition, LineDefinition, NightDefinition, SenbeiDefinition } from './stage.ts';
-import { RUNNER_LEVELS } from '../runner/levels.ts';
+import { FRIEND_RUN_LEVELS, RUNNER_LEVELS } from '../runner/levels.ts';
 import { CART_LEVELS, CART_PLANNED, PURSUIT_LEVELS } from '../cart/levels.ts';
 import { SUMO_LEVELS, SUMO_PLANNED } from '../sumo/levels.ts';
 import { JUMP_LEVELS, JUMP_PLANNED } from '../jump/levels.ts';
@@ -1074,8 +1074,11 @@ export const STAGES: { stage: number; title: string; slots: LevelSlot[] }[] = [
     // WORLD 4 は、Three.js の3D走りゲーム(/run/)。作った面は runner/levels.ts、まだの面は行き先だけ書いた「準備中」
     stage: 4, title: '鹿、走る。', slots: Array.from({ length: 10 }, (_, i) => `4-${i + 1}`).map(id => {
       const r = RUNNER_LEVELS.find(x => x.id === id);
-      return r ? { id, title: r.title, summary: r.summary, runnerId: id } : { id, ...PLANNED[id] };
-    }),
+      return r ? { id, title: r.title, summary: r.summary, runnerId: id } : { id, ...PLANNED[id] } as LevelSlot;
+    }).concat(
+      // 仲間の鹿の面(門が しまる前に)。その鹿を持っていると開く
+      FRIEND_RUN_LEVELS.map(l => ({ id: l.id, title: l.title, summary: l.summary, runnerId: l.id, bonus: true })),
+    ),
   },
   // WORLD 5 は、2Dのジャンプ(/jump/)。Spra が 鹿の背中で ぴょんぴょん 上へ(設計書 34章)。旧ステージ5(森のなかま救出)の LEVEL_5_1 は定義だけ残す
   {
