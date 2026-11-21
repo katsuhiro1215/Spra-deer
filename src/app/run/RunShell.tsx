@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from 'react';
 import './run.css';
+import { needsLogin } from '../../account/store.ts';
 
 export function RunShell() {
   const ref = useRef<HTMLDivElement>(null);
@@ -14,6 +15,8 @@ export function RunShell() {
       if (cancelled || !ref.current) return;
       const id = new URLSearchParams(window.location.search).get('level')?.replace(/^3-/, '4-') ?? '4-1';
       const level = levels.runnerById(id) ?? levels.RUNNER_LEVELS[0];
+      // ログインが要る面(各ワールドの3面目から)は、ホームのログインへ(設計書 37章)
+      if (needsLogin(level.id)) { location.replace('/#login'); return; }
       stop = game.startRunner(ref.current, level);
     });
     return () => {

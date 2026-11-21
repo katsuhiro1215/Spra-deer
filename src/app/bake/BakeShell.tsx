@@ -3,6 +3,7 @@
 import { useEffect, useRef } from 'react';
 import '../run/run.css';
 import './bake.css';
+import { needsLogin } from '../../account/store.ts';
 
 // WORLD 2「鹿せんべい大作戦」(せんべい屋台)の画面の土台。見た目の共通部分は、3D走り(run.css)と同じものを使う
 export function BakeShell() {
@@ -20,6 +21,8 @@ export function BakeShell() {
       // リレー面(2-9・2-10)は、焼く → 積む → 配る を 順に つなぐ
       const starterOf = (lv: typeof level) => (r: HTMLElement, l: typeof level, relay?: import('../../bake/relay.ts').RelayCtx) =>
         levels.isTower(lv) ? tower.startTower(r, l as typeof lv, relay) : levels.isToss(lv) ? toss.startToss(r, l as typeof lv, relay) : game.startBake(r, l as import('../../bake/levels.ts').BakeLevel, relay);
+      // ログインが要る面(各ワールドの3面目から)は、ホームのログインへ(設計書 37章)
+      if (needsLogin(level.id)) { location.replace('/#login'); return; }
       stop = levels.isRelay(level) ? relayMod.startRelay(ref.current, level, starterOf) : starterOf(level)(ref.current, level);
     });
     return () => {

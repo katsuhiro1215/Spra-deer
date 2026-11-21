@@ -237,14 +237,14 @@ export function startSweep(root: HTMLElement, level: SweepLevel): () => void {
     let newBest = false;
     if (cleared && !recorded) {
       recorded = true;
-      newBest = progress.clear(level.id, run.t);
+      newBest = progress.clear(level.id, run.t, true, stars);
       const got = clearRewards(wallet, level.id, { silver: Math.floor(run.score / SCORE_PER_COIN), gold: run.gold, star3: stars === 3 });
       const prem = run.premium && wallet.takePremium(level.id);
       q('r-reward').textContent = `+${got.silver} シルバー` + (got.gold ? `　+${got.gold} ゴールド` : '') + (prem ? '　+1 プレミアム！' : '');
       q('r-reward').classList.remove('lose');
     }
     if (!cleared && !charged) {
-      charged = true; wallet.fail();
+      charged = true; wallet.fail(); progress.fail(level.id);
       q('r-reward').textContent = `体力 −${STAMINA_FAIL}`;
       q('r-reward').classList.add('lose');
     }
@@ -434,7 +434,7 @@ export function startSweep(root: HTMLElement, level: SweepLevel): () => void {
   (window as unknown as { __sweep?: unknown }).__sweep = { get run() { return run; }, level, view, audio, WBAL };
 
   return () => {
-    if (run.phase === 'running' && !charged) { charged = true; wallet.fail(); }
+    if (run.phase === 'running' && !charged) { charged = true; wallet.fail(); progress.quit(level.id); }
     cancelAnimationFrame(raf);
     window.clearTimeout(toastTimer); window.clearTimeout(resultTimer);
     frameEl.removeEventListener('pointerdown', onDown);

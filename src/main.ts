@@ -1,11 +1,13 @@
 import * as Phaser from 'phaser';
 import { VIEW, GOAL, RULES } from './game/stage.ts';
-import { ALL_PLAYABLE_SLOTS, PLAYABLE, levelById, pageOf, type LevelDefinition } from './game/levels.ts';
+import { ALL_PLAYABLE_SLOTS, PLAYABLE, STAGES, levelById, pageOf, type LevelDefinition } from './game/levels.ts';
 import { createWorld, step, type World, type Event } from './game/world.ts';
 import { Progress } from './progress.ts';
 import { Wallet, clearRewards } from './wallet.ts';
 import { titleHTML, homeHTML, worldsHTML, worldHTML, shopHTML, friendsHTML, settingsHTML, tiredHTML, statusBar, type Tab } from './home.ts';
 import { loadSeasonPick, saveSeasonPick, type SeasonPick } from './season.ts';
+import { AccountController } from './account/controller.ts';
+import { loginHTML } from './account/screens.ts';
 import { ParkView, walkKey, deerKey } from './view.ts';
 import deerWalk from './game/deer-walk.json';
 import walk from './game/spru-walk.json';
@@ -135,10 +137,24 @@ class Park extends Phaser.Scene {
     el('pause').addEventListener('click', () => this.pause());
     window.addEventListener('blur', () => { if (this.mode === 'playing') this.pause(); });
     document.addEventListener('visibilitychange', () => { if (document.hidden && this.mode === 'playing') this.pause(); });
+    // アカウント(ログイン・プレイヤー・ランキング。設計書 37章)
+    this.account = new AccountController({
+      show: html => { this.idle('select'); this.current = null; el('overlay').innerHTML = html; },
+      home: () => this.home(),
+      settings: () => this.tab('settings'),
+      backToWorld: () => this.world_(this.lastStage),
+      refresh: () => { if (this.mode === 'select' && this.current) this.current(); },
+      titleOf: id => STAGES.flatMap(g => g.slots).find(s => s.id === id)?.title ?? id,
+    }, progress);
+    el('overlay').addEventListener('submit', e => {
+      const form = e.target as HTMLFormElement;
+      if (form.dataset.form) { e.preventDefault(); this.account.submit(form); }
+    });
     el('overlay').addEventListener('click', e => {
       const button = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-action]');
       const action = button?.dataset.action, target = levelById(button?.dataset.level ?? '');
       if (!action || button?.getAttribute('aria-disabled') === 'true') return;
+      if (this.account.handle(action, button!)) return;
       if (action === 'select') { this.abandon(); this.world_(this.stageOf(this.level.id)); }
       if (action === 'home') { this.abandon(); this.home(); }
       if (action === 'tab') this.tab(button!.dataset.tab as Tab);
@@ -152,7 +168,8 @@ class Park extends Phaser.Scene {
       // 3D走りゲームの面(WORLD 4)は、別のページ(/run/)で遊ぶ
       const runId = button?.dataset.level ?? '';
       if ((action === 'run' || (action === 'next' && !target)) && runId && progress.isUnlocked(runId)) {
-        if (wallet.canPlay()) location.href = pageOf(runId); else this.tired('home');
+        if (this.account.needsLogin(runId)) el('overlay').innerHTML = loginHTML('この面は、ログインすると あそべます');
+        else if (wallet.canPlay()) location.href = pageOf(runId); else this.tired('home');
       }
       if (action === 'retry') { this.abandon(); this.tryBegin(this.level); }
       if (action === 'resume') this.resume();
@@ -160,7 +177,8 @@ class Park extends Phaser.Scene {
     });
     // 走りゲームのページから「面えらびへ」で戻ってきたときは、そのワールドの面えらびから始める
     const m = /^#world-(\d+)$/.exec(location.hash);
-    if (m) this.world_(Number(m[1])); else if (location.hash === '#worlds') this.tab('worlds'); else if (location.hash === '#select') this.home(); else this.title();
+    if (m) this.world_(Number(m[1])); else if (location.hash === '#worlds') this.tab('worlds'); else if (location.hash === '#login' && this.account.enabled) { this.idle('select'); el('overlay').innerHTML = loginHTML('この面は、ログインすると あそべます'); } else if (location.hash === '#select') this.home(); else this.title();
+    this.account.start();
     // 体力の回復(残り時間)を、1秒ごとに書きかえる
     window.setInterval(() => {
       const live = el('overlay').querySelector('[data-live="status"]');
@@ -175,23 +193,31 @@ class Park extends Phaser.Scene {
     el('game-wrap').classList.toggle('menu', mode === 'select');
   }
   private title() { this.idle('title'); el('overlay').innerHTML = titleHTML(); }
-  private home() { this.idle('select'); el('overlay').innerHTML = homeHTML(progress, wallet); }
+  private account!: AccountController;
+  /** いま出している画面(記録が かわったときに かきなおす) */
+  private current: (() => void) | null = null;
+  private lastStage = 1;
+  private home() { this.idle('select'); this.current = () => this.home(); el('overlay').innerHTML = homeHTML(progress, wallet, new Date(), this.account.signedIn ? this.account.acc.profileName : null); }
   private world_(stage: number) {
     if (!(stage > 0)) { this.home(); return; }
-    this.idle('select'); el('overlay').innerHTML = worldHTML(stage, progress, wallet);
+    this.idle('select'); this.lastStage = stage; this.current = () => this.world_(stage);
+    void this.account.loadStats();
+    el('overlay').innerHTML = worldHTML(stage, progress, wallet, { needsLogin: id => this.account.needsLogin(id), stats: this.account.stats, ranking: this.account.enabled && this.account.signedIn });
   }
   private tab(t: Tab, note = '') {
     if (t === 'home') { this.home(); return; }
-    this.idle('select');
-    el('overlay').innerHTML = t === 'worlds' ? worldsHTML(progress, wallet) : t === 'shop' ? shopHTML(wallet, note) : t === 'friends' ? friendsHTML(wallet) : settingsHTML(wallet, sound.enabled, loadSeasonPick());
+    this.idle('select'); this.current = t === 'worlds' ? () => this.tab('worlds') : null;
+    if (t === 'worlds') void this.account.loadStats();
+    el('overlay').innerHTML = t === 'worlds' ? worldsHTML(progress, wallet, this.account.stats) : t === 'shop' ? shopHTML(wallet, note) : t === 'friends' ? friendsHTML(wallet) : settingsHTML(wallet, sound.enabled, loadSeasonPick(), this.account.rows(), this.account.signedIn);
   }
   private stageOf(id: string): number { return ALL_PLAYABLE_SLOTS.find(l => l.id === id)?.stage ?? 1; }
   /** 遊んでいる面を、とちゅうでやめる(失敗と同じく体力が減る。設計書 25-2) */
   private abandon() {
-    if (this.mode === 'playing' || this.mode === 'paused' || this.mode === 'dying') { wallet.fail(); this.mode = 'result'; }
+    if (this.mode === 'playing' || this.mode === 'paused' || this.mode === 'dying') { wallet.fail(); progress.quit(this.level.id); this.mode = 'result'; }
   }
   /** 体力があれば面を始める。足りなければ、回復の案内 */
   private tryBegin(level: LevelDefinition) {
+    if (this.account.needsLogin(level.id)) { this.idle('select'); el('overlay').innerHTML = loginHTML('この面は、ログインすると あそべます'); return; }
     if (wallet.canPlay()) { this.begin(level); return; }
     this.level = level; this.tired('level');
   }
@@ -256,7 +282,7 @@ class Park extends Phaser.Scene {
     // シルバー: 面の中で取ったコイン+クリアの10枚。ゴールド: 取った金のコイン(+はじめてのクリア)。プレミアム: 持ち帰ると自分のもの
     const got = clear ? clearRewards(wallet, level.id, { silver: 10 + w.silver, gold: w.gold }) : null;
     const prem = clear && w.premium && wallet.takePremium(level.id);
-    if (!clear) wallet.fail();
+    if (!clear) { wallet.fail(); progress.fail(level.id); }
     // 小さい画面でも結果のカードが収まるよう、行を増やさず、いちばん下の注意書きの場所に出す
     const reward = got ? `<p class="save-note reward-line">+${got.silver} <i class="coin silver"></i>${got.gold ? `　+${got.gold} <i class="coin gold"></i>` : ''}${prem ? '　+1 <i class="coin premium"></i>' : ''}</p>` : `<p class="save-note reward-line lose">体力 −2(のこり ${wallet.stamina})</p>`;
     sound.music(clear ? 'clear' : 'fail');

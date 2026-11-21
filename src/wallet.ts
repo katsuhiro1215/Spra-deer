@@ -11,6 +11,7 @@ export const STAMINA_REGEN_MS = 3 * 60 * 1000;
 export const POTION = { heal: 10, price: 300 } as const;
 
 import { swapWorld34Key } from './renumber.ts';
+import { claimGuest, storageScope } from './account/store.ts';
 
 export type CoinKind = 'silver' | 'gold' | 'premium';
 export type Coins = Record<CoinKind, number>;
@@ -40,13 +41,18 @@ export class Wallet {
   private now: () => number;
   private store: Storage | null;
 
-  constructor(now: () => number = () => Date.now(), store: Storage | null = storage()) {
+  /** 保存の場所(ログイン中は、プレイヤーごと。設計書 37章) */
+  private readonly key: string;
+
+  constructor(now: () => number = () => Date.now(), store: Storage | null = storage(), scope = storageScope()) {
     this.now = now;
     this.store = store;
+    this.key = scope + KEY;
+    claimGuest(scope, KEY, store);
     this.at = now();
     if (!store) { this.canSave = false; return; }
     try {
-      const s = JSON.parse(store.getItem(KEY) || 'null') as Partial<Saved> | null;
+      const s = JSON.parse(store.getItem(this.key) || 'null') as Partial<Saved> | null;
       if (s && typeof s === 'object') {
         this.value = Math.min(STAMINA_MAX, count(s.stamina));
         this.at = typeof s.at === 'number' && Number.isFinite(s.at) && s.at <= this.now() ? s.at : this.now();
@@ -62,7 +68,7 @@ export class Wallet {
   private save(): void {
     if (!this.store) return;
     const s: Saved = { stamina: this.value, at: this.at, coins: { ...this.coins }, premiumTaken: [...this.premiumTaken], rewards: [...this.rewards], renumbered: RENUMBERED };
-    try { this.store.setItem(KEY, JSON.stringify(s)); } catch { this.canSave = false; }
+    try { this.store.setItem(this.key, JSON.stringify(s)); } catch { this.canSave = false; }
   }
 
   /** 時間がたったぶんを足して、今の体力にそろえる(端数の時間は残す) */

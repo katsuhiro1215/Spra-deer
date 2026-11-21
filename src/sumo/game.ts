@@ -136,13 +136,13 @@ export function startSumo(root: HTMLElement, level: SumoLevel): () => void {
     let newBest = false;
     if (won && !recorded) {
       recorded = true;
-      newBest = progress.clear(level.id, bout.totalTime, true);
+      newBest = progress.clear(level.id, bout.totalTime, true, stars);
       const got = clearRewards(wallet, level.id, { silver: bout.silver, star3: stars === 3 });
       q('r-reward').textContent = `+${got.silver} シルバー` + (got.gold ? `　+${got.gold} ゴールド` : '');
       q('r-reward').classList.remove('lose');
     }
     if (!won && !charged) {
-      charged = true; wallet.fail(); // 負け・引き分け: 体力が2減る(設計書 25-2)
+      charged = true; wallet.fail(); progress.fail(level.id); // 負け・引き分け: 体力が2減る(設計書 25-2)
       q('r-reward').textContent = `体力 −${STAMINA_FAIL}`;
       q('r-reward').classList.add('lose');
     }
@@ -268,7 +268,7 @@ export function startSumo(root: HTMLElement, level: SumoLevel): () => void {
 
   return () => {
     // 勝負の途中でページを離れたら、負けと同じく体力が減る(設計書 25-2)
-    if ((bout.phase === 'playing' || bout.phase === 'countdown') && !charged) { charged = true; wallet.fail(); }
+    if ((bout.phase === 'playing' || bout.phase === 'countdown') && !charged) { charged = true; wallet.fail(); progress.quit(level.id); }
     cancelAnimationFrame(raf);
     window.clearTimeout(feedTimer); window.clearTimeout(resultTimer);
     window.removeEventListener('keydown', kd);

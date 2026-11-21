@@ -268,14 +268,14 @@ export function startBake(root: HTMLElement, base: BakeLevel, relay?: RelayCtx):
     let newBest = false;
     if (cleared && !recorded) {
       recorded = true;
-      newBest = progress.clear(rid, (relay?.carry?.t ?? 0) + run.t);
+      newBest = progress.clear(rid, (relay?.carry?.t ?? 0) + run.t, true, stars);
       const got = clearRewards(wallet, rid, { silver: run.coins, gold: run.gold, star3: stars === 3 });
       const prem = run.premium && wallet.takePremium(rid);
       q('r-reward').textContent = `+${got.silver} シルバー` + (got.gold ? `　+${got.gold} ゴールド` : '') + (prem ? '　+1 プレミアム！' : '');
       q('r-reward').classList.remove('lose');
     }
     if (!cleared && !charged) {
-      charged = true; wallet.fail(); // 失敗: 体力が2減る(設計書 25-2)
+      charged = true; wallet.fail(); progress.fail(rid); // 失敗: 体力が2減る(設計書 25-2)
       q('r-reward').textContent = `体力 −${STAMINA_FAIL}`;
       q('r-reward').classList.add('lose');
     }
@@ -443,7 +443,7 @@ export function startBake(root: HTMLElement, base: BakeLevel, relay?: RelayCtx):
 
   return () => {
     // 遊んでいる途中でページを離れたら、失敗と同じく体力が減る(設計書 25-2)
-    if (run.phase === 'running' && !charged) { charged = true; wallet.fail(); }
+    if (run.phase === 'running' && !charged) { charged = true; wallet.fail(); progress.quit(rid); }
     cancelAnimationFrame(raf);
     window.clearTimeout(toastTimer); window.clearTimeout(resultTimer); window.clearTimeout(poseTimer);
     frameEl.removeEventListener('pointerdown', onDown);

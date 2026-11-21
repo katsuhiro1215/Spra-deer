@@ -199,3 +199,36 @@ span.hs-buy { background: #eee6cf; box-shadow: none; color: #7a7260; }
 .hs-chips { display: flex; flex-wrap: wrap; gap: 1.4cqw; }
 .hs-chip-btn { min-height: 36px; padding: 0 3cqw; border: 2px solid #d8e4c4; border-radius: 99px; background: #fff; font-family: $rounded; font-weight: 900; font-size: max(13px, 3.3cqw); color: #3a4a30;
   &[aria-pressed='true'] { border-color: #3b9a2a; background: #3b9a2a; color: #fff; } }
+
+// アカウント(ログイン・プレイヤー・ランキング。設計書 37章)
+.ac-screen { overflow-y: auto; }
+.ac-card { font-family: $rounded; text-align: left; h2 { text-align: center; } .eyebrow { display: block; text-align: center; } }
+.ac-lead, .ac-help { font-size: max(13px, 3.3cqw); line-height: 1.7; color: #5a6a48; margin: 2cqw 0; }
+.ac-help { font-size: max(12px, 3cqw); a { color: #3b7f26; } }
+.ac-msg { margin: 2cqw 0 0; padding: 2cqw 3cqw; border-radius: 2.4cqw; background: #ffe8e0; color: #a13a1e; font-weight: 800; font-size: max(13px, 3.3cqw); }
+.ac-form { display: flex; flex-direction: column; gap: 2.6cqw; margin-top: 2cqw;
+  label { display: flex; flex-direction: column; gap: 1cqw; font-weight: 800; font-size: max(13px, 3.3cqw); color: #3a4a30; }
+  input:not([type='checkbox']) { min-height: 44px; padding: 0 3cqw; border: 2px solid #d8e4c4; border-radius: 2.4cqw; background: #fff; font: inherit; font-weight: 700; font-size: max(16px, 4cqw); color: #2f3a28; &:focus { outline: none; border-color: #3b9a2a; } }
+  .ac-check { flex-direction: row; align-items: flex-start; gap: 2cqw; font-weight: 700; line-height: 1.6; input { width: 22px; height: 22px; flex-shrink: 0; margin-top: .4cqw; } a { color: #3b7f26; } }
+  .primary { margin-top: 2cqw; }
+  &.ac-row { flex-direction: row; input { flex: 1; min-width: 0; } .primary { width: auto; margin: 0; padding: 0 4cqw; } } }
+.ac-players { display: grid; grid-template-columns: 1fr 1fr; gap: 2.4cqw; margin: 2cqw 0; }
+.ac-player { display: flex; align-items: center; gap: 2.4cqw; min-height: 52px; padding: 2cqw 3cqw; border: 2px solid #e5dcc0; border-radius: 3cqw; background: #fff; font-family: $rounded; font-weight: 900; font-size: max(14px, 3.8cqw); color: #3a4a30; text-align: left;
+  &.on { border-color: #3b9a2a; background: #eef8e6; } }
+.ac-face { display: grid; place-items: center; width: max(32px, 9cqw); height: max(32px, 9cqw); flex-shrink: 0; border-radius: 50%; background: linear-gradient(#ffd36b, #f28a12); color: #fff; font-size: 1.1em; }
+.ac-tabs { display: flex; gap: 2cqw; justify-content: center; margin: 1cqw 0 3cqw; }
+.ac-tab { min-height: 40px; padding: 0 6cqw; border: 2px solid #d8e4c4; border-radius: 99px; background: #fff; font-family: $rounded; font-weight: 900; font-size: max(14px, 3.6cqw); color: #3a4a30; &.on { border-color: #3b9a2a; background: #3b9a2a; color: #fff; } }
+.ac-board { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1.4cqw;
+  li { display: grid; grid-template-columns: max(30px, 8cqw) 1fr auto; align-items: center; gap: 2cqw; min-height: 44px; padding: 1cqw 3cqw; border-radius: 2.4cqw; background: #fff; font-weight: 800; font-size: max(14px, 3.6cqw); color: #3a4a30; font-variant-numeric: tabular-nums;
+    &.me { background: #fff1c8; box-shadow: inset 0 0 0 2px #f2b84b; } }
+  li:nth-child(1) .ac-rank { background: #ffc83a; } li:nth-child(2) .ac-rank { background: #cfd6dc; } li:nth-child(3) .ac-rank { background: #e0a46a; } }
+.ac-rank { display: grid; place-items: center; width: max(28px, 7.4cqw); height: max(28px, 7.4cqw); border-radius: 50%; background: #eef2e6; font-weight: 900; }
+.ac-me { margin: 2cqw 0 0; text-align: center; font-weight: 900; color: #b0701a; }
+.ac-state { text-align: center; font-weight: 800; b { color: #3b9a2a; font-size: 1.2em; } }
+.ac-mail { max-width: 52cqw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .9em; }
+.level-row { display: flex; gap: 1.6cqw; align-items: stretch; .level-card { flex: 1; min-width: 0; } }
+.lv-rank { flex-shrink: 0; width: max(48px, 13cqw); border: 1px solid #fffced; border-radius: 3.5cqw; background: #fff4cf; font-size: max(20px, 5.4cqw); box-shadow: 0 3px 0 #8b9a5b22; }
+.level-card .lv-stats { display: block; margin-top: .6cqw; font-size: max(11px, 2.6cqw); font-weight: 800; color: #b0701a; }
+.level-card.need-login { background: #f6f1e0f0; .lv-best { color: #b0701a; font-weight: 800; } }
+.hs-scene .sc-player { padding: .8cqw 2.8cqw; border: 0; border-radius: 99px; background: #fffdf3e6; box-shadow: 0 .5cqw 0 #00000014; font-family: $rounded; font-weight: 800; font-size: max(12px, 3cqw); color: #4a3a24; b { color: #3b9a2a; } }
+.hs-world .hs-wplays { font-weight: 800; font-size: max(10px, 2.4cqw); opacity: .9; }

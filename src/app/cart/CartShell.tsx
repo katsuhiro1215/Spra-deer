@@ -3,6 +3,7 @@
 import { useEffect, useRef } from 'react';
 import '../run/run.css';
 import './cart.css';
+import { needsLogin } from '../../account/store.ts';
 
 // WORLD 8「鹿と暴走トロッコ」の画面の土台。見た目の共通部分は、3D走り(run.css)と同じものを使う
 export function CartShell() {
@@ -16,6 +17,8 @@ export function CartShell() {
       if (cancelled || !ref.current) return;
       const id = new URLSearchParams(window.location.search).get('level') ?? '8-1';
       const level = levels.cartById(id) ?? levels.CART_LEVELS[0];
+      // ログインが要る面(各ワールドの3面目から)は、ホームのログインへ(設計書 37章)
+      if (needsLogin(level.id)) { location.replace('/#login'); return; }
       stop = game.startCart(ref.current, level);
     });
     return () => {

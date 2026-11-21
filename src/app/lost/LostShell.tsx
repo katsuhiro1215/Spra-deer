@@ -3,6 +3,7 @@
 import { useEffect, useRef } from 'react';
 import '../run/run.css';
 import './lost.css';
+import { needsLogin } from '../../account/store.ts';
 
 // WORLD 7「鹿のまいご探し」の画面の土台。見た目の共通部分は、3D走り(run.css)と同じものを使う
 export function LostShell() {
@@ -15,6 +16,8 @@ export function LostShell() {
     Promise.all([import('../../lost/game.ts'), import('../../lost/levels.ts')]).then(([game, levels]) => {
       if (cancelled || !ref.current) return;
       const id = new URLSearchParams(window.location.search).get('level') ?? '7-1';
+      // ログインが要る面(各ワールドの3面目から)は、ホームのログインへ(設計書 37章)
+      if (needsLogin(id)) { location.replace('/#login'); return; }
       stop = game.startLost(ref.current, levels.lostById(id) ?? levels.LOST_LEVELS[0]);
     });
     return () => {

@@ -210,14 +210,14 @@ export function startToss(root: HTMLElement, level: TossLevel, relay?: RelayCtx)
     let newBest = false;
     if (cleared && !recorded) {
       recorded = true;
-      newBest = progress.clear(rid, (relay?.carry?.t ?? 0) + run.t);
+      newBest = progress.clear(rid, (relay?.carry?.t ?? 0) + run.t, true, stars);
       const got = clearRewards(wallet, rid, { silver: run.coins, gold: run.gold, star3: stars === 3 });
       const prem = run.premium && wallet.takePremium(rid);
       q('r-reward').textContent = `+${got.silver} シルバー` + (got.gold ? `　+${got.gold} ゴールド` : '') + (prem ? '　+1 プレミアム！' : '');
       q('r-reward').classList.remove('lose');
     }
     if (!cleared && !charged) {
-      charged = true; wallet.fail();
+      charged = true; wallet.fail(); progress.fail(rid);
       q('r-reward').textContent = `体力 −${STAMINA_FAIL}`;
       q('r-reward').classList.add('lose');
     }
@@ -408,7 +408,7 @@ export function startToss(root: HTMLElement, level: TossLevel, relay?: RelayCtx)
   (window as unknown as { __bake?: unknown }).__bake = { get run() { return run; }, level, view, audio };
 
   return () => {
-    if (run.phase === 'running' && !charged) { charged = true; wallet.fail(); }
+    if (run.phase === 'running' && !charged) { charged = true; wallet.fail(); progress.quit(rid); }
     cancelAnimationFrame(raf);
     window.clearTimeout(toastTimer); window.clearTimeout(resultTimer); window.clearTimeout(poseTimer);
     frameEl.removeEventListener('pointerdown', onDown);

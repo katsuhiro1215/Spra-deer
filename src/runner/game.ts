@@ -213,7 +213,7 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
     let newBest = false;
     if (cleared && !recorded) {
       recorded = true;
-      newBest = progress.clear(level.id, run.t, !continued); // 途中から続けたときは、タイムを記録しない
+      newBest = progress.clear(level.id, run.t, !continued, stars); // 途中から続けたときは、タイムを記録しない
       // ごほうび(設計書 25-3): 取ったコインはシルバーとして持ち帰り。はじめてのクリア・★3でゴールド
       const got = clearRewards(wallet, level.id, { silver: run.coins, gold: run.gold, star3: stars === 3 });
       // プレミアムは、ゴールまで持ち帰ったときだけ自分のものになる
@@ -224,7 +224,7 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
     if (!cleared && !charged) {
       // 失敗: 体力が2減る(設計書 25-2)
       charged = true;
-      wallet.fail();
+      wallet.fail(); progress.fail(level.id);
       q('r-reward').textContent = `体力 −${STAMINA_FAIL}`;
       q('r-reward').classList.add('lose');
     }
@@ -573,7 +573,7 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
     // 走っている途中でページを離れたら、失敗と同じく体力が減る(設計書 25-2)
     if (run.phase === 'running' && !charged) {
       charged = true;
-      wallet.fail();
+      wallet.fail(); progress.quit(level.id);
     }
     cancelAnimationFrame(raf);
     window.clearTimeout(toastTimer);

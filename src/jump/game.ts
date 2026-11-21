@@ -147,14 +147,14 @@ export function startJump(root: HTMLElement, level: JumpLevel): () => void {
     let newBest = false;
     if (cleared && !recorded) {
       recorded = true;
-      newBest = progress.clear(level.id, run.t, true);
+      newBest = progress.clear(level.id, run.t, true, stars);
       const got = clearRewards(wallet, level.id, { silver: run.silver, gold: run.gold, star3: stars === 3 });
       const prem = run.premium && wallet.takePremium(level.id);
       q('r-reward').textContent = `+${got.silver} シルバー` + (got.gold ? `　+${got.gold} ゴールド` : '') + (prem ? '　+1 プレミアム！' : '');
       q('r-reward').classList.remove('lose');
     }
     if (!cleared && !charged) {
-      charged = true; wallet.fail(); // 失敗: 体力が2減る(設計書 25-2)
+      charged = true; wallet.fail(); progress.fail(level.id); // 失敗: 体力が2減る(設計書 25-2)
       q('r-reward').textContent = `体力 −${STAMINA_FAIL}`;
       q('r-reward').classList.add('lose');
     }
@@ -498,7 +498,7 @@ export function startJump(root: HTMLElement, level: JumpLevel): () => void {
   (window as unknown as { __jump?: unknown }).__jump = { get run() { return run; }, input, level };
 
   return () => {
-    if (run.phase === 'running' && !charged) { charged = true; wallet.fail(); }
+    if (run.phase === 'running' && !charged) { charged = true; wallet.fail(); progress.quit(level.id); }
     cancelAnimationFrame(raf);
     window.clearTimeout(toastTimer); window.clearTimeout(resultTimer);
     ro.disconnect();

@@ -5,6 +5,8 @@ import type { Progress } from './progress.ts';
 import { POTION, STAMINA_MAX, STAMINA_FAIL, waitText, type Wallet } from './wallet.ts';
 import pkg from '../package.json';
 import { SEASONS, currentSeason, type SeasonPick } from './season.ts';
+import { statsLine } from './account/screens.ts';
+import type { Stats } from './account/api.ts';
 
 export const APP_VERSION = `v${pkg.version}`;
 
@@ -72,7 +74,7 @@ export function titleHTML(): string {
 export const STORY_VISIBLE = false;
 
 /** ホーム: Spra と鹿が 画面いっぱい。季節で 背景と ひとことが かわる(着せ替え)。「あそぶ」で ワールドえらびへ */
-export function homeHTML(p: Progress, w: Wallet, now = new Date()): string {
+export function homeHTML(p: Progress, w: Wallet, now = new Date(), player: string | null = null): string {
   const se = currentSeason(now);
   const line = se.lines[Math.floor(now.getTime() / 60000) % se.lines.length];
   const total = WORLDS.reduce((n, wd) => n + (wd.stage ? playable(wd.stage).length : 0), 0);
@@ -87,14 +89,14 @@ export function homeHTML(p: Progress, w: Wallet, now = new Date()): string {
     <div class="sc-fall ${se.fall}" aria-hidden="true">${fall}</div>
     <div class="sc-cast"><img class="sc-stag" src="/assets/hero/stag.png" alt="雄鹿"><img class="sc-spra" src="${se.spra ?? '/assets/hero/spru.png'}" alt="Spra"><img class="sc-fawn" src="/assets/hero/fawn.png" alt="子鹿"></div>
     <p class="sc-speech"><b>Spra</b>${line}</p>
-    <div class="sc-side"><span class="sc-season">${se.label}</span><span class="sc-count">クリア<b>${cleared}</b>/ ${total}</span>${story}</div>
+    <div class="sc-side"><span class="sc-season">${se.label}</span><span class="sc-count">クリア<b>${cleared}</b>/ ${total}</span>${player ? `<button class="sc-player" data-action="profiles">あそぶ人: <b>${player.replace(/[<>&"]/g, '')}</b></button>` : ''}${story}</div>
     <button class="sc-play" data-action="worlds"><small>WORLD 1〜8</small>あそぶ</button>
   </div>`;
   return shell(w, 'home', scene, 'home-main');
 }
 
 /** ワールドえらび: ワールド1〜8のカード */
-export function worldsHTML(p: Progress, w: Wallet): string {
+export function worldsHTML(p: Progress, w: Wallet, stats: Stats | null = null): string {
   const cards = WORLDS.map(wd => {
     const slots = wd.stage ? playable(wd.stage) : [];
     if (!slots.length) {
@@ -103,21 +105,29 @@ export function worldsHTML(p: Progress, w: Wallet): string {
     const needs = p.stageOpenNeeds(wd.stage!);
     const cleared = p.clearedCount(wd.stage!);
     const state = needs > 0 ? `🔒 前のワールドを あと${needs}面` : `${cleared} / ${slots.length} クリア`;
-    return `<button class="hs-world${needs > 0 ? ' locked' : ''}${cleared === slots.length ? ' done' : ''}" style="--wc:${wd.color}" data-action="world" data-stage="${wd.stage}"${needs > 0 ? ' aria-disabled="true"' : ''}><span class="hs-wno">WORLD ${wd.no}</span><b>${wd.name}</b><small>${wd.play}</small><span class="hs-wstate">${state}</span></button>`;
+    // みんなに 遊ばれた回数(このワールドの全部の面。設計書 37章)
+    const plays = stats?.levels.filter(l => l.level.startsWith(`${wd.stage}-`)).reduce((n, l) => n + l.plays, 0) ?? 0;
+    const played = plays ? `<span class="hs-wplays">みんなで ${plays.toLocaleString()}回</span>` : '';
+    return `<button class="hs-world${needs > 0 ? ' locked' : ''}${cleared === slots.length ? ' done' : ''}" style="--wc:${wd.color}" data-action="world" data-stage="${wd.stage}"${needs > 0 ? ' aria-disabled="true"' : ''}><span class="hs-wno">WORLD ${wd.no}</span><b>${wd.name}</b><small>${wd.play}</small><span class="hs-wstate">${state}</span>${played}</button>`;
   }).join('');
   return shell(w, 'worlds', `<h2 class="hs-title">ワールドを えらぶ</h2><div class="hs-worlds">${cards}</div>`);
 }
 
 /** ワールドの面えらび */
-export function worldHTML(stage: number, p: Progress, w: Wallet): string {
+/** 面えらびに足すもの(設計書 37章): ログインが要る面・遊ばれた数・ランキングのボタン */
+export type WorldExtras = { needsLogin?: (id: string) => boolean; stats?: Stats | null; ranking?: boolean };
+
+export function worldHTML(stage: number, p: Progress, w: Wallet, ex: WorldExtras = {}): string {
   const wd = WORLDS.find(x => x.stage === stage);
   const group = stageOf(stage);
   const slots = group?.slots ?? [];
   const cards = slots.map(slot => {
     if (!slot.level && !slot.runnerId) return `<div class="level-card soon"><b>${slot.id}</b><span class="lv-name">${slot.title}<small>準備中</small></span></div>`;
-    const record = p.get(slot.id), open = p.isUnlocked(slot.id);
-    const status = !open ? 'ロック中' : record.best !== null ? `ベスト ${record.best.toFixed(1)}秒` : '未クリア';
-    return `<button class="level-card${record.clears ? ' done' : ''}" data-action="${slot.runnerId ? 'run' : 'start'}" data-level="${slot.id}"${open ? '' : ' disabled'}><b>${slot.id}</b><span class="lv-name">${slot.title}<small>${slot.summary}</small></span><span class="lv-best">${status}</span></button>`;
+    const record = p.get(slot.id), open = p.isUnlocked(slot.id), login = open && !!ex.needsLogin?.(slot.id);
+    const status = !open ? 'ロック中' : login ? '🔑 ログインで あそべる' : record.best !== null ? `ベスト ${record.best.toFixed(1)}秒` : '未クリア';
+    const action = login ? 'need-login' : slot.runnerId ? 'run' : 'start';
+    const card = `<button class="level-card${record.clears ? ' done' : ''}${login ? ' need-login' : ''}" data-action="${action}" data-level="${slot.id}"${open ? '' : ' disabled'}><b>${slot.id}</b><span class="lv-name">${slot.title}<small>${slot.summary}</small>${statsLine(ex.stats ?? null, slot.id)}</span><span class="lv-best">${status}</span></button>`;
+    return ex.ranking ? `<div class="level-row">${card}<button class="lv-rank" data-action="ranking" data-level="${slot.id}" aria-label="${slot.id} の ランキング">🏆</button></div>` : card;
   }).join('');
   const total = playable(stage).length;
   return shell(w, 'worlds', `<div class="hs-world-head" style="--wc:${wd?.color ?? '#5db443'}"><button class="secondary" data-action="worlds">← ワールド</button><div><span class="hs-wno">WORLD ${wd?.no ?? stage}</span><h2>${wd?.name ?? group?.title ?? ''}</h2></div><span class="count">${p.clearedCount(stage)} / ${total}</span></div><div class="levels">${cards}</div>`, 'world-screen');
@@ -145,7 +155,7 @@ export function friendsHTML(w: Wallet): string {
   return shell(w, 'friends', `<h2 class="hs-title">なかま</h2><div class="hs-friends"><img src="/assets/hero/spru.png" alt="Spra"><img src="/assets/hero/fawn.png" alt="子鹿"></div><p class="hs-note">いまの なかま: Spra・子鹿</p><p class="hs-help">衣装の鹿や、Lumi・Ruru は、アイテムで手に入るようになります(準備中)。</p>`);
 }
 
-export function settingsHTML(w: Wallet, soundOn: boolean, season: SeasonPick = 'auto'): string {
+export function settingsHTML(w: Wallet, soundOn: boolean, season: SeasonPick = 'auto', accountRows = '', signedIn = false): string {
   const seasons = (['auto', 'spring', 'summer', 'autumn', 'winter'] as const).map(k => `<button class="hs-chip-btn" data-action="season" data-season="${k}" aria-pressed="${k === season}">${k === 'auto' ? '自動' : SEASONS[k].label}</button>`).join('');
-  return shell(w, 'settings', `<h2 class="hs-title">せってい</h2><div class="hs-settings"><button class="hs-row" data-action="sound" aria-pressed="${soundOn}"><span>音(BGM・効果音)</span><b>${soundOn ? 'ON' : 'OFF'}</b></button><div class="hs-row hs-season-row"><span>ホームの 季節</span><div class="hs-chips">${seasons}</div></div><a class="hs-row" href="/terms/"><span>利用規約</span><b>›</b></a><a class="hs-row" href="/privacy/"><span>プライバシーポリシー</span><b>›</b></a><div class="hs-row"><span>バージョン</span><b>${APP_VERSION}</b></div></div><p class="hs-help">記録・体力・コインは、このブラウザに保存されます。${w.canSave ? '' : '(この環境では保存できません)'}</p>`);
+  return shell(w, 'settings', `<h2 class="hs-title">せってい</h2><div class="hs-settings"><button class="hs-row" data-action="sound" aria-pressed="${soundOn}"><span>音(BGM・効果音)</span><b>${soundOn ? 'ON' : 'OFF'}</b></button><div class="hs-row hs-season-row"><span>ホームの 季節</span><div class="hs-chips">${seasons}</div></div>${accountRows}<a class="hs-row" href="/terms/"><span>利用規約</span><b>›</b></a><a class="hs-row" href="/privacy/"><span>プライバシーポリシー</span><b>›</b></a><div class="hs-row"><span>バージョン</span><b>${APP_VERSION}</b></div></div><p class="hs-help">${signedIn ? '記録・体力・コインは、あそぶ人ごとに このブラウザに保存されます。クリアの記録(タイム・★)は Spra Go にも あずけるので、ほかの 端末でも 引きつげます。' : '記録・体力・コインは、このブラウザに保存されます。'}${w.canSave ? '' : '(この環境では保存できません)'}</p>`);
 }

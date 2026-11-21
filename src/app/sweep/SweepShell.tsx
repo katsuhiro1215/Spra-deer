@@ -3,6 +3,7 @@
 import { useEffect, useRef } from 'react';
 import '../run/run.css';
 import './sweep.css';
+import { needsLogin } from '../../account/store.ts';
 
 // WORLD 3「奈良公園、大掃除！」の画面の土台。見た目の共通部分は、3D走り(run.css)と同じものを使う
 export function SweepShell() {
@@ -15,6 +16,8 @@ export function SweepShell() {
     Promise.all([import('../../sweep/game.ts'), import('../../sweep/levels.ts')]).then(([game, levels]) => {
       if (cancelled || !ref.current) return;
       const id = new URLSearchParams(window.location.search).get('level') ?? '3-1';
+      // ログインが要る面(各ワールドの3面目から)は、ホームのログインへ(設計書 37章)
+      if (needsLogin(id)) { location.replace('/#login'); return; }
       stop = game.startSweep(ref.current, levels.sweepById(id) ?? levels.SWEEP_LEVELS[0]);
     });
     return () => {
