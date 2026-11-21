@@ -89,6 +89,8 @@ test('仲間の鹿: プレミアムコインで仲間にして、そのまま相
   assert.equal(unlockedBy('4-11')?.id, 'spra');
   assert.equal(unlockedBy('8-12')?.id, 'lumi');
   assert.equal(unlockedBy('4-1'), undefined);
+  assert.deepEqual(FRIENDS.map(f => f.unlocks.join('/')), ['4-11/8-11', '4-12/8-12', '4-13/8-13', '4-14/8-14', '4-15/8-15', '4-16/8-16'], '6体 × 2つの専用面');
+  assert.equal(unlockedBy('8-16')?.id, 'ruru');
   assert.equal(again.levelUnlocked('8-12'), true);
   assert.equal(again.levelUnlocked('4-11'), false);
   assert.equal(again.levelUnlocked('4-1'), true);

@@ -18,13 +18,14 @@ export type Friend = {
   unlocks: string[];
 };
 
+// 持つと開く専用の面(Owner決定 2026-11-22): 走る面(WORLD 4)=4-1x、トロッコ(WORLD 8)=8-1x。面は これから作る
 export const FRIENDS: Friend[] = [
   { id: 'spra', name: 'Spraの鹿', color: '緑', premium: 15, unlocks: ['4-11', '8-11'] },
   { id: 'lumi', name: 'Lumiの鹿', color: '黄色', premium: 15, unlocks: ['4-12', '8-12'] },
-  { id: 'piko', name: 'Pikoの鹿', color: 'オレンジ', premium: 20, unlocks: [] },
-  { id: 'momo', name: 'Momoの鹿', color: 'ピンク', premium: 20, unlocks: [] },
-  { id: 'ruru', name: 'Ruruの鹿', color: '水色', premium: 20, unlocks: [] },
-  { id: 'kuru', name: 'Kuruの鹿', color: '茶色', premium: 20, unlocks: [] },
+  { id: 'momo', name: 'Momoの鹿', color: 'ピンク', premium: 20, unlocks: ['4-13', '8-13'] },
+  { id: 'kuru', name: 'Kuruの鹿', color: '茶色', premium: 20, unlocks: ['4-14', '8-14'] },
+  { id: 'piko', name: 'Pikoの鹿', color: 'オレンジ', premium: 20, unlocks: ['4-15', '8-15'] },
+  { id: 'ruru', name: 'Ruruの鹿', color: '水色', premium: 20, unlocks: ['4-16', '8-16'] },
 ];
 
 export const friendOf = (id: string | null | undefined): Friend | undefined => FRIENDS.find(f => f.id === id);
