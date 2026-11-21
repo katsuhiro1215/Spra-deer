@@ -7,8 +7,8 @@ import { LOST_LEVELS, type LostLevel } from './levels.ts';
 import { LBAL, LostRun, type Fawn, type LInput, type LostEvent, type Senbei, type Stag } from './sim.ts';
 
 const STEP = 1 / 120;
-/** BGM は、専用の曲ができるまで 2Dの面の曲を仮に使う */
-const LOST_BGM = { url: '/assets/audio/play.mp3', loopStart: 0, loopEnd: 1e4, volume: 0.24 };
+/** BGM: Spra Deer Lost Child(DEER-13)。108秒をくり返す */
+const LOST_BGM = { url: '/assets/audio/lost.mp3', loopStart: 22.59, loopEnd: 130.89, volume: 0.36 };
 const A = '/assets';
 /** 画面の横に 見えるマスの数 */
 const VIEW_COLS = 9;

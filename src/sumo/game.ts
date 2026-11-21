@@ -7,8 +7,8 @@ import { Bout, RULES, type BoutEvent } from './sim.ts';
 import { SumoView } from './view.ts';
 
 const STEP = 1 / 60;
-/** BGM は、専用の曲ができるまで 2Dの面の曲を仮に使う */
-const SUMO_BGM = { url: '/assets/audio/play.mp3', loopStart: 0, loopEnd: 1e4, volume: 0.28 };
+/** BGM: Spra Deer Sumo(DEER-12)。43.27秒をくり返す(設計書 33章・BGM は bgm-prompts.md) */
+const SUMO_BGM = { url: '/assets/audio/sumo.mp3', loopStart: 38.16, loopEnd: 81.43, volume: 0.4 };
 
 const TIPS = {
   tired: '連打すると 息切れ。緑のときに 1回ずつ 押そう',

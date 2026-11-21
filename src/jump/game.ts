@@ -6,8 +6,8 @@ import { JUMP_LEVELS, type JumpLevel, type JumpScene } from './levels.ts';
 import { JBAL, JumpRun, type JInput, type JumpEvent, type Pad } from './sim.ts';
 
 const STEP = 1 / 120;
-/** BGM は、専用の曲ができるまで 2Dの面の曲を仮に使う */
-const JUMP_BGM = { url: '/assets/audio/play.mp3', loopStart: 0, loopEnd: 1e4, volume: 0.3 };
+/** BGM: Spra Deer Jump(DEER-11)。68秒をくり返す */
+const JUMP_BGM = { url: '/assets/audio/jump.mp3', loopStart: 28.09, loopEnd: 96.11, volume: 0.36 };
 const A = '/assets';
 
 /** 鹿の絵: 絵の高さ(m)と、足場(背中・頭)が 絵の下から どれだけ上か(m) */
