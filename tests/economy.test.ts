@@ -102,7 +102,7 @@ test('回復薬: シルバー300枚で体力+10。足りない・満タンなら
   assert.equal(w.coins.silver, 0);
 });
 
-test('面のひらき方: ワールドの中は順番、次のワールドは前のワールドを3面クリアで開く', () => {
+test('面のひらき方: ワールドの中は順番。どのワールドの最初の面も、最初から開いている', () => {
   const p = new Progress();
   p.unlockAll = false;
   const stages = [...new Set(ALL_PLAYABLE_SLOTS.map(l => l.stage))];
@@ -110,17 +110,14 @@ test('面のひらき方: ワールドの中は順番、次のワールドは前
   const w2 = ALL_PLAYABLE_SLOTS.filter(l => l.stage === stages[1]);
   assert.equal(p.isUnlocked(w1[0].id), true);
   assert.equal(p.isUnlocked(w1[1].id), false, '1-2 は 1-1 のクリアまで閉じている');
-  assert.equal(p.isUnlocked(w2[0].id), false);
-  assert.equal(p.stageOpenNeeds(stages[1]), 3);
+  for (const st of stages) assert.equal(p.isUnlocked(ALL_PLAYABLE_SLOTS.find(l => l.stage === st)!.id), true, `${st} の最初の面は、最初から開いている`);
+  assert.equal(p.stageOpenNeeds(stages[1]), 0);
   p.clear(w1[0].id, 10);
   assert.equal(p.isUnlocked(w1[1].id), true);
   assert.equal(p.isUnlocked(w1[2].id), false);
   p.clear(w1[1].id, 10);
-  assert.equal(p.stageOpenNeeds(stages[1]), 1);
-  assert.equal(p.isUnlocked(w2[0].id), false);
   p.clear(w1[2].id, 10);
-  assert.equal(p.stageOpenNeeds(stages[1]), 0);
-  assert.equal(p.isUnlocked(w2[0].id), true, '1-1〜1-3 で、次のワールドが開く');
+  assert.equal(p.isUnlocked(w2[0].id), true);
   // WORLD 2 は作っている途中で、面が1つのこともある(2026-11-19)
   if (w2[1]) assert.equal(p.isUnlocked(w2[1].id), false, '次のワールドの中も順番');
   assert.equal(p.isUnlocked(w1[3].id), true, '1-4 は 1-3 のクリアで開く');
