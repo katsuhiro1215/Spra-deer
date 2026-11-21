@@ -14,6 +14,24 @@ const RAIL = 0.62; // レールの、まん中からの距離
 const RAIL_TOP = 0.16; // 線路の基準の高さから、レールの上面まで
 const DEER_AHEAD = 3.6; // 鹿は、トロッコのこれだけ前を走る
 const SKY_TOP = 0x3f86d8, SKY_HORIZON = 0xd9e8f1;
+/**
+ * 風景の色。ふつうの面は DEFAULT_THEME。追いかけっこの面は、前のトロッコに乗っている仲間の鹿の色
+ * (Spra=緑の若葉・Lumi=黄色の いちょう・Momo=さくら・Kuru=茶色の くり・Piko=オレンジの もみじ・Ruru=水色の雪)。
+ * grass/grass2=草と、まだらに混ぜる色。greens=杉の色。maples=広葉樹の色。mapleTh=広葉樹の多さ(小さいほど多い)。snow=雪の色
+ */
+type Theme = { grass: number; grass2: number; greens: number[]; maples: number[]; mapleTh: number; snow: number };
+const DEFAULT_THEME: Theme = {
+  grass: 0x5f8f3e, grass2: 0x9a8a45, greens: [0x2f6a3a, 0x3a7a42, 0x27603a, 0x44803f],
+  maples: [0xd4472a, 0xe8822b, 0xf0bd35, 0xc9552a, 0x86ac48, 0xe2a02e], mapleTh: 0.1, snow: 0xeef3f7,
+};
+const THEMES: Record<string, Partial<Theme>> = {
+  spra: { grass: 0x5f9a3e, grass2: 0x8fb24a, maples: [0x7fb048, 0x96c056, 0x6a9e3e, 0xa8c860, 0x5c9440], mapleTh: 0.2 },
+  lumi: { grass: 0x86983a, grass2: 0xd0b040, greens: [0x4f7a2e, 0x5f8a34, 0x47702a, 0x6a9038], maples: [0xf2c230, 0xf7d64a, 0xe8b020, 0xffe066, 0xf0c840], mapleTh: 0.55 },
+  momo: { grass: 0x6a9e4a, grass2: 0xd6a8b6, maples: [0xf4a6c0, 0xf7bfd2, 0xe98fb0, 0xffd1df, 0xf0b0c8], mapleTh: 0.6 },
+  kuru: { grass: 0x7a7c42, grass2: 0x9c7448, greens: [0x44562a, 0x52642e, 0x3c4c26, 0x5a6a34], maples: [0x9a6a3a, 0xb07a40, 0x7a5530, 0xc08a4a, 0x8a6034], mapleTh: 0.45 },
+  piko: { grass: 0x7a8a3c, grass2: 0xc07a3a, maples: [0xe8822b, 0xf09a30, 0xd4472a, 0xff8a3a, 0xe86a28], mapleTh: 0.55 },
+  ruru: { snow: 0xd8ecf8, greens: [0x3a6a70, 0x2f6068, 0x447a80, 0x386c74] },
+};
 // 夕焼け(区間の dusk が 1 のときの色)
 const DUSK_TOP = 0x2f3a7a, DUSK_HORIZON = 0xffa35c, DUSK_FOG = 0xeaa27c, DUSK_SUN = 0xff9a50, DUSK_HEMI = 0xffb48c, DUSK_FAR = 0x7a5684, DUSK_CLOUD = 0xffb08a;
 
@@ -320,13 +338,13 @@ export class CartView {
     geo.computeVertexNormals();
     // 色: 平らな所は草と落ち葉、急な所は岩、線路ぎわは土
     const nrm = geo.getAttribute('normal'), grass = new THREE.Color(), rock = new THREE.Color(0x8b8478), dirt = new THREE.Color(0x8a7a5e), c1 = new THREE.Color();
-    const snowCol = new THREE.Color(0xf4f7fb);
+    const TH = this.theme, snowCol = new THREE.Color(TH.snow === DEFAULT_THEME.snow ? 0xf4f7fb : TH.snow);
     for (let r = 0; r < rows; r++) {
       const s = s0 + r * step;
       for (let c = 0; c < cols; c++) {
         const i = r * cols + c, u = us[c], ny = nrm.getY(i);
         const patch = 0.5 + 0.5 * Math.sin(s * 0.07 + u * 0.19) * Math.sin(s * 0.023 - u * 0.11);
-        grass.setHex(0x5f8f3e).lerp(c1.setHex(0x9a8a45), patch * 0.55); // 草〜落ち葉
+        grass.setHex(TH.grass).lerp(c1.setHex(TH.grass2), patch * 0.55); // 草〜落ち葉
         c1.copy(grass).lerp(rock, smooth01((0.86 - ny) / 0.2));
         if (Math.abs(u) < 3.7) c1.lerp(dirt, Math.abs(u) < 2.4 ? 1 : 0.6);
         // 雪: 平らな所ほど白く(急な岩かべには積もりにくい)。線路ぎわは、うっすら
@@ -767,8 +785,8 @@ export class CartView {
     const rockMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, flatShading: true });
 
     const cedars: Item[] = [], maples: Item[] = [], cedarsFar: Item[] = [], maplesFar: Item[] = [], rocks: Item[] = [], stones: Item[] = [];
-    const greens = [0x2f6a3a, 0x3a7a42, 0x27603a, 0x44803f], autumn = [0xd4472a, 0xe8822b, 0xf0bd35, 0xc9552a, 0x86ac48, 0xe2a02e];
-    const snowTint = new THREE.Color(0xeef3f7);
+    const TH = this.theme, greens = TH.greens, autumn = TH.maples;
+    const snowTint = new THREE.Color(TH.snow);
     const p = new THREE.Vector3(), e = new THREE.Euler(), q = new THREE.Quaternion(), sc = new THREE.Vector3();
     const put = (list: Item[], s: number, u: number, scale: number, color: number, sink = 0.15, squash = 1) => {
       this.ground(s, u, p);
@@ -801,7 +819,7 @@ export class CartView {
           const kind = Math.sin(s * 0.021 + side * 2) + (rnd() - 0.5) * 1.6;
           const near = Math.abs(u) < 24;
           if (sn > 0.4) put(near ? cedars : cedarsFar, s + rnd() * 2, u, 0.7 + rnd() * 0.7, new THREE.Color(greens[Math.floor(rnd() * greens.length)]).lerp(snowTint, 0.35 + sn * 0.3).getHex());
-          else if (kind > 0.1) put(near ? cedars : cedarsFar, s + rnd() * 2, u, 0.85 + rnd() * 0.75, greens[Math.floor(rnd() * greens.length)]);
+          else if (kind > TH.mapleTh) put(near ? cedars : cedarsFar, s + rnd() * 2, u, 0.85 + rnd() * 0.75, greens[Math.floor(rnd() * greens.length)]);
           else put(near ? maples : maplesFar, s + rnd() * 2, u, 0.9 + rnd() * 0.8, autumn[Math.floor(rnd() * autumn.length)]);
         }
         if (rnd() < 0.05 && T.depth < 1 && !wall) put(rocks, s, side * (4 + rnd() * 10), 0.6 + rnd() * 1.1, 0x8d877b, 0.4, 0.75);
@@ -1254,12 +1272,18 @@ export class CartView {
     lead.position.copy(f.o).addScaledVector(f.r, lx);
     this.m1.makeBasis(f.r, f.u, this.v1.copy(f.t).negate());
     lead.quaternion.setFromRotationMatrix(this.m1);
+    // 線路の切れ目(谷のふち以外)は、山なりに とびこえる
+    const g = run.coupled ? undefined : tr.gaps.find(x => x.from !== tr.pursuit!.cliff && run.deerS > x.from - 3 && run.deerS < x.to + 3);
+    if (g) { const k = (run.deerS - (g.from - 3)) / (g.to - g.from + 6); lead.position.addScaledVector(f.u, 4 * 1.8 * k * (1 - k) * Math.min(1.6, (g.to - g.from) / 10)); }
     if (run.reason === 'lost') { const k = this.failT; lead.position.y -= 8 * k * k; lead.rotateX(-Math.min(1.2, k * 1.6)); }
     const vv = run.coupled ? run.v : run.deerV;
     for (const w of this.leadWheels) w.rotation.x -= (vv * dt) / 0.27;
     if (this.leadRider) this.leadRider.position.y = RAIL_TOP + 1.5 + Math.abs(Math.sin(this.time * 9)) * 0.05 * Math.min(1, vv / 20);
     if (this.leadBell) this.leadBell.rotation.z = Math.sin(this.time * 14) * 0.5;
   }
+
+  /** この面の 風景の色 */
+  private get theme(): Theme { return { ...DEFAULT_THEME, ...(THEMES[this.track.pursuit?.friend ?? ''] ?? {}) }; }
 
   private resize(): void {
     const w = this.host.clientWidth || 360, h = this.host.clientHeight || 640;

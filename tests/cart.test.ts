@@ -607,7 +607,11 @@ for (const lv of PURSUIT_LEVELS) {
     assert.equal(pursuitStars(hitchS, pu.cliff), 3, `追いついた所 ${hitchS.toFixed(0)}/${pu.cliff}`);
     console.log(`${lv.id} ボット: ${hitchS.toFixed(0)}m で連結(${(hitchS / pu.cliff * 100).toFixed(0)}%)・${r.s.toFixed(0)}m で停止・${r.hitchT.toFixed(1)}秒`);
     assert.equal(driveLevel(lv, { pump: false }).reason, 'lost', 'こがないと 間に合わない');
-    assert.equal(driveLevel(lv, { wrongForks: 'all' }).reason, 'lost', '分かれ道を 全部まちがえると 間に合わない');
+    // 全部まちがえると、間に合わない(雪の 8-16 は、追いついても 止まりきれずに 谷へ)
+    const all = driveLevel(lv, { wrongForks: 'all' });
+    assert.equal(all.phase, 'failed'); assert.ok(all.reason === 'lost' || all.reason === 'cliff', all.reason);
+    // 線路の切れ目(谷のふち以外)は、上手な人が連結するより前だけ(連結してブレーキをかけたあとに 切れ目が来ると、とびこせない)
+    for (const g of lv.track.gaps) if (g.from !== pu.cliff) assert.ok(g.to < hitchS - 50, `切れ目 ${g.from} が 連結 ${hitchS.toFixed(0)} に近い`);
     assert.equal(driveLevel(lv, { wrongForks: [0] }).phase, 'cleared', '1つまちがえても、ほかが上手なら 間に合う');
   });
   test(`${lv.id}: 面のデータ(プレミアム1枚・分かれ道は まっすぐで 切れ目・障害物・コインと重ならない・谷のふちは切れ目)`, () => {
