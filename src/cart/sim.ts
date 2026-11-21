@@ -1,11 +1,13 @@
 // WORLD 8「鹿と暴走トロッコ」: 走りのルール(描画なし。テストからも使う)
 // 鹿とトロッコは、ひとつの走るかたまりとして扱う(位置・速さ・ジャンプは共通)。
-import type { Chase, Track } from './track.ts';
+import { FORK_W, forkShape, type Chase, type Fork, type Track } from './track.ts';
 
 export type Input = { left: boolean; right: boolean; jump: boolean; brake: boolean; dash: boolean };
-export type CartEventKind = 'coin' | 'gold' | 'premium' | 'jump' | 'lift' | 'ramp' | 'land' | 'hit' | 'drop' | 'derail' | 'dash' | 'tilt' | 'senbei' | 'chase' | 'chaseEnd' | 'caught' | 'clear' | 'fail';
+export type CartEventKind = 'coin' | 'gold' | 'premium' | 'jump' | 'lift' | 'ramp' | 'land' | 'hit' | 'drop' | 'derail' | 'dash' | 'tilt' | 'senbei' | 'chase' | 'chaseEnd' | 'caught' | 'clear' | 'fail'
+  // 追いかけっこ: 分かれ道に入った(正しい・まちがい)、連結した、鹿のトロッコが谷へ
+  | 'forkRight' | 'forkWrong' | 'hitch' | 'deerLost';
 export type CartEvent = { kind: CartEventKind; id?: number };
-export type FailReason = '' | 'fall' | 'derail' | 'miss' | 'broken' | 'caught';
+export type FailReason = '' | 'fall' | 'derail' | 'miss' | 'broken' | 'caught' | 'cliff' | 'lost';
 /** 追ってきている大岩・なだれ(s は線路の上の位置) */
 export type Chaser = { s: number; v: number; to: number; kind: Chase['kind'] };
 
@@ -33,7 +35,17 @@ export const BAL = {
   airSteer: 3.5, airSteerFree: 0.5, // 空中で体を傾けると、横へ動ける速さ(m/s)。ずれた線路へ向かう側だけ大きく動け、ほかは 0.5m まで
   senbeiDash: 1.6, senbeiReach: 1.8, // 鹿せんべい: 食べると、この秒数だけ全力で走る(ダッシュの待ち時間も0に)。この高さまでなら、跳んでいても食べられる
   catchDist: 4, // 大岩・なだれが、これより近づくと追いつかれる(m)
+  // 追いかけっこ(8-11〜): 連結する近さ(m)、連結したあとのブレーキのきき(2台ぶん重い)、
+  // まちがった分かれ道(古いレール)での最高速の割合、分かれ道で「選んだ」と見なす体の傾き、止まったと見なす速さ、
+  // 鹿のトロッコがカーブで落とす速さ(横向きの力が latBase のこの割合まで)
+  couple: 3, coupledBrake: 0.7, wrongCap: 0.7, forkLean: 0.3, stopV: 0.6, deerCurve: 0.85, hitchGap: 2.6,
 } as const;
+
+/** 追いかけっこの ★: 谷のふちまでの道のりの、どこで追いついたか(早いほど多い) */
+export function pursuitStars(hitchS: number, cliff: number): 1 | 2 | 3 {
+  const k = hitchS / cliff;
+  return k <= 0.7 ? 3 : k <= 0.85 ? 2 : 1;
+}
 
 /** ジャンプ台から平らな所へ飛んだときの、とぶ距離(boost=台の上でジャンプした) */
 export const rampReach = (v: number, boost: boolean): number => (v * 2 * (BAL.rampV + (boost ? BAL.rampBoost : 0))) / BAL.airG;
@@ -78,6 +90,16 @@ export class CartRun {
   private rampT = 99; private rampBoosted = false; private liftJump = false;
   /** この面の、ふつうの最高速と、ダッシュ中の最高速 */
   vMax: number; vDash: number;
+  // ---- 追いかけっこ(track.pursuit がある面だけ) ----
+  /** 前を走る、鹿の乗ったトロッコの位置・速さ */
+  deerS = 0; deerV = 0;
+  /** 連結したか、連結した時刻(この時間が ★ と記録になる) */
+  coupled = false; hitchT = 0;
+  /** 今いる分かれ道で、入った側(-1 左・1 右。分かれ道でなければ 0)と、まちがった側か */
+  lane: -1 | 0 | 1 = 0; wrong = false;
+  private fork: Fork | null = null;
+  /** 分かれ道での、まん中からの横ずれ(m)。画面は、この分だけ横にずらして描く */
+  laneX = 0;
   private events: CartEvent[] = [];
   private jumpHeld = false; private dashHeld = false; private jumpBuf = 0;
   private edgeT = 0; private doomed = false; private warned = false;
@@ -89,8 +111,11 @@ export class CartRun {
     this.track = track;
     this.vMax = track.vMax ?? BAL.vMax;
     this.vDash = this.vMax + (BAL.vDash - BAL.vMax);
+    if (track.pursuit) { this.deerS = track.pursuit.lead; this.deerV = track.pursuit.deerStart ?? 20; }
     this.place();
   }
+  /** 前のトロッコまでの距離(m)。連結したら 0 */
+  get gapToDeer(): number { return this.track.pursuit && !this.coupled ? Math.max(0, this.deerS - this.s) : 0; }
   start(): void { if (this.phase === 'ready') this.phase = 'running'; }
   get progress(): number { return Math.max(0, Math.min(1, this.s / this.track.length)); }
   drainEvents(): CartEvent[] { const e = this.events; this.events = []; return e; }
@@ -110,7 +135,7 @@ export class CartRun {
 
   private place(): void {
     const p = this.track.at(this.s);
-    this.px = p.x; this.py = p.y; this.pz = p.z; this.height = 0; this.side = 0;
+    this.px = p.x + Math.cos(p.heading) * this.laneX; this.py = p.y; this.pz = p.z + Math.sin(p.heading) * this.laneX; this.height = 0; this.side = 0;
   }
   private fail(reason: FailReason, kind: CartEventKind): void {
     this.phase = 'failed'; this.reason = reason; this.braking = false;
@@ -145,7 +170,7 @@ export class CartRun {
     this.safeT = Math.max(0, this.safeT - dt); this.jumpBuf = Math.max(0, this.jumpBuf - dt);
     if (input.jump && !this.jumpHeld) this.jumpBuf = BAL.jumpBuffer;
     this.jumpHeld = input.jump;
-    if (input.dash && !this.dashHeld && this.dashCool <= 0 && !this.air) {
+    if (input.dash && !this.dashHeld && this.dashCool <= 0 && !this.air && !this.coupled) {
       this.dashT = BAL.dashTime; this.dashCool = BAL.dashCool; this.events.push({ kind: 'dash' });
     }
     this.dashHeld = input.dash;
@@ -197,17 +222,20 @@ export class CartRun {
     } else {
       const p = tr.at(this.s);
       let a = -BAL.g * Math.sin(p.pitch) - BAL.roll - BAL.drag * this.v * this.v;
-      if (this.v < BAL.vPull) a += BAL.pull * (1 - this.v / BAL.vPull);
-      // 雪の上では、ブレーキが半分しかきかない(すべる)
-      if (this.braking) a -= BAL.brake * (1 - BAL.snowSlip * tr.snowAt(this.s));
+      // 追いかけっこの面は、鹿が引かない(鹿も前のトロッコに乗っている)。坂だけで走る
+      if (!tr.pursuit && this.v < BAL.vPull) a += BAL.pull * (1 - this.v / BAL.vPull);
+      // 雪の上では、ブレーキが半分しかきかない(すべる)。連結したあとは2台ぶん重く、ききが弱い
+      if (this.braking) a -= BAL.brake * (1 - BAL.snowSlip * tr.snowAt(this.s)) * (this.coupled ? BAL.coupledBrake : 1);
       if (this.dashT > 0) a += BAL.dashAcc;
       this.v += a * dt;
-      const cap = this.dashT > 0 ? this.vDash : this.vMax;
+      let cap = this.dashT > 0 ? this.vDash : this.vMax;
+      if (this.wrong) cap = Math.min(cap, this.vMax * BAL.wrongCap); // まちがった分かれ道: 古いレールで、ガタガタ おそい
       if (this.v > cap) this.v = Math.max(cap, this.v - 6 * dt);
-      this.v = Math.max(BAL.vMin, this.v);
+      this.v = Math.max(this.coupled ? 0 : BAL.vMin, this.v); // 連結したあとは、止まれる
       this.s += this.v * dt;
+      if (tr.pursuit) this.updateLane();
       const q = tr.at(this.s);
-      this.px = q.x; this.py = q.y; this.pz = q.z; this.height = 0; this.side = 0;
+      this.px = q.x + Math.cos(q.heading) * this.laneX; this.py = q.y; this.pz = q.z + Math.sin(q.heading) * this.laneX; this.height = 0; this.side = 0;
 
       // カーブと横風: 横向きの力が上限をこえると、車輪が浮いていき、やがて脱線
       // need はプラスなら「右へ傾けると、こらえられる」(右カーブの遠心力・左から吹く風)
@@ -302,6 +330,46 @@ export class CartRun {
       if (c.kind === 'premium') this.premium = true; else if (c.kind === 'gold') this.gold++; else this.coins++;
       this.events.push({ kind: c.kind ?? 'coin', id: c.id });
     }
+    if (tr.pursuit) { this.stepPursuit(dt); return; }
     if (!this.air && this.s >= tr.length) { this.phase = 'cleared'; this.braking = false; this.events.push({ kind: 'clear' }); }
+  }
+
+  /** 分かれ道: 入る瞬間の体の傾きで、どちらへ行くか決まる(傾けていなければ、まちがった側へ) */
+  private updateLane(): void {
+    const f = this.track.forkAt(this.s);
+    if (f && this.fork !== f) {
+      this.fork = f;
+      const pick = Math.abs(this.lean) >= BAL.forkLean ? (Math.sign(this.lean) as -1 | 1) : (-f.correct as -1 | 1);
+      this.lane = pick; this.wrong = pick !== f.correct;
+      this.events.push({ kind: this.wrong ? 'forkWrong' : 'forkRight' });
+    } else if (!f && this.fork) { this.fork = null; this.lane = 0; this.wrong = false; }
+    this.laneX = this.fork ? this.lane * FORK_W * forkShape(this.fork, this.s) : 0;
+  }
+
+  /** 前のトロッコを動かし、連結・止まった・谷へ を決める */
+  private stepPursuit(dt: number): void {
+    const tr = this.track, pu = tr.pursuit!;
+    if (!this.coupled) {
+      const p = tr.at(this.deerS);
+      let a = -BAL.g * Math.sin(p.pitch) - BAL.roll - BAL.drag * this.deerV * this.deerV;
+      this.deerV = Math.max(BAL.vMin, this.deerV + a * dt);
+      // カーブでは、脱線しない速さまで落とす(勝手に走るトロッコは、脱線しない)
+      const curv = Math.abs(tr.sharpestAhead(this.deerS, Math.max(10, this.deerV * 0.6)));
+      const safe = curv > 1e-4 ? Math.sqrt((BAL.latBase * BAL.deerCurve) / curv) : Infinity;
+      this.deerV = Math.min(this.deerV, pu.deerCap, Math.max(BAL.vMin, safe));
+      this.deerS += this.deerV * dt;
+      if (this.deerS >= pu.cliff) { this.fail('lost', 'deerLost'); return; }
+      // 追いついた: 地面の上で、分かれ道の外なら 連結
+      if (this.deerS - this.s <= BAL.couple && !this.air && !this.fork) {
+        this.coupled = true; this.hitchT = this.t; this.dashT = 0;
+        this.v = (this.v + this.deerV) / 2; // ぶつかって つながる(速さは2台の間)
+        this.events.push({ kind: 'hitch' });
+      }
+    }
+    if (this.coupled) this.deerS = this.s + BAL.hitchGap;
+    if (this.s >= pu.cliff) { this.fail('cliff', 'drop'); return; }
+    if (this.coupled && !this.air && this.v <= BAL.stopV) {
+      this.v = 0; this.phase = 'cleared'; this.braking = false; this.events.push({ kind: 'clear' });
+    }
   }
 }

@@ -17,6 +17,12 @@ export type Policy = {
   from?: number;
   /** ここまで来たら止める */
   until?: number;
+  /** 追いかけっこ: 分かれ道で まちがえる番号(0 から)。'all' で すべて。傾けないなら 'none' */
+  wrongForks?: number[] | 'all' | 'none';
+  /** 追いかけっこ: こぐ(ダッシュ)を、使えるときはいつも使う(false なら使わない) */
+  pump?: boolean;
+  /** 追いかけっこ: 連結してから ブレーキを かけはじめるまでの遅れ(秒) */
+  brakeDelay?: number;
 };
 
 export function drive(level: CartLevel, policy: Policy = {}): CartRun {
@@ -81,6 +87,18 @@ export function drive(level: CartLevel, policy: Policy = {}): CartRun {
     // 岩・倒木: 手前で跳ぶ(ジャンプ台は、乗るだけ)
     const rock = track.obstacles.find(o => (o.kind === 'rock' || o.kind === 'log') && o.s > s && o.s - s < v * 0.4);
     if (rock && p.jump && !run.air) input.jump = true;
+    // 追いかけっこ: こぐ(ダッシュ)・分かれ道で傾ける・連結したらブレーキ
+    const pu = track.pursuit;
+    if (pu) {
+      if (p.pump !== false && p.dash && !run.air && !run.coupled && run.dashCool <= 0 && !input.brake) input.dash = true;
+      const fi = pu.forks.findIndex(f => f.at + 2 > s && f.at - s < Math.max(25, v * 1.2));
+      if (fi >= 0 && p.wrongForks !== 'none') {
+        const f = pu.forks[fi], wrong = p.wrongForks === 'all' || (Array.isArray(p.wrongForks) && p.wrongForks.includes(fi));
+        const side = wrong ? -f.correct : f.correct;
+        input.right = side > 0; input.left = side < 0;
+      }
+      if (run.coupled) { input.dash = false; input.brake = run.t - run.hitchT >= (p.brakeDelay ?? 0.3); }
+    }
     p.extra?.(run, input);
     run.step(DT, input);
   }

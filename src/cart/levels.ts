@@ -779,7 +779,61 @@ const LEVEL_8_10: CartLevel = {
 };
 
 export const CART_LEVELS: CartLevel[] = [LEVEL_8_1, LEVEL_8_2, LEVEL_8_3, LEVEL_8_4, LEVEL_8_5, LEVEL_8_6, LEVEL_8_7, LEVEL_8_8, LEVEL_8_9, LEVEL_8_10];
-export const cartById = (id: string): CartLevel | undefined => CART_LEVELS.find(l => l.id === id);
+
+// ==== 追いかけっこ(仲間の鹿の面。持っている鹿で開く。2026-11-22 Owner案) ====
+// 鹿の乗ったトロッコが、坂を勝手に下っていく。Spra のトロッコで追いついて連結し、谷のふち(cliff)より手前で止める。
+// 分かれ道は、鹿のトロッコが行った側(鈴の音・見えるトロッコ)へ体を傾ける。まちがえると古いレールで おそくなる。
+// チェックポイントは無い(追いかけっこは、はじめから)。
+
+/**
+ * 8-11 Spraの鹿を おいかけろ(緑の森。約1500m)。いちばん基本の形: 分かれ道 2つ・岩と枝・急カーブ 2つ。
+ * さいごは急な下りで、谷のふちへ(止めるのに長い距離が要る)。
+ */
+const LEVEL_8_11: CartLevel = {
+  id: '8-11', title: 'Spraの鹿を おいかけろ', summary: '暴走トロッコに乗った Spraの鹿を、谷の手前で止める',
+  intro: 'Spraの鹿の トロッコが 走りだした！ 追いかけて！',
+  goalName: '谷の手前で 止める',
+  notes: [
+    { s: 380, text: '分かれ道！ 鈴の音が する方へ 体を かたむけて' },
+  ],
+  track: {
+    segments: [
+      { len: 90, slope: -2, terrain: 'forest', name: '若葉の森' },
+      { len: 210, slope: -7, terrain: 'hillL', name: '若葉の下り坂' },
+      { len: 110, slope: -3, turn: 70, terrain: 'hillL', name: 'しげみのカーブ' },
+      { len: 200, slope: -5, terrain: 'forest', name: '分かれ道の森' },
+      { len: 130, slope: -5, turn: -75, terrain: 'cut', name: 'こけむした切り通し' },
+      { len: 200, slope: -8, terrain: 'hillR', name: 'みどりの急坂' },
+      { len: 120, slope: -3, turn: 80, terrain: 'forest', name: '大きなカーブ' },
+      { len: 220, slope: -5, terrain: 'ridge', name: '尾根の分かれ道' },
+      { len: 200, slope: -7, terrain: 'forest', name: 'がけへの 一直線' },
+      { len: 140, slope: -2, terrain: 'gorge', name: '谷' },
+    ],
+    gaps: [{ from: 1490, to: 1580 }],
+    obstacles: [
+      { s: 250, kind: 'rock' },
+      { s: 735, kind: 'branch', side: 1 },
+      { s: 900, kind: 'rock' },
+      { s: 1010, kind: 'branch', side: -1 },
+      { s: 1340, kind: 'log' },
+    ],
+    coins: [
+      ...line(30, 120, 9),
+      ...line(320, 390, 8, -1),
+      ...line(620, 700, 8),
+      ...air([[903, 2.7, 'premium']]),
+      ...line(1100, 1150, 8, 1),
+      ...line(1360, 1440, 8),
+    ],
+    pursuit: {
+      friend: 'spra', lead: 120, deerCap: 27.5, deerStart: 22, cliff: 1490,
+      forks: [{ at: 440, len: 130, correct: 1 }, { at: 1180, len: 150, correct: -1 }],
+    },
+  },
+};
+
+export const PURSUIT_LEVELS: CartLevel[] = [LEVEL_8_11];
+export const cartById = (id: string): CartLevel | undefined => CART_LEVELS.find(l => l.id === id) ?? PURSUIT_LEVELS.find(l => l.id === id);
 export const trackOf = (level: CartLevel): Track => new Track(level.track);
 
 /** これから作る面(名前だけ。面えらびに「準備中」で出す)。 */

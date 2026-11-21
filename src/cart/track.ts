@@ -36,6 +36,17 @@ export type Checkpoint = { s: number; name: string };
  * to(谷のふち・トンネルの入口)まで来るか、トロッコが to をこえて着地すると、ふりきれる(大岩は谷へ落ち、なだれは止まる)。
  */
 export type Chase = { from: number; to: number; v: number; behind: number; kind: 'boulder' | 'avalanche' };
+/**
+ * 分かれ道(追いかけっこの面)。at〜at+len の間、線路が左右2本に分かれて、また1本にもどる。
+ * 鹿のトロッコは correct の側(-1 左・1 右)へ行く。もう片方は古いレールの遠回り(おそくなる)。
+ */
+export type Fork = { at: number; len: number; correct: -1 | 1 };
+/**
+ * 追いかけっこ(仲間の鹿の面 8-11〜8-16。2026-11-22 Owner案)。
+ * 鹿の乗ったトロッコが lead メートル先から、坂を勝手に下っていく(最高 deerCap m/s。カーブでは安全な速さまで落とす)。
+ * 追いついて連結し、cliff(谷のふち。線路が切れている)より手前で止めたらクリア。friend=前のトロッコに乗っている仲間の鹿
+ */
+export type Pursuit = { lead: number; deerCap: number; cliff: number; forks: Fork[]; friend: string; /** 前のトロッコの、はじめの速さ(もう走っている。無ければ 20 m/s) */ deerStart?: number };
 export type TrackDef = {
   segments: Segment[];
   gaps: Gap[];
@@ -48,6 +59,8 @@ export type TrackDef = {
   lanternGates?: number[];
   /** 後ろから追ってくるもの(s の順) */
   chases?: Chase[];
+  /** 追いかけっこの面(無ければ ふつうの面) */
+  pursuit?: Pursuit;
 };
 
 const DEG = Math.PI / 180;
@@ -67,6 +80,15 @@ const TERRAIN: Record<Terrain, { l: number; r: number; cap: number; depth: numbe
   tunnel: { l: 2.2, r: 2.2, cap: 30, depth: 0 },
   gorge: { l: 0.08, r: 0.08, cap: 30, depth: 62 },
 };
+/** 分かれ道で、2本の線路が いちばん離れたときの、まん中からの距離(m) */
+export const FORK_W = 3.4;
+/** 分かれ道の、まん中からのずれ(0〜1)。はじめの 30% で離れ、終わりの 30% で もどる */
+export function forkShape(f: Fork, s: number): number {
+  const k = (s - f.at) / f.len;
+  if (k <= 0 || k >= 1) return 0;
+  const e = Math.min(1, k / 0.3, (1 - k) / 0.3);
+  return e * e * (3 - 2 * e);
+}
 /** 谷(橋がかかる地形) */
 export const BRIDGED: Terrain[] = ['canyon', 'gorge'];
 
@@ -95,6 +117,7 @@ export class Track {
   vMax?: number;
   lanternGates: number[];
   chases: Chase[];
+  pursuit?: Pursuit;
   segments: (Segment & { from: number; to: number })[] = [];
   private px: Float64Array; private py: Float64Array; private pz: Float64Array;
   private hd: Float64Array; private pt: Float64Array; private cv: Float64Array;
@@ -146,7 +169,10 @@ export class Track {
     this.vMax = def.vMax;
     this.lanternGates = def.lanternGates ?? [];
     this.chases = (def.chases ?? []).map(c => ({ ...c })).sort((a, b) => a.from - b.from);
+    this.pursuit = def.pursuit ? { ...def.pursuit, forks: def.pursuit.forks.map(f => ({ ...f })).sort((a, b) => a.at - b.at) } : undefined;
   }
+  /** s が分かれ道の中なら、その分かれ道 */
+  forkAt(s: number): Fork | undefined { return this.pursuit?.forks.find(f => s >= f.at && s <= f.at + f.len); }
 
   private lerp(a: Float64Array, s: number): number {
     const c = Math.max(0, Math.min(this.total - 1e-6, s)), i = Math.floor(c), t = c - i;

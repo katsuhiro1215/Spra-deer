@@ -570,3 +570,60 @@ test('8-10: プレミアムは、天空の大鉄橋のジャンプ台を、ダ�
   const slow = driveLevel(L10, { from: 810, until: 1100, rampJump: false, dash: false });
   assert.equal(slow.reason, 'fall', 'ダッシュしないで乗るだけだと、届かない');
 });
+
+// ---- 追いかけっこ(仲間の鹿の面 8-11〜) ----
+import { PURSUIT_LEVELS } from '../src/cart/levels.ts';
+import { pursuitStars } from '../src/cart/sim.ts';
+import { forkShape } from '../src/cart/track.ts';
+
+test('追いかけっこ: 分かれ道は 入る瞬間の傾きで決まる。傾けていないと まちがった側(古いレールで おそい)', () => {
+  const lv = PURSUIT_LEVELS[0], t = trackOf(lv), f = t.pursuit!.forks[0];
+  for (const [lean, expectWrong] of [[f.correct, false], [-f.correct, true], [0, true]] as const) {
+    const r = new CartRun(t); r.restore(f.at - 3, 0, 0, 0, false, []); r.start();
+    r.lean = lean;
+    for (let i = 0; i < 2 / DT; i++) r.step(DT, { ...none(), right: lean > 0, left: lean < 0 });
+    assert.equal(r.wrong, expectWrong, `lean=${lean}`);
+    if (expectWrong) assert.ok(r.v <= r.vMax * BAL.wrongCap + 0.5, 'まちがった側は おそい');
+    assert.ok(Math.abs(r.laneX) > 1, '分かれ道の中では、横にずれて走る');
+  }
+  assert.equal(forkShape(f, f.at - 1), 0); assert.equal(forkShape(f, f.at + f.len / 2), 1);
+});
+
+test('追いかけっこ: 追いつくと連結し、ブレーキで止まればクリア。止まれないと谷へ', () => {
+  const lv = PURSUIT_LEVELS[0];
+  const ok = driveLevel(lv);
+  assert.equal(ok.phase, 'cleared', ok.reason);
+  assert.ok(ok.coupled && ok.v === 0 && ok.s < lv.track.pursuit!.cliff);
+  const noBrake = driveLevel(lv, { brakeDelay: 999 });
+  assert.equal(noBrake.reason, 'cliff', '連結しても止めなければ、谷へ');
+});
+
+for (const lv of PURSUIT_LEVELS) {
+  test(`${lv.id}: 上手に走ると ★3 で追いつく。こがない・分かれ道を全部まちがえると 間に合わない`, () => {
+    const pu = lv.track.pursuit!;
+    let hitchS = -1;
+    const r = driveLevel(lv, { extra: run => { if (run.coupled && hitchS < 0) hitchS = run.s; } });
+    assert.equal(r.phase, 'cleared', `${r.reason} s=${r.s.toFixed(0)}`);
+    assert.equal(pursuitStars(hitchS, pu.cliff), 3, `追いついた所 ${hitchS.toFixed(0)}/${pu.cliff}`);
+    console.log(`${lv.id} ボット: ${hitchS.toFixed(0)}m で連結(${(hitchS / pu.cliff * 100).toFixed(0)}%)・${r.s.toFixed(0)}m で停止・${r.hitchT.toFixed(1)}秒`);
+    assert.equal(driveLevel(lv, { pump: false }).reason, 'lost', 'こがないと 間に合わない');
+    assert.equal(driveLevel(lv, { wrongForks: 'all' }).reason, 'lost', '分かれ道を 全部まちがえると 間に合わない');
+    assert.equal(driveLevel(lv, { wrongForks: [0] }).phase, 'cleared', '1つまちがえても、ほかが上手なら 間に合う');
+  });
+  test(`${lv.id}: 面のデータ(プレミアム1枚・分かれ道は まっすぐで 切れ目・障害物・コインと重ならない・谷のふちは切れ目)`, () => {
+    const t = trackOf(lv), pu = t.pursuit!;
+    assert.equal(t.coins.filter(c => c.kind === 'premium').length, 1);
+    assert.ok(t.gaps.some(g => g.from === pu.cliff), '谷のふちから先は、線路が無い');
+    for (const f of pu.forks) {
+      for (let s = f.at - 20; s <= f.at + f.len + 20; s += 5) assert.ok(Math.abs(t.at(s).curv) < 0.002, `分かれ道 ${f.at} のまわりは まっすぐ s=${s}`);
+      assert.ok(!t.gaps.some(g => g.to > f.at - 30 && g.from < f.at + f.len + 30), '分かれ道に 切れ目は無い');
+      assert.ok(!t.obstacles.some(o => o.s > f.at - 10 && o.s < f.at + f.len + 10), '分かれ道に 障害物は無い');
+      assert.ok(!t.coins.some(c => c.s > f.at && c.s < f.at + f.len), '分かれ道に コインは無い');
+      assert.ok(f.at + f.len + 60 < pu.cliff, '分かれ道は 谷のふちより前');
+    }
+    for (let a = 0; a < t.total; a += 10) for (let b = a + 400; b < t.total; b += 10) {
+      const p = t.at(a), q = t.at(b);
+      assert.ok(Math.hypot(p.x - q.x, p.z - q.z) > 250, `s=${a} と ${b} が近い`);
+    }
+  });
+}
