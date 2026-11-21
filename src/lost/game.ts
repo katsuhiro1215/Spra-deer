@@ -4,7 +4,7 @@ import { Wallet, clearRewards, waitText, STAMINA_MAX, STAMINA_FAIL } from '../wa
 import { RunnerAudio } from '../runner/audio.ts';
 import { facingOf, type Facing } from '../game/facing.ts';
 import { LOST_LEVELS, type LostLevel } from './levels.ts';
-import { LBAL, LostRun, type Fawn, type LInput, type LostEvent } from './sim.ts';
+import { LBAL, LostRun, type Fawn, type LInput, type LostEvent, type Senbei, type Stag } from './sim.ts';
 
 const STEP = 1 / 120;
 /** BGM は、専用の曲ができるまで 2Dの面の曲を仮に使う */
@@ -22,8 +22,11 @@ const WALK: Record<Facing, { n: number; cycle: number[]; idle: number }> = {
 const spraSrc = (f: Facing, i: number) => `${A}/spru-walk/${f}_${i}.png`;
 const fawnSrc = (dir: number, i: number) => `${A}/deer-walk/fawn_${dir < 0 ? 'l' : 'r'}_${i}.png`;
 const MOTHER = `${A}/deer-walk/doe_l_0.png`;
+const stagSrc = (dir: number, i: number) => `${A}/deer-walk/stag_${dir < 0 ? 'l' : 'r'}_${i}.png`;
+/** リボンの色(お母さんが 2頭の面: M・F は ピンク、N・G は 水色) */
+const RIBBON = ['#ff5f93', '#3fa2ff'];
 /** 絵の高さ(マス) */
-const H_SPRA = 1.2, H_FAWN = 0.85, H_MOTHER = 1.2;
+const H_SPRA = 1.2, H_FAWN = 0.85, H_MOTHER = 1.2, H_STAG = 1.55;
 
 /** 位置から決まる 0〜1 の数(木の形を少しずつ変える) */
 const hash = (c: number, r: number) => { const s = Math.sin(c * 127.1 + r * 311.7) * 43758.5453; return s - Math.floor(s); };
@@ -50,7 +53,7 @@ export function startLost(root: HTMLElement, level: LostLevel): () => void {
     return i;
   };
   for (const [f, w] of Object.entries(WALK)) for (let i = 0; i < w.n; i++) img(spraSrc(f as Facing, i));
-  for (let i = 0; i < 4; i++) { img(fawnSrc(1, i)); img(fawnSrc(-1, i)); }
+  for (let i = 0; i < 4; i++) { img(fawnSrc(1, i)); img(fawnSrc(-1, i)); img(stagSrc(1, i)); img(stagSrc(-1, i)); }
   img(MOTHER);
 
   // 画面の大きさ(1マス = scale px)
@@ -104,6 +107,11 @@ export function startLost(root: HTMLElement, level: LostLevel): () => void {
       case 'stray': tone(760, 380, 0.45, 'sine', 0.07); break;
       case 'home': audio.sfx('checkpoint'); break;
       case 'dim': tone(320, 200, 0.45, 'sine', 0.06); break;
+      case 'lamp': tone(520, 1040, 0.25, 'triangle', 0.06); tone(780, 1560, 0.3, 'sine', 0.04, 0.08); break;
+      case 'senbei': tone(660, 990, 0.12, 'triangle', 0.07); break;
+      case 'eat': tone(500, 420, 0.1, 'square', 0.03); tone(500, 420, 0.1, 'square', 0.03, 0.16); break;
+      case 'bump': audio.sfx('hit'); break;
+      case 'scare': tone(900, 500, 0.25, 'sine', 0.05); break;
       case 'clear': audio.stopMusic(); audio.jingle('clear'); break;
       case 'fail': audio.stopMusic(); audio.jingle('fail'); break;
     }
@@ -301,7 +309,7 @@ export function startLost(root: HTMLElement, level: LostLevel): () => void {
     ctx.beginPath(); ctx.arc(px - rad * scale * 0.3, py - rad * scale * 0.3, rad * scale * 0.5, 0, Math.PI * 2); ctx.fill();
   };
   /** 石灯籠(春日大社に 多い、石の あかり) */
-  const drawLamp = (c: number, r: number) => {
+  const drawLamp = (c: number, r: number, lit = true) => {
     const x = sx(c + 0.5), b = sy(r + 0.9), u = scale;
     shadow(c + 0.5, r + 0.9, 0.35);
     ctx.fillStyle = '#8d8a80';
@@ -310,7 +318,7 @@ export function startLost(root: HTMLElement, level: LostLevel): () => void {
     ctx.fillRect(x - u * 0.24, b - u * 0.7, u * 0.48, u * 0.1); // 受け
     const fl = 0.85 + Math.sin(run.t * 9 + c) * 0.08 + Math.sin(run.t * 23 + r) * 0.05;
     ctx.fillStyle = '#6f6c63'; ctx.fillRect(x - u * 0.2, b - u * 1.0, u * 0.4, u * 0.3); // 火袋
-    ctx.fillStyle = `rgba(255,${Math.round(190 * fl)},90,${fl})`; ctx.fillRect(x - u * 0.12, b - u * 0.95, u * 0.24, u * 0.2);
+    ctx.fillStyle = lit ? `rgba(255,${Math.round(190 * fl)},90,${fl})` : '#2e2c28'; ctx.fillRect(x - u * 0.12, b - u * 0.95, u * 0.24, u * 0.2);
     ctx.fillStyle = '#5d5a52'; // 笠
     ctx.beginPath(); ctx.moveTo(x - u * 0.36, b - u * 0.98); ctx.lineTo(x + u * 0.36, b - u * 0.98); ctx.lineTo(x + u * 0.08, b - u * 1.2); ctx.lineTo(x - u * 0.08, b - u * 1.2); ctx.fill();
     ctx.fillRect(x - u * 0.05, b - u * 1.3, u * 0.1, u * 0.1);
@@ -330,16 +338,40 @@ export function startLost(root: HTMLElement, level: LostLevel): () => void {
     for (const k of [0.09, 0.15, 0.21]) { ctx.beginPath(); ctx.moveTo(-u * 0.11, u * k); ctx.lineTo(u * 0.11, u * k); ctx.stroke(); }
     ctx.restore();
   };
+  /** リボン(お母さんが 2頭の面だけ。同じ色の 親子) */
+  const ribbon = (x: number, y: number, color: string) => {
+    if (run.mothers.length < 2) return;
+    const px = sx(x), py = sy(y), u = scale * 0.13;
+    ctx.fillStyle = color; ctx.strokeStyle = 'rgba(255,255,255,0.9)'; ctx.lineWidth = 1.5;
+    for (const k of [-1, 1]) { ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px + k * u * 1.4, py - u * 0.8); ctx.lineTo(px + k * u * 1.4, py + u * 0.8); ctx.closePath(); ctx.fill(); ctx.stroke(); }
+    ctx.beginPath(); ctx.arc(px, py, u * 0.45, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  };
   const drawFawn = (f: Fawn) => {
     const bob = f.state === 'lost' ? Math.sin(run.t * 2 + f.id) * 0.02 : 0;
     shadow(f.x, f.y + 0.28, 0.3);
     const frame = f.moving ? Math.floor(run.t * 9 + f.id) % 4 : 0;
     drawImg(fawnSrc(f.dir, frame), f.x, f.y + 0.3 + bob, H_FAWN);
+    ribbon(f.x + f.dir * 0.12, f.y + 0.3 + bob - H_FAWN * 0.5, RIBBON[run.mothers[f.mother]?.id ?? 0]);
   };
   const drawMother = (i: number) => {
     const m = run.mothers[i];
     shadow(m.x, m.y + 0.3, 0.42);
     drawImg(MOTHER, m.x, m.y + 0.32, H_MOTHER);
+    ribbon(m.x - 0.18, m.y + 0.32 - H_MOTHER * 0.55, RIBBON[m.id]);
+  };
+  /** 見回りの 大きな鹿 */
+  const drawStag = (st: Stag) => {
+    shadow(st.x, st.y + 0.3, 0.5);
+    const frame = st.rest > 0 ? 0 : Math.floor(run.t * 6 + st.id) % 4;
+    drawImg(stagSrc(st.dir, frame), st.x, st.y + 0.34, H_STAG);
+  };
+  /** 道ばたの せんべい */
+  const drawSenbei = (sb: Senbei) => {
+    const x = sx(sb.x), y = sy(sb.y), r = scale * 0.2;
+    ctx.fillStyle = '#d9a25b'; ctx.beginPath(); ctx.ellipse(x, y, r, r * 0.7, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#a8702f'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.fillStyle = '#b97a3a';
+    for (const [dx, dy] of [[-0.3, -0.2], [0.25, -0.1], [0, 0.3]]) { ctx.beginPath(); ctx.arc(x + dx * r, y + dy * r * 0.7, r * 0.1, 0, Math.PI * 2); ctx.fill(); }
   };
   const drawSpra = () => {
     const moving = Math.hypot(run.vx, run.vy) > 0.3;
@@ -361,7 +393,7 @@ export function startLost(root: HTMLElement, level: LostLevel): () => void {
     dctx.globalCompositeOperation = 'destination-out';
     dctx.fillStyle = 'rgba(0,0,0,0.34)';
     for (let r = Math.max(0, r0); r <= Math.min(run.rows - 1, r1); r++) for (let c = Math.max(0, c0); c <= Math.min(run.cols - 1, c1); c++) {
-      if (run.seen[r * run.cols + c]) dctx.fillRect(sx(c), sy(r), scale + 0.5, scale + 0.5);
+      if (!level.fog && run.seen[r * run.cols + c]) dctx.fillRect(sx(c), sy(r), scale + 0.5, scale + 0.5);
     }
     const hole = (x: number, y: number, rad: number) => {
       const g = dctx.createRadialGradient(sx(x), sy(y), rad * scale * 0.45, sx(x), sy(y), rad * scale);
@@ -371,7 +403,7 @@ export function startLost(root: HTMLElement, level: LostLevel): () => void {
     };
     const fl = 1 + Math.sin(run.t * 11) * 0.015 + Math.sin(run.t * 4.3) * 0.02;
     hole(run.x, run.y - 0.2, run.lightRadius * fl);
-    for (const l of run.lamps) hole(l.x, l.y, LBAL.lampLight * (1 + Math.sin(run.t * 7 + l.x) * 0.02));
+    for (const l of run.lamps) if (l.lit) hole(l.x, l.y, LBAL.lampLight * (1 + Math.sin(run.t * 7 + l.x) * 0.02));
     for (const m of run.mothers) hole(m.x, m.y, 1.1);
     ctx.drawImage(dark, 0, 0, W, H);
     // ちょうちんの あたたかい色
@@ -382,15 +414,15 @@ export function startLost(root: HTMLElement, level: LostLevel): () => void {
   /** 画面の はしの 矢じるし(子鹿・お母さんの いる方向) */
   const drawCompass = () => {
     const lost = run.fawns.filter(f => f.state === 'lost').sort((a, b) => Math.hypot(a.x - run.x, a.y - run.y) - Math.hypot(b.x - run.x, b.y - run.y))[0];
-    const lead = run.fawns.find(f => run.connected(f));
-    const target = lead ? run.mothers[lead.mother] : lost;
+    const lead = run.fawns.find(f => f.state === 'follow' && f.leader < 0);
+    const target = lead ? run.mothers[lead.mother] : level.compass === 'all' ? lost : undefined;
     if (!target) return;
     const dx = target.x - run.x, dy = target.y - run.y, d = Math.hypot(dx, dy);
     if (d < run.lightRadius - 0.3) return;
     const a = Math.atan2(dy, dx), rr = 1.25 + Math.sin(run.t * 4) * 0.08;
     const x = sx(run.x + Math.cos(a) * rr), y = sy(run.y - 0.4 + Math.sin(a) * rr);
     ctx.save(); ctx.translate(x, y); ctx.rotate(a);
-    ctx.fillStyle = lead ? '#ffb3c8' : '#ffd36b'; ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 2;
+    ctx.fillStyle = lead ? (run.mothers.length > 1 ? RIBBON[run.mothers[lead.mother].id] : '#ffb3c8') : '#ffd36b'; ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 2;
     const u = scale * 0.22;
     ctx.beginPath(); ctx.moveTo(u, 0); ctx.lineTo(-u * 0.7, -u * 0.75); ctx.lineTo(-u * 0.35, 0); ctx.lineTo(-u * 0.7, u * 0.75); ctx.closePath(); ctx.fill(); ctx.stroke();
     ctx.restore();
@@ -421,12 +453,13 @@ export function startLost(root: HTMLElement, level: LostLevel): () => void {
       }
       ctx.restore();
     }
+    for (const sb of run.senbei) if (!run.gone.has(sb.id)) drawSenbei(sb);
     // 木・石灯籠・人や鹿を、足もとの 高さの順に 描く(下にいるものが 手前)
     const items: { y: number; f: () => void }[] = [];
     for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) {
       const t = tile(c, r);
       if (t === '#') items.push({ y: r + 0.9, f: () => drawTree(c, r) });
-      else if (t === 'L') items.push({ y: r + 0.9, f: () => drawLamp(c, r) });
+      else if (t === 'L' || t === 'l') items.push({ y: r + 0.9, f: () => drawLamp(c, r, t === 'L') });
     }
     for (const k2 of run.candles) {
       if (run.collected.has(-1 - k2.id)) continue;
@@ -439,12 +472,31 @@ export function startLost(root: HTMLElement, level: LostLevel): () => void {
     }
     run.mothers.forEach((m, i) => items.push({ y: m.y + 0.32, f: () => drawMother(i) }));
     for (const f of run.fawns) items.push({ y: f.y + 0.3, f: () => drawFawn(f) });
+    for (const st of run.stags) items.push({ y: st.y + 0.34, f: () => drawStag(st) });
     items.push({ y: run.y + 0.28, f: drawSpra });
     items.sort((a, b) => a.y - b.y);
     for (const it of items) it.f();
 
     drawDark(c0, c1, r0, r1);
 
+    // 霧: 白い もやが ゆっくり 流れる
+    if (level.fog) {
+      for (let i = 0; i < 7; i++) {
+        const fx = ((((i * 0.31 + run.t * 0.02 * (1 + (i % 3))) % 1.4) + 1.4) % 1.4 - 0.2) * W, fy = ((i * 0.37) % 1) * H;
+        const g = ctx.createRadialGradient(fx, fy, 0, fx, fy, W * 0.45);
+        g.addColorStop(0, 'rgba(200,210,230,0.16)'); g.addColorStop(1, 'rgba(200,210,230,0)');
+        ctx.fillStyle = g; ctx.fillRect(fx - W * 0.45, fy - W * 0.45, W * 0.9, W * 0.9);
+      }
+    }
+    // 大きな鹿の 目は、暗くても 光って見える
+    for (const st of run.stags) {
+      const ex = sx(st.x + st.dir * 0.42), ey = sy(st.y + 0.34 - H_STAG * 0.7);
+      ctx.fillStyle = '#fff3a0'; ctx.shadowColor = '#ffe36b'; ctx.shadowBlur = 8;
+      for (const k of [0, 1]) { ctx.beginPath(); ctx.arc(ex - st.dir * k * scale * 0.1, ey, scale * 0.045, 0, Math.PI * 2); ctx.fill(); }
+      ctx.shadowBlur = 0;
+    }
+    // ぶつかって 目が まわっている
+    if (run.stun > 0) label('★ ☆ ★', sx(run.x + Math.sin(run.t * 12) * 0.1), sy(run.y - 1.15), '#ffe36b', 0.22);
     // ろうそくは 暗くても 小さく 光って見える
     for (const k2 of run.candles) {
       if (run.collected.has(-1 - k2.id)) continue;
@@ -470,7 +522,20 @@ export function startLost(root: HTMLElement, level: LostLevel): () => void {
           ctx.strokeStyle = `rgba(255,232,170,${(1 - p) * 0.75})`; ctx.lineWidth = 2.5;
           ctx.beginPath(); ctx.arc(sx(f.x), sy(f.y), (0.3 + p * 2) * scale, 0, Math.PI * 2); ctx.stroke();
         }
-        if (ph < 0.45) label('ぴぃ…', sx(f.x), sy(f.y - 0.85), '#fff2c8', 0.28);
+        if (ph < 0.45) {
+          const px = sx(f.x), py = sy(f.y - 0.85), d = Math.hypot(f.x - run.x, f.y - run.y);
+          if (px > -10 && px < W + 10 && py > 90 && py < H - 30) label('ぴぃ…', px, py, '#fff2c8', 0.28);
+          else if (d < 14) {
+            // 画面の外: 声が 聞こえる 方の はしに 小さく 出す
+            const cx = W / 2, cy = sy(run.y), a = Math.atan2(py - cy, px - cx);
+            const ex = Math.max(34, Math.min(W - 34, cx + Math.cos(a) * W)), ey = Math.max(120, Math.min(H - 40, cy + Math.sin(a) * W));
+            ctx.globalAlpha = 0.5 + 0.5 * (1 - d / 14);
+            label('ぴぃ…', ex, ey, '#fff2c8', 0.24);
+            ctx.globalAlpha = 1;
+          }
+        }
+      } else if (f.eat) {
+        if (!f.eat.back) label('もぐもぐ', sx(f.x), sy(f.y - 0.85), '#ffd79a', 0.24);
       } else if (f.state === 'follow' && run.connected(f) && run.pathLen(f) > LBAL.warn) {
         label('まって〜', sx(f.x), sy(f.y - 0.85), '#ffd0dc', 0.26);
       } else if (f.state === 'home') {
@@ -519,12 +584,16 @@ export function startLost(root: HTMLElement, level: LostLevel): () => void {
       else if (e.kind === 'regain' && f) pops.push({ text: 'いっしょに 行こう', x: f.x, y: f.y - 1, t: 0, color: '#ffe36b' });
       else if (e.kind === 'warn') toast(level.notes?.warn ?? 'まって〜！', 2400);
       else if (e.kind === 'stray') toast(level.notes?.stray ?? '子鹿が 止まっちゃった', 3200);
-      else if (e.kind === 'home' && f) pops.push({ text: 'お母さん！', x: f.x, y: f.y - 1, t: 0, color: '#ff9ab4' });
+      else if (e.kind === 'home' && f) { pops.push({ text: 'お母さん！', x: f.x, y: f.y - 1, t: 0, color: '#ff9ab4' }); const left = run.fawns.filter(g => g.state !== 'home').length; if (left) toast(`あと ${left}ひき！`, 2200); }
       else if (e.kind === 'candle') pops.push({ text: `ろうそく！ 火が +${LBAL.candle}秒`, x: run.x, y: run.y - 1.2, t: 0, color: '#ffc46b' });
       else if (e.kind === 'dim') toast('ちょうちんの 火が 小さくなってきた…', 2600);
       else if (e.kind === 'gold') pops.push({ text: 'ゴールド！', x: run.x, y: run.y - 1.2, t: 0, color: '#ffc83a' });
       else if (e.kind === 'premium') toast('◆ プレミアムコイン！！', 2400);
-      else if (e.kind === 'clear') toast('お母さんに 会えたね！', 3000);
+      else if (e.kind === 'lamp') { const l = run.lamps[e.id ?? 0]; pops.push({ text: '灯籠に 火が ついた！', x: l.x, y: l.y - 1, t: 0, color: '#ffd36b' }); }
+      else if (e.kind === 'senbei') pops.push({ text: 'せんべいを 拾った', x: run.x, y: run.y - 1.2, t: 0, color: '#f0b45a' });
+      else if (e.kind === 'eat') toast('子鹿が せんべいを 食べに 行っちゃった！ 食べおわるまで 待ってあげよう', 3000);
+      else if (e.kind === 'bump') { pops.push({ text: 'ドン！', x: run.x, y: run.y - 1.2, t: 0, color: '#ff8a6a' }); toast(run.fawns.some(g => g.state === 'lost' && g.met) ? '大きな鹿に ぶつかった！ 子鹿が びっくりして 止まっちゃった' : '大きな鹿に ぶつかった！', 3000); }
+      else if (e.kind === 'clear') toast(run.fawns.length > 1 ? 'みんな お母さんに 会えたね！' : 'お母さんに 会えたね！', 3000);
     }
     if (run.phase !== prevPhase) {
       prevPhase = run.phase;
