@@ -47,28 +47,17 @@ export type Fork = { at: number; len: number; correct: -1 | 1 };
  * 追いついて連結し、cliff(谷のふち。線路が切れている)より手前で止めたらクリア。friend=前のトロッコに乗っている仲間の鹿
  */
 /**
- * ラムガの子分(追いかけっこの面。2026-11-22 Owner「子分を Spra の種で げきたいしながら進む」)。
- * 線路の上で待ちかまえていて、近づくと「こぐ」ボタンが「たね」に変わる。種が当たると hp が1減り、0 で げきたい。
- * げきたいできずに ぶつかると、♥が1つ減って おそくなる。
+ * 十二星座のモンスター(追いかけっこの面)。
+ * 2026-11-22 Owner: 種での げきたいは 難しく、ジャンプとの切りかえも おそいので やめる → ジャンプか 体を傾けて よける。
+ * dodge='jump' は 線路の上にいる(跳んで こえる)。'lean' は 線路の わきから 張り出している(side の反対へ 体を傾けて よける。枝と同じ)。
+ * 絵は sign(星座の番号 1〜12)の シートの cell 番目(0〜9。上の段 0〜4・下の段 5〜9)。scripts/build-monsters.py で切り出す
  */
-export type FoeKind = 'grunt' | 'shield' | 'spear' | 'hammer' | 'bomber' | 'sheep' | 'golem' | 'boar' | 'spike' | 'bat';
-export type Foe = { id: number; s: number; kind: FoeKind };
-/**
- * 子分の種類ごとの強さ。hp=種がいくつ要るか(0 は種がきかない)、charge=近づくと向かってくる速さ(m/s)、
- * jump=ジャンプで こえられる(とげ玉。線路の上を ころがっている)、h=絵の高さ(m)、float=宙に浮く高さ(m)
- */
-export const FOE: Record<FoeKind, { hp: number; charge?: number; jump?: boolean; h: number; float?: number; name: string }> = {
-  grunt: { hp: 1, h: 1.8, name: 'マントの子分' },
-  spear: { hp: 1, h: 1.9, name: 'やりの兵士' },
-  bomber: { hp: 1, h: 1.9, name: 'ばくだんの子分' },
-  sheep: { hp: 1, h: 1.9, float: 0.7, name: '羊雲' },
-  bat: { hp: 1, h: 1.5, float: 1.9, name: 'こうもり' },
-  shield: { hp: 2, h: 1.9, name: '盾の兵士' },
-  hammer: { hp: 2, h: 2.0, name: 'ハンマーの子分' },
-  golem: { hp: 3, h: 2.5, name: '岩の子分' },
-  boar: { hp: 1, charge: 9, h: 1.9, name: 'いのしし' },
-  spike: { hp: 0, jump: true, h: 1.3, name: 'とげ玉' },
-};
+export type FoeDodge = 'jump' | 'lean';
+export type Foe = { id: number; s: number; dodge: FoeDodge; side?: -1 | 1; sign: number; cell: number };
+/** 星座の名前(番号は darkdeer のシートの番号) */
+export const SIGNS = ['', '牡羊座', '牡牛座', '双子座', '蟹座', '獅子座', '乙女座', '天秤座', '蠍座', '射手座', '山羊座', '水瓶座', '魚座'];
+/** モンスターの絵の場所 */
+export const monsterPath = (sign: number, cell: number): string => `/assets/cart/monsters/${String(sign).padStart(2, '0')}-${cell}.webp`;
 export type Pursuit = { lead: number; deerCap: number; cliff: number; forks: Fork[]; friend: string; /** 前のトロッコの、はじめの速さ(もう走っている。無ければ 20 m/s) */ deerStart?: number };
 export type TrackDef = {
   segments: Segment[];
@@ -84,7 +73,7 @@ export type TrackDef = {
   chases?: Chase[];
   /** 追いかけっこの面(無ければ ふつうの面) */
   pursuit?: Pursuit;
-  /** ラムガの子分(s の順。追いかけっこの面) */
+  /** 十二星座のモンスター(s の順。追いかけっこの面) */
   foes?: Omit<Foe, 'id'>[];
 };
 

@@ -78,6 +78,7 @@ export function CartShell() {
             <small data-ks="chase-m" />
           </div>
           <div className="ct-alert" data-ks="alert" />
+          <div className="ct-say" data-ks="say" aria-live="polite" />
           <div className="ks-toast ct-toast" data-ks="toast" />
         </div>
 

@@ -1,13 +1,13 @@
 // WORLD 8「鹿と暴走トロッコ」: 走りのルール(描画なし。テストからも使う)
 // 鹿とトロッコは、ひとつの走るかたまりとして扱う(位置・速さ・ジャンプは共通)。
-import { FOE, FORK_W, forkShape, type Chase, type Foe, type Fork, type Track } from './track.ts';
+import { FORK_W, forkShape, type Chase, type Fork, type Track } from './track.ts';
 
 export type Input = { left: boolean; right: boolean; jump: boolean; brake: boolean; dash: boolean };
 export type CartEventKind = 'coin' | 'gold' | 'premium' | 'jump' | 'lift' | 'ramp' | 'land' | 'hit' | 'drop' | 'derail' | 'dash' | 'tilt' | 'senbei' | 'chase' | 'chaseEnd' | 'caught' | 'clear' | 'fail'
   // 追いかけっこ: 分かれ道に入った(正しい・まちがい)、連結した、鹿のトロッコが谷へ
   | 'forkRight' | 'forkWrong' | 'hitch' | 'deerLost'
-  // ラムガの子分: 種を投げた・当たった・げきたい・はね返された(とげ玉)・ぶつかった
-  | 'seed' | 'seedHit' | 'foeDown' | 'seedBounce' | 'foeHit';
+  // 十二星座のモンスターに ぶつかった
+  | 'foeHit';
 export type CartEvent = { kind: CartEventKind; id?: number };
 export type FailReason = '' | 'fall' | 'derail' | 'miss' | 'broken' | 'caught' | 'cliff' | 'lost' | 'beaten';
 /** 追ってきている大岩・なだれ(s は線路の上の位置) */
@@ -41,12 +41,9 @@ export const BAL = {
   // まちがった分かれ道(古いレール)での最高速の割合、分かれ道で「選んだ」と見なす体の傾き、止まったと見なす速さ、
   // 鹿のトロッコがカーブで落とす速さ(横向きの力が latBase のこの割合まで)
   couple: 3, coupledBrake: 0.7, wrongCap: 0.7, forkLean: 0.3, stopV: 0.6, deerCurve: 0.85, hitchGap: 2.6,
-  // ラムガの子分と Spra の種: 「たね」に変わる近さ(m)、種の速さ(トロッコの速さに足す)、次を投げられるまで(秒)、
-  // 種が とどく きょり、いのししが 向かってきはじめる近さ、とげ玉を こえるのに要る高さ
-  seedRange: 60, seedSpeed: 40, seedCool: 0.3, seedReach: 75, chargeFrom: 70, spikeClear: 1.0,
+  // 十二星座のモンスター: 線路の上のものを こえるのに要る高さ(わきのものは 枝と同じ leanDodge で よける)
+  foeClear: 1.0,
 } as const;
-/** 飛んでいる種(s=線路の上の位置、from=投げた所) */
-export type Seed = { s: number; v: number; from: number };
 
 /** 追いかけっこの ★: 谷のふちまでの道のりの、どこで追いついたか(早いほど多い。コースを約3000mに のばしたので 80%・90%) */
 export function pursuitStars(hitchS: number, cliff: number): 1 | 2 | 3 {
@@ -113,33 +110,17 @@ export class CartRun {
   /** 空中で横へ動いた量と、動ける範囲(飛びだした向きに対して) */
   private steer = 0; private steerLo = 0; private steerHi = 0; private steerRx = 0; private steerRz = 0;
   private nextCoin = 0; private nextObstacle = 0;
-  // ---- ラムガの子分(track.foes がある面だけ) ----
-  /** 子分の今の位置(いのししは 向かってくる)・残りの hp */
-  foeS = new Map<number, number>(); foeHp = new Map<number, number>();
-  /** げきたいした子分(id → げきたいした時刻)・ぶつかった子分・通りすぎた子分 */
-  downAt = new Map<number, number>(); foeHits = new Set<number>(); passed = new Set<number>();
-  seeds: Seed[] = []; seedCool = 0; seedsThrown = 0;
+  // ---- 十二星座のモンスター(track.foes がある面だけ) ----
+  /** ぶつかったモンスター・通りすぎたモンスター */
+  foeHits = new Set<number>(); passed = new Set<number>();
 
   constructor(track: Track) {
     this.track = track;
     this.vMax = track.vMax ?? BAL.vMax;
     this.vDash = this.vMax + (BAL.vDash - BAL.vMax);
     if (track.pursuit) { this.deerS = track.pursuit.lead; this.deerV = track.pursuit.deerStart ?? 20; }
-    for (const f of track.foes) { this.foeS.set(f.id, f.s); this.foeHp.set(f.id, FOE[f.kind].hp); }
     this.place();
   }
-  /** 種を投げる相手(前にいて、種がきく子分のうち、いちばん近いもの)。いれば「こぐ」が「たね」になる */
-  get seedTarget(): Foe | null {
-    for (const f of this.track.foes) {
-      if (this.downAt.has(f.id) || this.passed.has(f.id)) continue;
-      const d = this.foeS.get(f.id)! - this.s;
-      if (d > BAL.seedRange) return null;
-      if (d > 0 && FOE[f.kind].hp > 0) return f;
-    }
-    return null;
-  }
-  /** げきたいした子分の数 */
-  get foesDown(): number { return this.downAt.size; }
   /** 前のトロッコまでの距離(m)。連結したら 0 */
   get gapToDeer(): number { return this.track.pursuit && !this.coupled ? Math.max(0, this.deerS - this.s) : 0; }
   start(): void { if (this.phase === 'ready') this.phase = 'running'; }
@@ -156,7 +137,7 @@ export class CartRun {
     // 追ってくるもの: もう終わった所は出さない(途中から続けたときは、すぐ後ろにあらわれる)
     this.chaser = null;
     this.nextChase = this.track.chases.findIndex(c => c.to > s); if (this.nextChase < 0) this.nextChase = this.track.chases.length;
-    // 子分: 続ける所より前の子分は、もう通りすぎた(ぶつからない)
+    // モンスター: 続ける所より前のものは、もう通りすぎた(ぶつからない)
     for (const f of this.track.foes) if (f.s <= s) this.passed.add(f.id);
     this.place();
   }
@@ -198,18 +179,8 @@ export class CartRun {
     this.safeT = Math.max(0, this.safeT - dt); this.jumpBuf = Math.max(0, this.jumpBuf - dt);
     if (input.jump && !this.jumpHeld) this.jumpBuf = BAL.jumpBuffer;
     this.jumpHeld = input.jump;
-    this.seedCool = Math.max(0, this.seedCool - dt);
-    if (input.dash && !this.dashHeld) {
-      // 子分が近いときは、「こぐ」の代わりに 種を投げる(空中でも投げられる)
-      if (this.seedTarget) {
-        if (this.seedCool <= 0) {
-          this.seedCool = BAL.seedCool; this.seedsThrown++;
-          this.seeds.push({ s: this.s + 1.5, v: this.v + BAL.seedSpeed, from: this.s });
-          this.events.push({ kind: 'seed' });
-        }
-      } else if (this.dashCool <= 0 && !this.air && !this.coupled) {
-        this.dashT = BAL.dashTime; this.dashCool = BAL.dashCool; this.events.push({ kind: 'dash' });
-      }
+    if (input.dash && !this.dashHeld && this.dashCool <= 0 && !this.air && !this.coupled) {
+      this.dashT = BAL.dashTime; this.dashCool = BAL.dashCool; this.events.push({ kind: 'dash' });
     }
     this.dashHeld = input.dash;
     const want = (input.right ? 1 : 0) - (input.left ? 1 : 0);
@@ -358,7 +329,7 @@ export class CartRun {
       this.events.push({ kind: 'hit', id: o.id });
       if (this.lives <= 0) { this.fail('broken', 'hit'); return; }
     }
-    if (tr.foes.length && this.stepFoes(dt)) return;
+    if (tr.foes.length && this.stepFoes()) return;
     // コイン
     while (this.nextCoin < tr.coins.length && tr.coins[this.nextCoin].s <= this.s) {
       const c = tr.coins[this.nextCoin++];
@@ -373,45 +344,16 @@ export class CartRun {
     if (!this.air && this.s >= tr.length) { this.phase = 'cleared'; this.braking = false; this.events.push({ kind: 'clear' }); }
   }
 
-  /** 子分と種: 種を飛ばして当て、いのししを進め、通りすぎた子分に ぶつかったかを決める(失敗したら true) */
-  private stepFoes(dt: number): boolean {
-    const foes = this.track.foes;
-    for (const f of foes) {
-      if (this.downAt.has(f.id) || this.passed.has(f.id)) continue;
-      const fs = this.foeS.get(f.id)!, d = fs - this.s;
-      if (d > BAL.seedReach + 40) break;
-      // いのしし: 近づくと、こちらへ向かってくる
-      const ch = FOE[f.kind].charge;
-      if (ch && d < BAL.chargeFrom) this.foeS.set(f.id, fs - ch * dt);
-    }
-    // 種: まっすぐ線路にそって飛び、最初に出あった子分に当たる
-    for (let i = this.seeds.length - 1; i >= 0; i--) {
-      const sd = this.seeds[i], prev = sd.s;
-      sd.s += sd.v * dt;
-      let gone = sd.s - sd.from > BAL.seedReach;
-      for (const f of foes) {
-        if (this.downAt.has(f.id) || this.passed.has(f.id)) continue;
-        const fs = this.foeS.get(f.id)!;
-        if (fs < prev - 1) continue;
-        if (fs > sd.s) break;
-        gone = true;
-        if (FOE[f.kind].hp === 0) { this.events.push({ kind: 'seedBounce', id: f.id }); break; }
-        const hp = this.foeHp.get(f.id)! - 1;
-        this.foeHp.set(f.id, hp);
-        if (hp <= 0) { this.downAt.set(f.id, this.t); this.events.push({ kind: 'foeDown', id: f.id }); }
-        else this.events.push({ kind: 'seedHit', id: f.id });
-        break;
-      }
-      if (gone) this.seeds.splice(i, 1);
-    }
-    // 子分の所まで来た: げきたいしていなければ ぶつかる(とげ玉は、跳んでいれば こえられる)
-    for (const f of foes) {
-      if (this.downAt.has(f.id) || this.passed.has(f.id)) continue;
-      const fs = this.foeS.get(f.id)!;
-      if (fs > this.s + 0.8) break;
+  /** 十二星座のモンスター: 通りすぎるとき、よけていなければ ぶつかる(失敗したら true) */
+  private stepFoes(): boolean {
+    for (const f of this.track.foes) {
+      if (this.passed.has(f.id)) continue;
+      if (f.s > this.s + 0.8) break;
       this.passed.add(f.id);
       if (this.doomed || this.safeT > 0) continue;
-      if (FOE[f.kind].jump && this.height >= BAL.spikeClear) continue;
+      // 線路の上: 跳んで こえる。わき: 反対へ 体を傾ける(枝と同じ)
+      const dodged = f.dodge === 'jump' ? this.height >= BAL.foeClear : this.lean * (f.side ?? 1) <= -BAL.leanDodge;
+      if (dodged) continue;
       this.lives--; this.foeHits.add(f.id); this.safeT = BAL.hitSafe;
       this.v = Math.max(BAL.vMin + 2, this.v * BAL.hitSlow);
       if (this.air) { this.vx *= BAL.hitSlow; this.vz *= BAL.hitSlow; }

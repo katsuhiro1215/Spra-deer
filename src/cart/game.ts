@@ -3,7 +3,7 @@ import { Progress } from '../progress.ts';
 import { Wallet, clearRewards, waitText, STAMINA_MAX, STAMINA_FAIL } from '../wallet.ts';
 import { CART_BGM, RunnerAudio } from '../runner/audio.ts';
 import { CART_LEVELS, trackOf, type CartLevel } from './levels.ts';
-import { COLLAPSE_AT, FOE } from './track.ts';
+import { COLLAPSE_AT, SIGNS } from './track.ts';
 import { BAL, CartRun, pursuitStars, rampReach, type CartEvent, type Input } from './sim.ts';
 import { friendOf } from '../friends.ts';
 import { CartView } from './view.ts';
@@ -21,7 +21,7 @@ const FAIL_TEXT: Record<string, [string, string]> = {
   // 追いかけっこ
   cliff: ['止まりきれずに、谷へ…！', '連結したら すぐ ブレーキ！ 早く 追いつくほど、止める きょりが 長く とれるよ'],
   lost: ['間に合わなかった… 鹿のトロッコが 谷へ', 'こぐ(ダッシュ)を どんどん使おう。分かれ道は 鈴の音が する方へ'],
-  beaten: ['ラムガの子分に やられた…', '子分が 近づくと「こぐ」が「たね」に 変わる。たねを 投げて げきたい！ とげ玉は ジャンプ'],
+  beaten: ['モンスターに やられた…', '線路の上の モンスターは ジャンプ。わきから 張り出していたら、反対へ かたむけて よけよう'],
 };
 const CHASER_NAME = { boulder: '大岩', avalanche: 'なだれ' } as const;
 
@@ -63,7 +63,7 @@ export function startCart(root: HTMLElement, level: CartLevel): () => void {
     q('dash').innerHTML = '<b>こぐ</b><small>Spraが 加速</small>';
     q('dash').setAttribute('aria-label', 'こぐ');
     const how = root.querySelector('.ks-how');
-    if (how) how.innerHTML = `<li><b>こぐ</b> Spraが こいで 加速。どんどん 使おう(Shift)</li>${track.foes.length ? '<li><b>たね</b> ラムガの子分が 近づくと、こぐ が たね に 変わる。Spraの種を 投げて げきたい！</li>' : ''}<li><b>◀ ▶</b> 分かれ道は、鈴の音が する方へ かたむける(← →)</li><li><b>ブレーキ</b> 追いついて 連結したら、谷の手前で 止める(↓ / S)</li><li><b>ジャンプ</b> 岩・倒木を とびこえる(スペース)</li>`;
+    if (how) how.innerHTML = `<li><b>こぐ</b> Spraが こいで 加速。どんどん 使おう(Shift)</li>${track.foes.length ? '<li><b>モンスター</b> 線路の上は ジャンプ、わきから 張り出していたら 反対へ かたむけて よける</li>' : ''}<li><b>◀ ▶</b> 分かれ道は、鈴の音が する方へ かたむける(← →)</li><li><b>ブレーキ</b> 追いついて 連結したら、谷の手前で 止める(↓ / S)</li><li><b>ジャンプ</b> 岩・倒木を とびこえる(スペース)</li>`;
     q('chase').classList.add('pursuit');
     const dt_ = q('r-time').previousElementSibling; if (dt_) dt_.textContent = '追いつくまで';
   }
@@ -168,11 +168,6 @@ export function startCart(root: HTMLElement, level: CartLevel): () => void {
       case 'forkWrong': thud(0.5, 0.3, 700); tone(300, 180, 0.3, 'square', 0.04); break;
       case 'hitch': thud(0.35, 0.6, 900); tone(520, 1040, 0.3, 'triangle', 0.08, 0.05); break;
       case 'deerLost': tone(620, 60, 1.2, 'triangle', 0.09); break;
-      // Spra の種: ピュッと投げて、ポコッと当たる。げきたいで キラキラ
-      case 'seed': tone(500, 1300, 0.12, 'triangle', 0.07); break;
-      case 'seedHit': thud(0.12, 0.35, 1400); tone(420, 300, 0.12, 'square', 0.04); break;
-      case 'foeDown': thud(0.15, 0.4, 1600); tone(660, 1320, 0.14, 'triangle', 0.07); tone(990, 1980, 0.18, 'triangle', 0.06, 0.08); break;
-      case 'seedBounce': tone(2200, 1700, 0.09, 'square', 0.04); break;
       case 'foeHit': audio.sfx('hit'); thud(0.45, 0.4, 420); break;
       case 'clear': audio.stopMusic(); audio.jingle('clear'); break;
       case 'fail': audio.stopMusic(); audio.jingle('fail'); break;
@@ -182,7 +177,7 @@ export function startCart(root: HTMLElement, level: CartLevel): () => void {
   // ---- 画面の表示 ----
   const elCoins = q('coins'), elGold = q('gold'), elPrem = q('prem'), elHearts = q('hearts'), elFill = q('fill'), elMark = q('mark');
   const elSpeed = q('speed'), elSeg = q('seg'), elAlert = q('alert'), elToast = q('toast'), elStart = q('start'), elResult = q('result');
-  const elDash = q('dash'), elBrake = q('brake'), elJump = q('jump'), elPad = q('pad');
+  const elDash = q('dash'), elBrake = q('brake'), elJump = q('jump'), elPad = q('pad'), elSay = q('say');
   const elChase = q('chase'), elChaseName = q('chase-name'), elChaseM = q('chase-m'), elChaseBar = q('chase-bar');
   let toastTimer = 0;
   const toast = (msg: string, ms = 2400) => {
@@ -204,13 +199,12 @@ export function startCart(root: HTMLElement, level: CartLevel): () => void {
     if (pu) {
       if (run.coupled) return v > BAL.stopV ? [`ブレーキ！ 谷まで あと ${Math.max(0, Math.round(pu.cliff - s))}m`, 'red'] : ['', ''];
       if (run.wrong) return ['まちがえた！ おそい…', 'red'];
-      // ラムガの子分: たねで げきたい(とげ玉は ジャンプ)
-      const foe = track.foes.find(x => !run.downAt.has(x.id) && !run.passed.has(x.id) && (run.foeS.get(x.id) ?? x.s) > s);
+      // 十二星座のモンスター: 線路の上は ジャンプ、わきから 張り出していたら 反対へ かたむける
+      const foe = track.foes.find(x => !run.passed.has(x.id) && x.s > s);
       if (foe) {
-        const d = (run.foeS.get(foe.id) ?? foe.s) - s, info = FOE[foe.kind];
-        if (info.jump) { if (d < v * 0.75 + 3) return ['とげ玉！ ジャンプ！', 'jump']; if (d < v * 2 + 20) return ['とげ玉！ たねは きかない。ジャンプで こえて', 'yellow']; }
-        else if (d <= BAL.seedRange) return [info.hp > 1 ? `${info.name}！ たねを ${run.foeHp.get(foe.id)}回 当てて！` : `${info.name}だ！ たねを 投げて！`, 'red'];
-        else if (d < v * 2.5 + 30) return ['ラムガの子分が いる！', 'yellow'];
+        const d = foe.s - s;
+        if (foe.dodge === 'jump') { if (d < v * 0.75 + 3) return ['モンスター！ ジャンプ！', 'jump']; if (d < v * 1.8 + 12) return ['線路に モンスター！ ジャンプで こえて', 'yellow']; }
+        else if (d < v * 1.5 + 8) return [foe.side === 1 ? '◀ 左へ かたむけて よけて！' : '右へ かたむけて よけて！ ▶', d < v * 0.6 + 3 ? 'red' : 'yellow'];
       }
       const fk = pu.forks.find(f => f.at + 1 > s && f.at - s < v * 2.2 + 14);
       if (fk) return ['分かれ道！ 鈴の方へ', 'yellow'];
@@ -328,15 +322,8 @@ export function startCart(root: HTMLElement, level: CartLevel): () => void {
       elChaseBar.style.width = `${Math.max(0, Math.min(1, 1 - d / 50)) * 100}%`;
       elChase.classList.toggle('close', d < 15);
     }
-    // 子分が近いときは「こぐ」が「たね」に変わる(2026-11-22 Owner 案A)
-    const seedMode = pu && run.phase === 'running' && !!run.seedTarget;
-    if (pu && elDash.classList.contains('seed') !== !!seedMode) {
-      elDash.classList.toggle('seed', !!seedMode);
-      elDash.innerHTML = seedMode ? '<b>たね</b><small>子分を げきたい</small>' : '<b>こぐ</b><small>Spraが 加速</small>';
-      elDash.setAttribute('aria-label', seedMode ? 'たね' : 'こぐ');
-    }
-    elDash.style.setProperty('--cd', String(seedMode ? 0 : run.dashCool / BAL.dashCool));
-    elDash.classList.toggle('wait', !seedMode && run.dashCool > 0 && run.dashT <= 0);
+    elDash.style.setProperty('--cd', String(run.dashCool / BAL.dashCool));
+    elDash.classList.toggle('wait', run.dashCool > 0 && run.dashT <= 0);
     elDash.classList.toggle('go', run.dashT > 0);
   };
   const paintStamina = () => {
@@ -382,6 +369,25 @@ export function startCart(root: HTMLElement, level: CartLevel): () => void {
   };
 
   let hinted = new Set<string>();
+  // 追いかけっこの はじめ(2026-11-22 Owner「相手の鹿が見えないので、なんの面か 分からない」):
+  // 谷へ走っていく 仲間の鹿のトロッコを映して「助けてー！」→ 線路にそって 自分のトロッコまで もどってから 出発。
+  // 見せるのは ページを開いて はじめの1回だけ(やりなおしでは すぐ出発)
+  const INTRO = 3.4, INTRO_BACK = 1.1;
+  let introT = -1, introSeen = false;
+  const stepIntro = (dt: number) => {
+    if (introT < 0 || !pu) return;
+    introT += dt;
+    // 前のトロッコは もう走っている(出発の時に ちょうど lead の所へ 着くように)
+    const v0 = pu.deerStart ?? 20;
+    run.deerS = pu.lead - v0 * Math.max(0, INTRO - introT); run.deerV = v0;
+    const b = Math.max(0, Math.min(1, (introT - (INTRO - INTRO_BACK)) / INTRO_BACK)), e = b * b * (3 - 2 * b);
+    view.introS = run.deerS + (run.s - run.deerS) * e;
+    elSay.classList.toggle('on', introT > 0.3 && introT < INTRO - INTRO_BACK + 0.15);
+    if (introT >= INTRO) {
+      introT = -1; view.introS = null; run.deerS = pu.lead; elSay.classList.remove('on');
+      run.start(); toast(level.intro, 3200);
+    }
+  };
   const begin = (from: Snapshot | null = null) => {
     if (!wallet.canPlay()) {
       paintStamina();
@@ -401,10 +407,17 @@ export function startCart(root: HTMLElement, level: CartLevel): () => void {
     cpEls.forEach((el, i) => el.classList.toggle('passed', !!saved && track.checkpoints[i].s <= saved.s));
     nextClack = run.s + 6;
     releaseAll();
-    run.start();
     if (!from) progress.attempt(level.id);
     elStart.classList.remove('on'); elResult.classList.remove('on');
     paintHud();
+    if (pu && !from && !introSeen) {
+      introSeen = true; introT = 0;
+      elSay.innerHTML = `<small>${friendName}</small>助けてー！`;
+      // 前のトロッコの 鈴の音
+      tone(1568, 1560, 1.3, 'sine', 0.07, 0.3); tone(2349, 2340, 0.9, 'sine', 0.035, 0.3);
+      return;
+    }
+    run.start();
     toast(from ? `${from.name}から 再スタート！` : level.intro, 3200);
   };
 
@@ -526,8 +539,10 @@ export function startCart(root: HTMLElement, level: CartLevel): () => void {
     if (o?.kind === 'ramp') hint('ramp', 'ジャンプ台！ 乗るだけで 高く とぶ。台の上で ジャンプすると、もっと高く 遠くへ', 3600);
     else if (o?.kind === 'senbei') hint('senbei', '鹿せんべいだ！ 食べると、鹿が 全力で 走るよ', 3200);
     else if (o) hint(o.kind, o.kind === 'branch' ? '枝が 張り出している！ 反対へ 体を かたむけて よけよう' : o.kind === 'rock' ? '線路に 岩が！ ジャンプで とびこえよう' : '倒木だ！ ジャンプで とびこえよう', 3000);
+    // モンスター: はじめの1体で よけ方を、星座が かわったら 名前を 知らせる
     const fo = track.foes.find(x => x.s > s && x.s - s < look + 40);
-    if (fo) hint('foe', 'ラムガの子分だ！ 近づくと こぐ が たね に変わるよ。たねを 投げて げきたい！', 3800);
+    if (fo && !hinted.has('foe')) { hinted.add(`sign${fo.sign}`); hint('foe', `${SIGNS[fo.sign]}の モンスターだ！ 線路の上なら ジャンプ、わきなら 反対へ かたむけて よけよう`, 4200); }
+    else if (fo) hint(`sign${fo.sign}`, `こんどは ${SIGNS[fo.sign]}の モンスターたちだ！`, 2600);
     // その面ならではの所(ほかの一言より優先)
     level.notes?.forEach((n, i) => { if (s >= n.s - look && s < n.s + 10) hint(`note${i}`, n.text, 3800); });
   };
@@ -539,6 +554,7 @@ export function startCart(root: HTMLElement, level: CartLevel): () => void {
     raf = requestAnimationFrame(frame);
     const dt = Math.min(0.1, (now - last) / 1000);
     last = now; acc += dt;
+    stepIntro(dt);
     while (acc >= STEP) { run.step(STEP, input); acc -= STEP; }
     for (const e of run.drainEvents()) {
       sound(e);
@@ -551,10 +567,11 @@ export function startCart(root: HTMLElement, level: CartLevel): () => void {
       else if (e.kind === 'forkWrong') { view.bump(0.3); toast('まちがえた！ 古いレールだ… 次の合流まで がまん', 2200); }
       else if (e.kind === 'hitch') { view.bump(0.6); toast(`つかまえた！ ブレーキで 止めて！`, 2600); }
       else if (e.kind === 'deerLost') toast(`${friendName}の トロッコが 谷へ…！`, 2600);
-      else if (e.kind === 'seedHit' && e.id !== undefined) view.foeFlash(e.id);
-      else if (e.kind === 'seedBounce') { if (e.id !== undefined) view.foeFlash(e.id); hint('spikeSeed', 'とげ玉に たねは きかない！ ジャンプで こえよう', 2600); }
-      else if (e.kind === 'foeDown') { if (hinted.has('foeDown')) toast(`げきたい！ ${run.foesDown}`, 900); else hint('foeDown', 'げきたい！ Spraの種が きいた！', 2000); }
-      else if (e.kind === 'foeHit') { view.bump(0.55); toast('子分に ぶつかった！ 近づいたら たね で げきたいしよう', 2600); }
+      else if (e.kind === 'foeHit') {
+        view.bump(0.55); if (e.id !== undefined) view.foeFlash(e.id);
+        const fo = track.foes.find(x => x.id === e.id);
+        toast(fo?.dodge === 'lean' ? 'モンスターに ぶつかった！ ◀ ▶ で 反対へ かたむけると よけられるよ' : 'モンスターに ぶつかった！ 線路の上の モンスターは ジャンプで こえよう', 2800);
+      }
       else if (e.kind === 'senbei') toast('もぐもぐ！ 鹿の 全力疾走！', 1300);
       else if (e.kind === 'chase' && run.chaser) {
         chaseKind = run.chaser.kind; view.bump(0.4);

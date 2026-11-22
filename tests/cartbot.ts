@@ -1,6 +1,5 @@
 // WORLD 8: 先を見て操作するボット(テストと調整に使う)
 import { CartRun, BAL, rampReach, type Input } from '../src/cart/sim.ts';
-import { FOE } from '../src/cart/track.ts';
 import { trackOf, type CartLevel } from '../src/cart/levels.ts';
 
 export const DT = 1 / 120;
@@ -24,27 +23,28 @@ export type Policy = {
   pump?: boolean;
   /** 追いかけっこ: 連結してから ブレーキを かけはじめるまでの遅れ(秒) */
   brakeDelay?: number;
-  /** ラムガの子分: 種を投げる(false なら投げない)。seedLate=「たね」に変わってから 投げはじめるまでの遅れ(秒) */
-  seeds?: boolean; seedLate?: number;
+  /** 十二星座のモンスターを よける(false なら よけない) */
+  foes?: boolean;
 };
 
 export function drive(level: CartLevel, policy: Policy = {}): CartRun {
   const p = { brake: true, lean: true, jump: true, dash: true, rampJump: true, senbei: true, ...policy };
   const track = trackOf(level), run = new CartRun(track);
-  let pressed = false, targetSince = -1;
   if (p.from) run.restore(p.from, 0, 0, 0, false, []);
   run.start();
   for (let i = 0; i < 300 / DT && run.phase === 'running' && run.s < (p.until ?? Infinity); i++) {
     const s = run.s, v = run.v, input = none();
     // 枝: 反対へ傾ける(カーブより優先)。そのぶんカーブでは外へ傾くので、早めに減速する
-    const branch = track.obstacles.find(o => o.kind === 'branch' && o.s > s && o.s - s < Math.max(14, v * 0.7));
+    const dodgeFoes = p.foes !== false;
+    const leans = [...track.obstacles.filter(o => o.kind === 'branch'), ...(dodgeFoes ? track.foes.filter(f => f.dodge === 'lean') : [])];
+    const branch = leans.find(o => o.s > s && o.s - s < Math.max(14, v * 0.7));
     // カーブ: 2秒先までで、いちばんきつい曲がりを見て、内側へ傾け、速すぎたらブレーキ
     const curv = track.sharpestAhead(s, Math.max(30, v * 2));
     if (Math.abs(curv) > 0.004) {
       // 傾ける向きは、今いるカーブを優先(S字で、早すぎる切りかえをしない)
       const here = track.sharpestAhead(s, Math.max(12, v * 0.4)), dir = Math.abs(here) > 0.004 ? here : curv;
       if (p.lean) { input.right = dir > 0; input.left = dir < 0; }
-      const soon = track.obstacles.find(o => o.kind === 'branch' && o.s > s && o.s - s < Math.max(30, v * 2));
+      const soon = leans.find(o => o.s > s && o.s - s < Math.max(30, v * 2));
       const outward = !!soon && p.lean && (soon.side === 1) === (curv > 0);
       const lat = !p.lean ? BAL.latBase : outward ? BAL.latBase - BAL.latOut : BAL.latBase + BAL.latLean;
       const limit = Math.sqrt((lat * 0.8) / Math.abs(curv));
@@ -89,7 +89,8 @@ export function drive(level: CartLevel, policy: Policy = {}): CartRun {
     // 大岩・なだれが近いときは、ダッシュで にげる
     if (p.dash && run.chaser && !run.air && run.dashCool <= 0 && s - run.chaser.s < 40) input.dash = true;
     // 岩・倒木: 手前で跳ぶ(ジャンプ台は、乗るだけ)
-    const rock = track.obstacles.find(o => (o.kind === 'rock' || o.kind === 'log') && o.s > s && o.s - s < v * 0.4);
+    const rock = [...track.obstacles.filter(o => o.kind === 'rock' || o.kind === 'log'), ...(dodgeFoes ? track.foes.filter(f => f.dodge === 'jump') : [])]
+      .find(o => o.s > s && o.s - s < v * 0.4);
     if (rock && p.jump && !run.air) input.jump = true;
     // 追いかけっこ: こぐ(ダッシュ)・分かれ道で傾ける・連結したらブレーキ
     const pu = track.pursuit;
@@ -103,17 +104,6 @@ export function drive(level: CartLevel, policy: Policy = {}): CartRun {
       }
       if (run.coupled) { input.dash = false; input.brake = run.t - run.hitchT >= (p.brakeDelay ?? 0.3); }
     }
-    // ラムガの子分: 「たね」に変わったら 種を投げる(押して はなす を くり返す)。とげ玉は ジャンプ
-    if (track.foes.length) {
-      const tg = run.seedTarget;
-      if (tg) {
-        if (targetSince < 0) targetSince = run.t;
-        input.dash = p.seeds !== false && run.t - targetSince >= (p.seedLate ?? 0) && run.seedCool <= 0 && !pressed;
-      } else targetSince = -1;
-      const sp = track.foes.find(f => FOE[f.kind].jump && !run.passed.has(f.id) && f.s > s && f.s - s < v * 0.4);
-      if (sp && p.jump && !run.air) input.jump = true;
-    }
-    pressed = input.dash;
     p.extra?.(run, input);
     run.step(DT, input);
   }
