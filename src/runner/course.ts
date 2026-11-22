@@ -50,7 +50,8 @@ export interface Obstacle {
   radius?: number; // 当たりの半径(無ければ、種類ごとの既定)
   trig?: number; // 動きはじめる距離(プレイヤーがこの近さに来たら、突進・電車・雷が動き出す)
   /** 見た目の種類(crossing=踏切の遮断機。当たりは柵と同じ) */
-  deco?: 'crossing';
+  /** crossing=踏切の遮断機 / root=道を横切る 木の根(Kuru の道。低い) */
+  deco?: 'crossing' | 'root';
 }
 // 電車(kind='train'): s=線路の位置、freq=電車の秒速、amp=電車の長さ、phase=走る向き(+1=右へ)
 // 雷(kind='bolt'): s,x=落ちる場所、freq=予告(光る輪)の秒数。予告のあと BOLT_TIME の間だけ当たる
@@ -325,8 +326,8 @@ export type PatternName =
   | 'hole' | 'poop' | 'fenceGap' | 'stones' | 'deerCross' | 'holePoop' | 'fenceHole' | 'coinSnake' | 'puddle' | 'ice'
   | 'critterSleep' | 'critterCross' | 'critterHop' | 'critterCharge' | 'ramp' | 'crossing' | 'thunder'
   | 'leafPile' | 'goldfish' | 'hanami' | 'minionBomb' | 'minionBat'
-  // 仲間の鹿の面: leafLeap=葉っぱのジャンプ台の先に 大きな穴(台に乗らないと こえられない)
-  | 'leafLeap';
+  // 仲間の鹿の面: leafLeap=葉っぱのジャンプ台の先に 大きな穴(台に乗らないと こえられない) / roots=道を横切る 木の根が3本(続けて跳ぶ)
+  | 'leafLeap' | 'roots';
 
 export interface CourseOptions {
   seed?: number;
@@ -545,6 +546,19 @@ export function buildCourse(opts: CourseOptions = {}): Course {
     return lip + 32;
   };
 
+  // 木の根(Kuru の道): 道を横切る 低い根が3本。リズムよく 続けて跳ぶ。
+  // 間は「1回の跳び」より長く(はしるで 1.3倍の速さでも、次の根の 手前に 着地できる)
+  const rootsPattern = (s: number) => {
+    const gap = Math.max(12, estSpeed(s) * 1.15);
+    for (let k = 0; k < 3; k++) {
+      const rs = s + k * gap;
+      add({ kind: 'fence', s: rs, x: 0, halfW: ROAD_HALF, deco: 'root', height: 0.8 });
+      coin(rs, 0, 1.6);
+    }
+    line(s - 8, 0, 3, 2.2);
+    return s + 2 * gap + 4;
+  };
+
   // その場所での、だいたいの走る速さ(電車・雷の時間合わせに使う。ぶつかって遅くなると、安全側にずれる)
   const rules = opts.rules ?? DEFAULT_RULES;
   const hilly = { hills: opts.hills, length };
@@ -644,6 +658,7 @@ export function buildCourse(opts: CourseOptions = {}): Course {
       case 'minionBat': return minionBatPattern(s);
       case 'leafPile': return leafPattern(s);
       case 'leafLeap': return leafLeapPattern(s);
+      case 'roots': return rootsPattern(s);
       case 'goldfish': return goldfishPattern(s);
       case 'hanami': return hanamiPattern(s);
       case 'crossing': return crossingPattern(s);
@@ -668,9 +683,21 @@ export function buildCourse(opts: CourseOptions = {}): Course {
 
   line(18, 0, 6, 2.4);
   let s = 62;
+  const br = opts.bridge ? { from: opts.bridge.from * length, to: opts.bridge.to * length } : undefined;
+  // つり橋: ほかの罠は置かず、板のぬけた所(跳びこえる)だけ。ゆれに耐えて渡る。橋の先の位置を返す
+  const bridgePlanks = (b: { from: number; to: number }) => {
+    line(b.from - 2, 0, 6, 2.4);
+    for (let q = b.from + 22; q < b.to - 26; q += 34 + rand() * 12) {
+      add({ kind: 'hole', s: q, len: 3.2, halfW: BRIDGE_HALF });
+      for (let k = 0; k < 4; k++) coin(q - 0.6 + (k * 4.4) / 3, 0, 1.0 + 0.8 * Math.sin((Math.PI * k) / 3));
+      line(q + 8, 0, 3, 2.4);
+    }
+    return b.to + 24;
+  };
   const opening: PatternName[] = opts.script ?? opts.opening ?? ['hole', 'coinSnake', 'poop', 'fenceGap'];
   const endScript = length - 100;
   for (const name of opening) {
+    if (opts.script && br && s + 46 > br.from && s < br.to) s = bridgePlanks(br); // 決めた順番の面: 橋は とばして 続ける
     if (opts.script && s > endScript) break; // 決めた順番は、ゴールの手前まで
     s = run(name, s, opts.script ? s / length : 0) + 30;
   }
@@ -679,7 +706,6 @@ export function buildCourse(opts: CourseOptions = {}): Course {
   let prev: PatternName = opening[opening.length - 1] ?? 'fenceGap';
   const used = new Set<PatternName>(opening);
   const endObstacles = length - (critters.length ? 100 : 75); // 突進する動物は手前から走ってくるので、ゴールから離す(3-1は従来どおり)
-  const br = opts.bridge ? { from: opts.bridge.from * length, to: opts.bridge.to * length } : undefined;
   const safe = (opts.safe ?? []).map((f) => f * length);
   while (s < endObstacles) {
     const z = safe.find((c) => s + 46 > c - 8 && s < c + 40);
@@ -690,14 +716,7 @@ export function buildCourse(opts: CourseOptions = {}): Course {
       continue;
     }
     if (br && s + 46 > br.from && s < br.to) {
-      // つり橋: ほかの罠は置かず、板のぬけた所(跳びこえる)だけ。ゆれに耐えて渡る
-      line(br.from - 2, 0, 6, 2.4);
-      for (let q = br.from + 22; q < br.to - 26; q += 34 + rand() * 12) {
-        add({ kind: 'hole', s: q, len: 3.2, halfW: BRIDGE_HALF });
-        for (let k = 0; k < 4; k++) coin(q - 0.6 + (k * 4.4) / 3, 0, 1.0 + 0.8 * Math.sin((Math.PI * k) / 3));
-        line(q + 8, 0, 3, 2.4);
-      }
-      s = br.to + 24;
+      s = bridgePlanks(br);
       continue;
     }
     const p = s / length;
@@ -743,6 +762,7 @@ export function buildCourse(opts: CourseOptions = {}): Course {
       let ss = q;
       while (ss < q + opts.senbei - 10 && obstacles.some((o) => o.s < ss + 9 && o.s + o.len > ss - 9)) ss += 3;
       if (obstacles.some((o) => o.s < ss + 9 && o.s + o.len > ss - 9)) continue;
+      if (br && ss > br.from - 8 && ss < br.to + 8) continue; // つり橋の上には置かない(取りにいくと 落ちる)
       for (let i = coins.length - 1; i >= 0; i--) if (coins[i].kind === undefined && Math.abs(coins[i].s - ss) < 2.5) coins.splice(i, 1);
       coins.push({ id: id++, s: ss, x: 2.1 * side, y: 0.8, kind: 'senbei' });
       side = -side;

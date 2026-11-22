@@ -6,7 +6,7 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import { BRIDGE_HALF, FISH_X0, FISH_X1, GOAL_GAP, RAMP_DROP, ROAD_HALF, bridgeSway, hillY, roadHeading, roadX, roadY, type Course, type Obstacle } from './course.ts';
 import { CRITTERS, type CritterDef } from './critters.ts';
 import { LANDMARK_ASPECT } from './landmarks.ts';
-import type { Landmark, RunnerLevel, Theme } from './levels.ts';
+import type { Foliage, Landmark, RunnerLevel, Theme } from './levels.ts';
 import type { Run } from './sim.ts';
 
 const ASSET = '/assets';
@@ -143,6 +143,17 @@ function addInstanced(parent: THREE.Object3D, parts: PartDef[], places: Placemen
     parent.add(mesh);
   }
 }
+
+/** 架空の道(仲間の鹿の面)の 色。arch=門(濃い・明るい)、ramp/rampSide=葉っぱのジャンプ台、hedge=生け垣、trees=道ばたの木、bush=ふちの かたまり */
+type PathLook = { arch: [number, number]; ramp: number; rampSide: number; hedge: number; trees: [number, number]; bush: number };
+const PATH_LOOK: Record<string, PathLook> = {
+  sprout: { arch: [0x3f9a3a, 0x6cc24a], ramp: 0x9ae05e, rampSide: 0x4f9a34, hedge: 0x2f8a34, trees: [0x3f9a3a, 0x5ab248], bush: 0x3c9438 },
+  ginkgo: { arch: [0xd89a18, 0xf6d24a], ramp: 0xffe27a, rampSide: 0xd8a020, hedge: 0xe0b028, trees: [0xf2c42a, 0xffd94a], bush: 0xf0c838 },
+  petal: { arch: [0xe0709a, 0xf8b4cc], ramp: 0xffc8dc, rampSide: 0xe88aaa, hedge: 0xf09ab8, trees: [0xf4a8c4, 0xfcd0e0], bush: 0xf6b0c8 },
+  root: { arch: [0x6a4a2a, 0x4f8a34], ramp: 0xa8845a, rampSide: 0x6a4a2a, hedge: 0x3e6a2c, trees: [0x2f6a2a, 0x3f7e34], bush: 0x3e6a2c },
+  orange: { arch: [0xe8701a, 0xffa848], ramp: 0xffb868, rampSide: 0xe07a24, hedge: 0x4a8a34, trees: [0x3e8030, 0x52963c], bush: 0xff9a3c },
+  water: { arch: [0x2f86c0, 0x7cc8f0], ramp: 0x9ad8f6, rampSide: 0x3a94cc, hedge: 0x3a8a8a, trees: [0x3e8a6a, 0x56a07e], bush: 0x4e9a78 },
+};
 
 export class KasugaView {
   readonly renderer: THREE.WebGLRenderer;
@@ -648,7 +659,8 @@ export class KasugaView {
       }
     }, true);
     this.disposables.push(planks);
-    const deckMat = new THREE.MeshStandardMaterial({ map: planks, roughness: 0.85 });
+    const petal = this.theme.foliage === 'petal';
+    const deckMat = new THREE.MeshStandardMaterial({ map: planks, roughness: 0.85, color: petal ? 0xffc2d6 : 0xffffff });
     const dw = BRIDGE_HALF * 2 + 0.4;
     for (const [a, b] of deckSpans) {
       const top = this.roadRibbon(a, b, dw, deckMat, 0, 4);
@@ -705,9 +717,10 @@ export class KasugaView {
     // 谷底の川(エメラルド色)
     const mid = (br.from + br.to) / 2;
     const mw = this.roadW(mid, 0);
+    // 花びらの道では、桜の花びらが うかぶ 広い湖
     const river = new THREE.Mesh(
-      new THREE.PlaneGeometry(900, len * 0.45).rotateX(-Math.PI / 2),
-      new THREE.MeshStandardMaterial({ color: 0x2f9a8a, roughness: 0.12, metalness: 0.1 }),
+      new THREE.PlaneGeometry(900, len * (petal ? 1.3 : 0.45)).rotateX(-Math.PI / 2),
+      new THREE.MeshStandardMaterial({ color: petal ? 0x7ab8e0 : 0x2f9a8a, roughness: 0.12, metalness: 0.1 }),
     );
     river.position.set(mw.x, this.gy(mid) - KasugaView.VALLEY_DEPTH + 0.8, mw.z);
     river.rotation.y = -mw.psi;
@@ -757,10 +770,11 @@ export class KasugaView {
     }, true);
     this.disposables.push(arrows, stripes);
     const leafy = this.theme.setting === 'path';
-    const deck = new THREE.MeshStandardMaterial(leafy ? { color: 0x9ae05e, roughness: 0.6 } : { color: 0xd9dde4, roughness: 0.55, metalness: 0.1 });
+    const look = this.pathLook;
+    const deck = new THREE.MeshStandardMaterial(leafy ? { color: look.ramp, roughness: 0.6 } : { color: 0xd9dde4, roughness: 0.55, metalness: 0.1 });
     const arrowMat = new THREE.MeshBasicMaterial({ map: arrows, transparent: true, depthWrite: false, toneMapped: false });
     this.rampArrows = arrows; // 矢印は、前へ流れるように動かす(ダッシュ台らしく)
-    const sideMat = leafy ? new THREE.MeshStandardMaterial({ color: 0x4f9a34, roughness: 0.8, side: THREE.DoubleSide }) : new THREE.MeshStandardMaterial({ map: stripes, roughness: 0.6, side: THREE.DoubleSide });
+    const sideMat = leafy ? new THREE.MeshStandardMaterial({ color: look.rampSide, roughness: 0.8, side: THREE.DoubleSide }) : new THREE.MeshStandardMaterial({ map: stripes, roughness: 0.6, side: THREE.DoubleSide });
     for (const b of bumps) {
       const a = b.s - b.len;
       const e = b.s + RAMP_DROP;
@@ -869,7 +883,7 @@ export class KasugaView {
   private hedgeM: THREE.MeshStandardMaterial | null = null;
   /** 生け垣の葉(架空の道の柵) */
   private hedgeMat(): THREE.MeshStandardMaterial {
-    if (!this.hedgeM) this.hedgeM = new THREE.MeshStandardMaterial({ color: 0x2f8a34, roughness: 0.95 });
+    if (!this.hedgeM) this.hedgeM = new THREE.MeshStandardMaterial({ color: this.pathLook.hedge, roughness: 0.95 });
     return this.hedgeM;
   }
 
@@ -889,8 +903,13 @@ export class KasugaView {
     return [{ geo: stemGeo, mat: stem }, { geo: top, mat: leaf }, { geo: side, mat: leaf }];
   }
 
+  /** 架空の道の 色(道ごと。門・ジャンプ台・生け垣・道ばたの木) */
+  private get pathLook(): PathLook { return PATH_LOOK[this.theme.foliage ?? 'sprout'] ?? PATH_LOOK.sprout; }
+
   /** 架空の道(仲間の鹿の面)の 道ばた。foliage で中身を変える */
   private buildPathScenery(): void {
+    const fol = this.theme.foliage ?? 'sprout';
+    if (fol !== 'sprout') { this.buildFriendPathScenery(fol); return; }
     const th = this.theme;
     const rnd = rngFor(311);
     const end = this.end + 60;
@@ -952,12 +971,93 @@ export class KasugaView {
     sp.rotation.set(0, -w.psi, run.phase === 'cleared' ? Math.sin(this.clock * 9) * 0.08 : 0, 'YXZ');
   }
 
+  /**
+   * 仲間の鹿の道(4-12〜4-16)の 道ばた。いちょう=黄色い とんがった木 / 花びら=桜の木の絵 / 根=大樹と 地面の根 /
+   * みかん=実のなった 丸い木 / 水=あし・はす・水べの木。ふちには その色の 丸い かたまり
+   */
+  private buildFriendPathScenery(fol: Foliage): void {
+    const look = this.pathLook;
+    const rnd = rngFor(317);
+    const end = this.end + 60;
+    const trunk = new THREE.MeshStandardMaterial({ color: fol === 'root' ? 0x5a3e24 : 0x6b4a2e, roughness: 1 });
+    const crownA = new THREE.MeshStandardMaterial({ color: look.trees[0], roughness: 0.9 });
+    const crownB = new THREE.MeshStandardMaterial({ color: look.trees[1], roughness: 0.9 });
+    const near: Placement[] = [], far: Placement[] = [];
+    const gap = fol === 'root' ? 9 : 6;
+    for (let s = -20; s < end; s += gap) {
+      for (const sx of [-1, 1]) {
+        if (rnd() < 0.3) continue;
+        near.push(this.rp(s + rnd() * 4, sx * (ROAD_HALF + 4 + rnd() * 8), { scale: 0.8 + rnd() * 0.6, rotY: rnd() * 6 }));
+        if (rnd() < 0.6) far.push(this.rp(s + rnd() * 5, sx * (24 + rnd() * 36), { scale: 1 + rnd() * 0.8, rotY: rnd() * 6 }));
+      }
+    }
+    const all = [...near, ...far];
+    if (fol === 'petal') {
+      this.imageTrees('sakura-tree', all, 8.5);
+    } else if (fol === 'ginkgo') {
+      // いちょう: 黄色い とんがった木(2段)
+      addInstanced(this.scene, [
+        { geo: new THREE.CylinderGeometry(0.3, 0.45, 3, 8), mat: trunk, pos: [0, 1.5, 0] },
+        { geo: new THREE.ConeGeometry(2.6, 5.2, 12), mat: crownA, pos: [0, 4.8, 0] },
+        { geo: new THREE.ConeGeometry(1.9, 3.8, 12), mat: crownB, pos: [0, 7.2, 0] },
+      ], all);
+    } else if (fol === 'root') {
+      // 大樹: 太い幹・大きな こんもりした葉。道の近くには 地面から 弓なりに出た 根
+      addInstanced(this.scene, [
+        { geo: new THREE.CylinderGeometry(0.9, 1.5, 7, 10), mat: trunk, pos: [0, 3.5, 0] },
+        { geo: new THREE.SphereGeometry(4.2, 12, 10), mat: crownA, pos: [0, 9.5, 0] },
+        { geo: new THREE.SphereGeometry(3, 12, 10), mat: crownB, pos: [2.4, 11.2, 0.6] },
+        { geo: new THREE.SphereGeometry(2.8, 12, 10), mat: crownB, pos: [-2.3, 10.6, -0.8] },
+      ], all);
+      const rp: Placement[] = [];
+      for (let s = 4; s < this.end; s += 7) for (const sx of [-1, 1]) if (rnd() < 0.55) rp.push(this.rp(s + rnd() * 4, sx * (ROAD_HALF + 1.2 + rnd() * 2), { scale: 0.6 + rnd() * 0.6, rotY: rnd() * 6 }));
+      addInstanced(this.scene, [{ geo: new THREE.TorusGeometry(0.9, 0.2, 6, 12, Math.PI), mat: trunk }], rp);
+    } else if (fol === 'orange') {
+      // みかんの木: 丸い葉に、オレンジの実
+      const fruit = new THREE.MeshStandardMaterial({ color: 0xff8a1e, roughness: 0.55 });
+      const parts: PartDef[] = [
+        { geo: new THREE.CylinderGeometry(0.3, 0.45, 2.6, 8), mat: trunk, pos: [0, 1.3, 0] },
+        { geo: new THREE.SphereGeometry(2.5, 12, 10), mat: crownA, pos: [0, 4.2, 0] },
+      ];
+      const fg = new THREE.SphereGeometry(0.32, 10, 8);
+      for (let k = 0; k < 9; k++) {
+        const a = k * 2.4, h = 3.2 + (k % 3) * 0.8;
+        parts.push({ geo: fg, mat: fruit, pos: [Math.cos(a) * 2.2, h, Math.sin(a) * 2.2] });
+      }
+      addInstanced(this.scene, parts, all);
+    } else {
+      // 水べ: 丸い木(青みがかった緑)・道のふちの あし・水の上の はす
+      addInstanced(this.scene, [
+        { geo: new THREE.CylinderGeometry(0.3, 0.45, 3, 8), mat: trunk, pos: [0, 1.5, 0] },
+        { geo: new THREE.SphereGeometry(2.6, 12, 10), mat: crownA, pos: [0, 4.6, 0] },
+        { geo: new THREE.SphereGeometry(1.8, 12, 10), mat: crownB, pos: [1.1, 6, 0.4] },
+      ], far);
+      const reed = new THREE.MeshStandardMaterial({ color: 0x6a9a4a, roughness: 0.9 });
+      const reeds: Placement[] = [];
+      for (let s = 0; s < this.end; s += 3.2) for (const sx of [-1, 1]) if (rnd() < 0.7) reeds.push(this.rp(s + rnd() * 2, sx * (ROAD_HALF + 0.8 + rnd() * 3), { scale: 0.7 + rnd() * 0.7, rotY: rnd() * 6 }));
+      const rg = new THREE.CylinderGeometry(0.03, 0.05, 1.6, 5);
+      addInstanced(this.scene, [
+        { geo: rg, mat: reed, pos: [0, 0.8, 0] }, { geo: rg, mat: reed, pos: [0.2, 0.7, 0.1] }, { geo: rg, mat: reed, pos: [-0.15, 0.75, -0.12] },
+        { geo: new THREE.CylinderGeometry(0.07, 0.07, 0.35, 6), mat: new THREE.MeshStandardMaterial({ color: 0x8a5a2a }), pos: [0, 1.6, 0] },
+      ], reeds);
+      const lily = new THREE.MeshStandardMaterial({ color: 0x4caa4a, roughness: 0.6 });
+      const pads: Placement[] = [];
+      for (let s = 0; s < this.end; s += 5) for (const sx of [-1, 1]) if (rnd() < 0.5) pads.push(this.rp(s + rnd() * 3, sx * (ROAD_HALF + 4 + rnd() * 8), { scale: 0.6 + rnd() * 0.8, rotY: rnd() * 6, y: 0.04 }));
+      addInstanced(this.scene, [{ geo: new THREE.CircleGeometry(0.8, 14, 0.3, Math.PI * 1.8).rotateX(-Math.PI / 2), mat: lily }], pads, false);
+    }
+    // 道のふちの 丸い かたまり(その道の色)
+    const bushMat = new THREE.MeshStandardMaterial({ color: look.bush, roughness: 1 });
+    const bp: Placement[] = [];
+    for (let s = 0; s < this.end; s += 4.5) for (const sx of [-1, 1]) if (rnd() < 0.55) bp.push(this.rp(s + rnd() * 3, sx * (ROAD_HALF + 0.9 + rnd() * 1.2), { scale: 0.3 + rnd() * 0.35 }));
+    addInstanced(this.scene, [{ geo: new THREE.SphereGeometry(1, 10, 8), mat: bushMat, pos: [0, 0.35, 0] }], bp);
+  }
+
   /** 仲間の門(架空の道のゴール): 葉のかたまりの柱と、まるいアーチ。上に 大きな S字の芽 */
   private buildArch(): void {
     const L = this.course.length;
     const gate = new THREE.Group();
-    const leafA = new THREE.MeshStandardMaterial({ color: 0x3f9a3a, roughness: 0.9 });
-    const leafB = new THREE.MeshStandardMaterial({ color: 0x6cc24a, roughness: 0.85 });
+    const leafA = new THREE.MeshStandardMaterial({ color: this.pathLook.arch[0], roughness: 0.9 });
+    const leafB = new THREE.MeshStandardMaterial({ color: this.pathLook.arch[1], roughness: 0.85 });
     const arch = new THREE.Mesh(new THREE.TorusGeometry(6.4, 0.95, 12, 40, Math.PI), leafA);
     arch.position.y = 3.2;
     arch.castShadow = true;
@@ -1908,6 +2008,20 @@ export class KasugaView {
         obj.add(cup);
       } else if (o.kind === 'fish') {
         obj.add(this.goldfishModel());
+      } else if (o.kind === 'fence' && o.deco === 'root') {
+        // 木の根: 道を横切る 太い根(低い。こぶつき)
+        const rootM = new THREE.MeshStandardMaterial({ color: 0x6a4626, roughness: 0.95 });
+        const w = o.halfW * 2 + 1.6;
+        const log = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.38, w, 10).rotateZ(Math.PI / 2), rootM);
+        log.position.y = 0.33;
+        log.castShadow = true;
+        obj.add(log);
+        for (let k = 0; k < 4; k++) {
+          const kn = new THREE.Mesh(sphere, rootM);
+          kn.scale.set(0.3, 0.42, 0.34);
+          kn.position.set(-o.halfW + 0.6 + (k * (w - 2.8)) / 3, 0.5, (k % 2 ? 0.12 : -0.1));
+          obj.add(kn);
+        }
       } else if (o.kind === 'fence' && this.theme.setting === 'path') {
         // 架空の道: 生け垣(四角い葉のかたまりに、丸い葉の こぶ)
         const w = o.halfW * 2;
@@ -1949,7 +2063,21 @@ export class KasugaView {
           }
         }
       } else if (o.kind === 'stone') {
-        if (town) {
+        if (this.theme.foliage === 'orange') {
+          // オレンジの道: ころがる みかん(へたと 葉っぱ)
+          const ball = new THREE.Group();
+          const body = new THREE.Mesh(new THREE.SphereGeometry(0.85, 20, 14), new THREE.MeshStandardMaterial({ color: 0xff8418, roughness: 0.6 }));
+          body.scale.y = 0.9;
+          body.castShadow = true;
+          ball.add(body);
+          const leaf = new THREE.Mesh(sphere, new THREE.MeshStandardMaterial({ color: 0x3f9a3a, roughness: 0.7 }));
+          leaf.scale.set(0.32, 0.06, 0.16);
+          leaf.position.set(0.15, 0.8, 0);
+          ball.add(leaf);
+          ball.position.y = 0.8;
+          spin = ball;
+          obj.add(ball);
+        } else if (town) {
           // 街道では、ころがる樽
           const barrel = new THREE.Group();
           const body = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 0.8, 1.3, 20).rotateZ(Math.PI / 2), barrelM);
@@ -1985,7 +2113,9 @@ export class KasugaView {
         sh.position.y = 0.02;
         obj.add(sh);
       } else if (o.kind === 'puddle') {
-        const pd = new THREE.Mesh(new THREE.CircleGeometry(1.2, 28).rotateX(-Math.PI / 2), waterM);
+        // 木の根の道では、ぬかるみ(茶色い どろ)
+        const mud = this.theme.foliage === 'root';
+        const pd = new THREE.Mesh(new THREE.CircleGeometry(1.2, 28).rotateX(-Math.PI / 2), mud ? new THREE.MeshStandardMaterial({ color: 0x4e3420, roughness: 0.35 }) : waterM);
         pd.scale.set(1, 1, 0.8);
         pd.position.y = 0.03;
         obj.add(pd);
@@ -2327,7 +2457,8 @@ export class KasugaView {
       obj = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: 0xcfe0f2, transparent: true, opacity: 0.45, depthWrite: false }));
     } else if (flutter) {
       // 1枚ずつ色を変える(紅葉=赤・橙・黄 / 桜=ピンク)
-      const palette = (w === 'leaves' ? [0xd9452a, 0xf08a2a, 0xf2c043, 0xb8341f] : [0xffc4d6, 0xffe2ea, 0xff9fbf]).map((c) => new THREE.Color(c));
+      const ginkgo = this.theme.foliage === 'ginkgo'; // いちょうの道は 黄色い葉だけ
+      const palette = (w === 'leaves' ? (ginkgo ? [0xf2c624, 0xffdc4a, 0xe8b018, 0xfff07a] : [0xd9452a, 0xf08a2a, 0xf2c043, 0xb8341f]) : [0xffc4d6, 0xffe2ea, 0xff9fbf]).map((c) => new THREE.Color(c));
       const col = new Float32Array(n * 3);
       for (let i = 0; i < n; i++) palette[i % palette.length].toArray(col, i * 3);
       geo.setAttribute('color', new THREE.BufferAttribute(col, 3));

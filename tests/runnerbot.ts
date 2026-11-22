@@ -24,6 +24,7 @@ export function bot(r: Run, o2: BotOpts = {}): Input {
     if (r.x > 0.25) left = true;
     else if (r.x < -0.25) right = true;
   }
+  let boltSeen = false;
   for (const o of r.course.obstacles) {
     if (o.kind === 'train') continue; // 電車は、着く前に通りすぎる
     if (o.kind === 'fish') {
@@ -56,9 +57,11 @@ export function bot(r: Run, o2: BotOpts = {}): Input {
       continue;
     }
     if (o.kind === 'bolt') {
-      // 雷: 光る輪の外へ、よける
+      // 雷: 光る輪の外へ、よける(いちばん手前の輪だけを見る。左右に続く輪を 先に見て 迷わない)
       const d = o.s - r.s;
-      if (d > -1.8 && d < 26 && Math.abs(o.x - r.x) < (o.radius ?? 1.35) + PLAYER_RADIUS + 0.5) {
+      if (d <= -1.8 || boltSeen) continue;
+      if (d < 26) boltSeen = true;
+      if (d < 26 && Math.abs(o.x - r.x) < (o.radius ?? 1.35) + PLAYER_RADIUS + 0.5) {
         if (o.x > r.x || (o.x === r.x && r.x > 0)) left = true;
         else right = true;
       }

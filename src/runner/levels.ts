@@ -14,8 +14,11 @@ export type Setting = 'sando' | 'town' | 'mountain' | 'river' | 'city' | 'path';
  * heijo=平城宮跡の朱雀門 / zaodo=金峯山寺の蔵王堂 / castle=郡山城 / park=奈良公園
  */
 export type GoalScene = 'shrine' | 'todaiji' | 'horyuji' | 'omiwa' | 'bay' | 'summit' | 'heijo' | 'zaodo' | 'castle' | 'park' | 'arch';
-/** 道ばたの木: cedar=杉(既定) / maple=紅葉 / sakura=桜 / sprout=Spra の芽(大きな S字の芽と、丸い木) */
-export type Foliage = 'cedar' | 'maple' | 'sakura' | 'sprout';
+/**
+ * 道ばたの木: cedar=杉(既定) / maple=紅葉 / sakura=桜 / 架空の道(仲間の鹿の面): sprout=Spra の芽と 丸い木 /
+ * ginkgo=いちょう(黄色い とんがった木) / petal=桜の花びら(桜の木の絵) / root=大樹(太い幹・地面の根) / orange=みかんの木 / water=水べ(あし・はす)
+ */
+export type Foliage = 'cedar' | 'maple' | 'sakura' | 'sprout' | 'ginkgo' | 'petal' | 'root' | 'orange' | 'water';
 
 export interface Theme {
   setting: Setting;
@@ -407,46 +410,56 @@ const GREEN_PATH: Theme = {
   lampGlow: 1.6, halo: 0, snowCaps: false,
 };
 
-/** 若草山の新緑(Spra=緑) */
-const GREEN_WAKAKUSA: Theme = {
-  ...MOUNTAIN, goal: 'summit',
-  sky: ['#3f9be6', '#93cdf3', '#d6f0dc', '#e6f5d6'],
-  fog: 0xd6efd8,
-  grass: { base: '#5fb04a', specks: ['#4fa03c', '#74c45c', '#8fd06a', '#469436'] },
+const PATH_BASE = { setting: 'path', goal: 'arch', night: false, lampGlow: 1.6, halo: 0, snowCaps: false, env: 0.45, exposure: 1.05 } as const;
+/** 4-12 いちょうの道(Lumi=黄): 金色の葉の道・黄色い いちょう並木・葉が舞う */
+const GINKGO_PATH: Theme = {
+  ...PATH_BASE, weather: 'leaves', foliage: 'ginkgo',
+  sky: ['#3d8ee0', '#8cc4f0', '#f2e6b0', '#f8eec8'],
+  fog: 0xf4e8c0, fogNear: 80, fogFar: 320,
+  hemiSky: 0xfff4d0, hemiGround: 0x9a8030, hemi: 0.9,
+  sun: 0xfff0c0, sunPower: 2.5, sunPos: [14, 26, 8],
+  road: { base: '#f2cf48', specks: ['#e8bf30', '#f8dc68', '#e0b028', '#fbe58a'], rough: 1 },
+  grass: { base: '#a8a23e', specks: ['#b8a83a', '#98923a', '#c8b448', '#8a8a34'] },
 };
-/** 黄金の稲田(Lumi=黄) */
-const GOLD_FIELDS: Theme = {
-  ...MOUNTAIN, goal: 'horyuji',
-  sky: ['#5a9ee0', '#b4d4ee', '#f4e6b8', '#f8eec8'],
-  fog: 0xf2e4b8, fogNear: 70, fogFar: 300,
-  hemiSky: 0xfff2cc, hemiGround: 0xa89040,
-  sun: 0xffe6a0,
-  grass: { base: '#d0b040', specks: ['#c0a032', '#e0c45a', '#b89428', '#e8d070'] },
+/** 4-13 花びらの道(Momo=ピンク): 桜の花びらの道・桜並木・湖の上の 花びらの つり橋 */
+const PETAL_PATH: Theme = {
+  ...PATH_BASE, weather: 'petals', foliage: 'petal',
+  sky: ['#4a9ae6', '#a8d2f2', '#f6dcea', '#fbe8f0'],
+  fog: 0xf6e2ec, fogNear: 80, fogFar: 320,
+  hemiSky: 0xfff0f6, hemiGround: 0x7a9a50, hemi: 0.9,
+  sun: 0xfff2ea, sunPower: 2.5, sunPos: [14, 26, 8],
+  road: { base: '#f6b4cc', specks: ['#f2a0bc', '#fac8da', '#ee90b0', '#fde0ea'], rough: 1 },
+  grass: { base: '#86b85a', specks: ['#f2b8cc', '#7aa84c', '#f6cad8', '#94c466'] },
 };
-/** さくらの佐保川(Momo=ピンク) */
-const PINK_SAKURA: Theme = {
-  ...SPRING_PARK,
-  grass: { base: '#8ab85a', specks: ['#f2b8cc', '#f6cad8', '#7aa84c', '#f0a8c0'] },
+/** 4-14 木の根の道(Kuru=茶): 土の道・大樹の森(少し暗い)・道を横切る根 */
+const ROOT_PATH: Theme = {
+  ...PATH_BASE, weather: 'none', foliage: 'root',
+  sky: ['#4a8ed0', '#9cc6e6', '#dfe8d0', '#ece8d4'],
+  fog: 0xdfe2cc, fogNear: 60, fogFar: 260,
+  hemiSky: 0xf0f4e0, hemiGround: 0x5a4a2a, hemi: 0.85,
+  sun: 0xffeccc, sunPower: 2.3, sunPos: [14, 26, 8],
+  road: { base: '#8a6440', specks: ['#7a5634', '#9a744c', '#6a4a2c', '#a88458'], rough: 1 },
+  grass: { base: '#4a7a34', specks: ['#3e6a2c', '#56883c', '#345e26', '#628e40'] },
 };
-/** くりの山の秋(Kuru=茶) */
-const BROWN_AUTUMN: Theme = {
-  ...AUTUMN_YOSHINO,
-  grass: { base: '#9a7a44', specks: ['#8a6a38', '#aa8a50', '#7a5a30', '#b8964e'] },
-  road: { base: '#a08460', specks: ['#8e7250', '#b2966e', '#7e6444'], rough: 1 },
-};
-/** 夕焼けの街(Piko=オレンジ) */
-const ORANGE_DUSK: Theme = {
-  ...EVENING_HEIJO,
+/** 4-15 オレンジの道(Piko=オレンジ): 夕焼けの長い下り坂・みかんの木・ころがる みかん */
+const ORANGE_PATH: Theme = {
+  ...PATH_BASE, weather: 'none', foliage: 'orange', exposure: 1.0,
   sky: ['#4a4a9a', '#d0789a', '#ff9a58', '#ffc888'],
-  fog: 0xf8b888,
-  sun: 0xff9a50,
+  fog: 0xf8b888, fogNear: 70, fogFar: 300,
+  hemiSky: 0xffd8b0, hemiGround: 0x8a5a30, hemi: 0.85,
+  sun: 0xff9a50, sunPower: 2.4, sunPos: [10, 14, -20],
+  road: { base: '#ff9a3c', specks: ['#f48a2a', '#ffae58', '#ea7a20', '#ffc078'], rough: 1 },
+  grass: { base: '#8a8a36', specks: ['#9a8a3a', '#7a7a30', '#a89040', '#6e7a2e'] },
 };
-/** 氷の三輪山(Ruru=水色) */
-const ICE_OMIWA: Theme = {
-  ...SNOW_OMIWA,
-  sky: ['#6aa6dc', '#a8d0ee', '#d8ecf8', '#eaf5fc'],
-  fog: 0xdcecf6,
-  grass: { base: '#a8c8d8', specks: ['#98bccc', '#c0dcea', '#e6f2f8'] },
+/** 4-16 水の道(Ruru=水色): 浅い水の道(すべる)・あしと はす・はねる金魚 */
+const WATER_PATH: Theme = {
+  ...PATH_BASE, weather: 'none', foliage: 'water',
+  sky: ['#3a92e0', '#8ccaf2', '#d4eef8', '#e8f6fc'],
+  fog: 0xd8eef8, fogNear: 80, fogFar: 320,
+  hemiSky: 0xe8f8ff, hemiGround: 0x3a7a8a, hemi: 0.9,
+  sun: 0xfff8ec, sunPower: 2.6, sunPos: [14, 26, 8],
+  road: { base: '#5ab4e6', specks: ['#4aa4da', '#7cc8f0', '#3a94cc', '#a6dcf6'], rough: 0.35 },
+  grass: { base: '#4e9a78', specks: ['#3e8a6a', '#5eaa86', '#6ab4a0', '#468e70'] },
 };
 
 export const FRIEND_RUN_LEVELS: RunnerLevel[] = [
@@ -475,71 +488,101 @@ export const FRIEND_RUN_LEVELS: RunnerLevel[] = [
     lines: ['半分！ Spraは まだ にげている', 'せんべいで 加速！', 'みどりの門が 見えた！ 急いで！'],
   },
   {
-    id: '4-12', title: 'Lumiの鹿と 黄金の田んぼ', summary: '黄色い田んぼ道。光る輪(雷)を よけて',
-    intro: '光る輪は 雷！ せんべいで 加速して 門へ！',
-    length: 1150, seed: 20261123, difficulty: 0.75,
-    extra: ['thunder', 'ramp', 'critterSleep', 'critterCross', 'critterCharge'], critters: ['turtle', 'rabbit', 'puni', 'bubu'],
-    opening: ['hole', 'thunder', 'critterSleep', 'ramp'],
+    // いちょうの道: 金色の落ち葉の山(ふむと すべる)と 光る輪(雷)。ゆるやかな丘
+    id: '4-12', title: 'Lumiの鹿と いちょうの道', summary: 'にげる Spra を 追いかけろ！ 金色の いちょう並木。落ち葉で すべり、光る輪(雷)を よける',
+    intro: 'Spraが にげた！ はしるを 連打！ 落ち葉は すべる、光る輪は 雷だよ',
+    length: 2300, seed: 20261129, difficulty: 0.75,
+    extra: [], critters: ['turtle', 'rabbit', 'puni', 'bubu'],
+    script: ['hole', 'coinSnake', 'leafPile', 'fenceGap', 'thunder', 'leafLeap', 'leafPile', 'critterHop', 'hole', 'thunder',
+      'fenceHole', 'leafPile', 'leafLeap', 'critterCross', 'thunder', 'poop', 'leafPile', 'fenceGap', 'leafLeap', 'thunder',
+      'leafPile', 'holePoop', 'critterCharge', 'leafPile', 'thunder', 'fenceHole', 'leafLeap', 'leafPile', 'critterHop', 'thunder',
+      'hole', 'leafPile', 'fenceGap', 'leafLeap', 'thunder', 'leafPile', 'coinSnake'],
     rules: FRIEND_RULES,
     curve: { amp: 20, wave: 260 },
-    hills: [{ at: 0.1, h: 0 }, { at: 0.3, h: 3 }, { at: 0.5, h: 0 }, { at: 0.7, h: 4 }, { at: 0.88, h: 2 }],
-    gate: 60, senbei: 55,
-    theme: GOLD_FIELDS, goalName: '法隆寺',
-    lines: ['黄金の 田んぼが 続く…', '雷に 気をつけて！', '五重塔が 見えた！'],
+    hills: [
+      { at: 0.04, h: 0 }, { at: 0.12, h: 5 }, { at: 0.2, h: 1 }, { at: 0.3, h: 7 }, { at: 0.38, h: 2 }, { at: 0.5, h: 8 },
+      { at: 0.6, h: 3 }, { at: 0.7, h: 9 }, { at: 0.8, h: 4 }, { at: 0.9, h: 8 },
+    ],
+    tag: { lead: 150, speed: 1.15 }, senbei: 110,
+    theme: GINKGO_PATH, goalName: 'きいろの門',
+    lines: ['半分！ Spraは まだ にげている', '光る輪に 気をつけて！', 'きいろの門が 見えた！ 急いで！'],
   },
   {
-    id: '4-13', title: 'Momoの鹿と さくら並木', summary: '桜吹雪の川ぞい。シートと金魚を よけて',
-    intro: 'シートと 金魚に 注意！ せんべいで 加速！',
-    length: 1150, seed: 20261124, difficulty: 0.75,
-    extra: ['hanami', 'goldfish', 'critterHop', 'critterCross', 'critterCharge'], critters: ['rabbit', 'puni', 'bubu', 'fox'],
-    opening: ['hole', 'hanami', 'goldfish', 'poop'],
+    // 花びらの道: まんなかに 湖の上の 長い つり橋(ゆれる・板のぬけた所を 跳ぶ)。花見のシートは ふむと コインを落とす
+    id: '4-13', title: 'Momoの鹿と 花びらの道', summary: 'にげる Spra を 追いかけろ！ 桜並木と、湖の上の ゆれる 花びらの つり橋',
+    intro: 'Spraが にげた！ はしるを 連打！ つり橋は ゆれるよ。落ちないように！',
+    length: 2300, seed: 20261130, difficulty: 0.75,
+    extra: [], critters: ['rabbit', 'puni', 'bubu', 'fox'],
+    script: ['hole', 'coinSnake', 'hanami', 'fenceGap', 'critterHop', 'leafLeap', 'hanami', 'poop', 'fenceHole', 'hanami',
+      'critterCross', 'leafLeap', 'hanami', 'holePoop',
+      'hanami', 'critterHop', 'leafLeap', 'fenceGap', 'hanami', 'critterCharge', 'hole', 'hanami', 'leafLeap', 'poop',
+      'fenceHole', 'hanami', 'critterCross', 'leafLeap', 'hanami', 'fenceGap', 'coinSnake'],
     rules: FRIEND_RULES,
     curve: { amp: 18, wave: 260 },
-    hills: [{ at: 0.1, h: 0 }, { at: 0.3, h: 3 }, { at: 0.5, h: 0 }, { at: 0.7, h: 4 }, { at: 0.88, h: 5 }],
-    gate: 60, senbei: 55,
-    theme: PINK_SAKURA, goalName: '奈良公園',
-    lines: ['桜の トンネル！', 'せんべいで 加速！', '奈良公園の門が 見えた！'],
+    hills: [{ at: 0.05, h: 0 }, { at: 0.18, h: 6 }, { at: 0.3, h: 2 }, { at: 0.4, h: 4 }, { at: 0.58, h: 4 }, { at: 0.7, h: 9 }, { at: 0.82, h: 3 }, { at: 0.92, h: 6 }],
+    bridge: { from: 0.42, to: 0.56 },
+    tag: { lead: 150, speed: 1.14 }, senbei: 110,
+    theme: PETAL_PATH, goalName: 'ピンクの門',
+    lines: ['つり橋を わたりきった！', 'せんべいで 加速！', 'ピンクの門が 見えた！ 急いで！'],
   },
   {
-    id: '4-14', title: 'Kuruの鹿と くりの山', summary: '落ち葉の山道。法螺貝は 突進の合図',
-    intro: '法螺貝は 突進の合図！ せんべいで 加速！',
-    length: 1150, seed: 20261125, difficulty: 0.8,
-    extra: ['leafPile', 'critterCharge', 'critterSleep', 'critterCross', 'ramp'], critters: ['bear', 'tanuki', 'squirrel', 'toge'],
-    opening: ['hole', 'leafPile', 'critterCharge', 'poop'],
+    // 木の根の道: 道を横切る根を リズムよく 続けて跳ぶ。ぬかるみ(水たまり)で おそくなる。法螺貝は 突進の合図
+    id: '4-14', title: 'Kuruの鹿と 木の根の道', summary: 'にげる Spra を 追いかけろ！ 大樹の森。道を横切る根を リズムよく とびこえる',
+    intro: 'Spraが にげた！ はしるを 連打！ 根っこは リズムよく ジャンプ！',
+    length: 2300, seed: 20261131, difficulty: 0.8,
+    extra: [], critters: ['bear', 'tanuki', 'squirrel', 'toge'],
+    script: ['hole', 'coinSnake', 'roots', 'puddle', 'critterHop', 'roots', 'leafLeap', 'poop', 'roots', 'critterCharge',
+      'puddle', 'roots', 'fenceGap', 'roots', 'leafLeap', 'critterCross', 'roots', 'puddle', 'holePoop', 'roots',
+      'critterCharge', 'roots', 'leafLeap', 'puddle', 'roots', 'fenceHole', 'roots', 'critterHop', 'puddle', 'roots',
+      'leafLeap', 'roots', 'critterCharge', 'roots', 'coinSnake'],
     rules: FRIEND_RULES,
-    curve: { amp: 28, wave: 210 },
-    hills: [{ at: 0.08, h: 0 }, { at: 0.25, h: 8 }, { at: 0.4, h: 5 }, { at: 0.6, h: 16 }, { at: 0.88, h: 24 }],
+    curve: { amp: 26, wave: 220 },
+    hills: [
+      { at: 0.04, h: 0 }, { at: 0.14, h: 8 }, { at: 0.22, h: 5 }, { at: 0.34, h: 12 }, { at: 0.44, h: 8 }, { at: 0.56, h: 16 },
+      { at: 0.66, h: 11 }, { at: 0.78, h: 19 }, { at: 0.88, h: 15 }, { at: 0.95, h: 20 },
+    ],
     horn: true,
-    gate: 60.5, senbei: 55,
-    theme: BROWN_AUTUMN, goalName: '金峯山寺',
-    lines: ['落ち葉の 山道…', 'もうすぐ 蔵王堂！', '門が しまる！ 急いで！'],
+    tag: { lead: 150, speed: 1.15 }, senbei: 110,
+    theme: ROOT_PATH, goalName: '大樹の門',
+    lines: ['半分！ 根っこは まだまだ 続く', '法螺貝は 突進の合図！', '大樹の門が 見えた！ 急いで！'],
   },
   {
-    id: '4-15', title: 'Pikoの鹿と 夕焼けの街', summary: '夕焼けの街道。踏切と ジャンプ台',
-    intro: '踏切に 注意！ せんべいで 加速して 門へ！',
-    length: 1200, seed: 20261126, difficulty: 0.8,
-    extra: ['crossing', 'ramp', 'critterCross', 'critterCharge', 'critterSleep'], critters: ['tanuki', 'fox', 'pachi', 'bubu'],
-    opening: ['hole', 'ramp', 'poop', 'critterCross'],
+    // オレンジの道: 夕焼けの 長い下り坂(いちばん速い)。ころがる みかん(左右に ころがる)を よけ、ジャンプ台で 大穴を こえる
+    id: '4-15', title: 'Pikoの鹿と オレンジの道', summary: 'にげる Spra を 追いかけろ！ 夕焼けの 長い下り坂。ころがる みかんを よけて',
+    intro: 'Spraが にげた！ はしるを 連打！ 下り坂は 速いよ。ころがる みかんに 注意！',
+    length: 2300, seed: 20261132, difficulty: 0.8,
+    extra: [], critters: ['tanuki', 'fox', 'pachi', 'bubu'],
+    script: ['hole', 'coinSnake', 'stones', 'leafLeap', 'fenceGap', 'stones', 'critterCross', 'leafLeap', 'stones', 'poop',
+      'fenceHole', 'stones', 'leafLeap', 'critterHop', 'stones', 'holePoop', 'leafLeap', 'stones', 'fenceGap', 'critterCharge',
+      'stones', 'leafLeap', 'hole', 'stones', 'critterCross', 'leafLeap', 'stones', 'fenceHole', 'stones', 'leafLeap',
+      'critterHop', 'stones', 'fenceGap', 'stones', 'coinSnake'],
     rules: FRIEND_RULES,
     curve: { amp: 18, wave: 250 },
-    townFrom: 0.25,
-    after: { crossing: 0.3 },
-    gate: 60, senbei: 55,
-    theme: ORANGE_DUSK, goalName: '平城宮跡',
-    lines: ['夕日が しずんでいく…', '踏切に 注意！', '朱雀門が 見えた！'],
+    // 長い下り坂(ところどころ 少し登り返す)
+    hills: [
+      { at: 0.03, h: 46 }, { at: 0.18, h: 38 }, { at: 0.22, h: 40 }, { at: 0.38, h: 28 }, { at: 0.42, h: 30 }, { at: 0.58, h: 18 },
+      { at: 0.62, h: 20 }, { at: 0.78, h: 8 }, { at: 0.82, h: 9 }, { at: 0.96, h: 0 },
+    ],
+    tag: { lead: 150, speed: 1.17 }, senbei: 110,
+    theme: ORANGE_PATH, goalName: 'オレンジの門',
+    lines: ['夕日が しずんでいく…', 'ころがる みかんに 注意！', 'オレンジの門が 見えた！ 急いで！'],
   },
   {
-    id: '4-16', title: 'Ruruの鹿と 氷の三輪山', summary: '雪と氷の参道。つるつる すべる',
-    intro: 'こおりは つるつる！ せんべいで 加速！',
-    length: 1100, seed: 20261127, difficulty: 0.75,
-    extra: ['ice', 'ramp', 'critterSleep', 'critterHop', 'critterCross'], critters: ['snowy', 'frosty', 'gingi', 'rabbit'],
-    opening: ['hole', 'ice', 'critterSleep', 'ramp'],
-    rules: { ...FRIEND_RULES, steerAccel: 16, steerSpeed: 6.6 },
-    curve: { amp: 24, wave: 230 },
-    hills: [{ at: 0.12, h: 0 }, { at: 0.35, h: 7 }, { at: 0.5, h: 8 }, { at: 0.75, h: 15 }, { at: 0.88, h: 17 }],
-    gate: 58, senbei: 55,
-    theme: ICE_OMIWA, goalName: '大神神社',
-    lines: ['雪が ふってきた', 'こおりに 注意！', '大鳥居が 見えた！'],
+    // 水の道: 浅い水の上は すこし すべる(曲がりにくい)。こおりの 上は つるつる。金魚が はねて 道を横切る
+    id: '4-16', title: 'Ruruの鹿と 水の道', summary: 'にげる Spra を 追いかけろ！ 浅い 水の道。すべる こおりと、はねる 金魚',
+    intro: 'Spraが にげた！ はしるを 連打！ 水の道は すべるよ。金魚は ジャンプで かわして',
+    length: 2300, seed: 20261133, difficulty: 0.75,
+    extra: [], critters: ['turtle', 'puni', 'gingi', 'rabbit'],
+    script: ['hole', 'coinSnake', 'goldfish', 'ice', 'fenceGap', 'goldfish', 'leafLeap', 'ice', 'critterHop', 'goldfish',
+      'poop', 'ice', 'fenceHole', 'goldfish', 'leafLeap', 'critterCross', 'ice', 'goldfish', 'holePoop', 'ice',
+      'goldfish', 'leafLeap', 'critterHop', 'ice', 'goldfish', 'fenceGap', 'ice', 'goldfish', 'leafLeap', 'ice',
+      'critterCross', 'goldfish', 'ice', 'hole', 'goldfish', 'coinSnake'],
+    rules: { ...FRIEND_RULES, steerAccel: 24 },
+    curve: { amp: 22, wave: 240 },
+    hills: [{ at: 0.05, h: 0 }, { at: 0.16, h: 4 }, { at: 0.28, h: 1 }, { at: 0.42, h: 6 }, { at: 0.56, h: 2 }, { at: 0.7, h: 7 }, { at: 0.84, h: 3 }, { at: 0.94, h: 5 }],
+    tag: { lead: 150, speed: 1.16 }, senbei: 110,
+    theme: WATER_PATH, goalName: 'みずいろの門',
+    lines: ['半分！ Spraは まだ にげている', 'こおりは つるつる！', 'みずいろの門が 見えた！ 急いで！'],
   },
 ];
 
