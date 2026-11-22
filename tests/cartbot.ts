@@ -1,5 +1,6 @@
 // WORLD 8: 先を見て操作するボット(テストと調整に使う)
 import { CartRun, BAL, rampReach, type Input } from '../src/cart/sim.ts';
+import { FOE } from '../src/cart/track.ts';
 import { trackOf, type CartLevel } from '../src/cart/levels.ts';
 
 export const DT = 1 / 120;
@@ -23,11 +24,14 @@ export type Policy = {
   pump?: boolean;
   /** 追いかけっこ: 連結してから ブレーキを かけはじめるまでの遅れ(秒) */
   brakeDelay?: number;
+  /** ラムガの子分: 種を投げる(false なら投げない)。seedLate=「たね」に変わってから 投げはじめるまでの遅れ(秒) */
+  seeds?: boolean; seedLate?: number;
 };
 
 export function drive(level: CartLevel, policy: Policy = {}): CartRun {
   const p = { brake: true, lean: true, jump: true, dash: true, rampJump: true, senbei: true, ...policy };
   const track = trackOf(level), run = new CartRun(track);
+  let pressed = false, targetSince = -1;
   if (p.from) run.restore(p.from, 0, 0, 0, false, []);
   run.start();
   for (let i = 0; i < 300 / DT && run.phase === 'running' && run.s < (p.until ?? Infinity); i++) {
@@ -99,6 +103,17 @@ export function drive(level: CartLevel, policy: Policy = {}): CartRun {
       }
       if (run.coupled) { input.dash = false; input.brake = run.t - run.hitchT >= (p.brakeDelay ?? 0.3); }
     }
+    // ラムガの子分: 「たね」に変わったら 種を投げる(押して はなす を くり返す)。とげ玉は ジャンプ
+    if (track.foes.length) {
+      const tg = run.seedTarget;
+      if (tg) {
+        if (targetSince < 0) targetSince = run.t;
+        input.dash = p.seeds !== false && run.t - targetSince >= (p.seedLate ?? 0) && run.seedCool <= 0 && !pressed;
+      } else targetSince = -1;
+      const sp = track.foes.find(f => FOE[f.kind].jump && !run.passed.has(f.id) && f.s > s && f.s - s < v * 0.4);
+      if (sp && p.jump && !run.air) input.jump = true;
+    }
+    pressed = input.dash;
     p.extra?.(run, input);
     run.step(DT, input);
   }

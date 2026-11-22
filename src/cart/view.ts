@@ -5,7 +5,7 @@ import { readBuddy, runFramePath } from '../friends.ts';
 import { FORK_W, forkShape } from './track.ts';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import { BRIDGED, COLLAPSE_AT, type Gap, type Track } from './track.ts';
+import { BRIDGED, COLLAPSE_AT, FOE, type FoeKind, type Gap, type Track } from './track.ts';
 import { BAL, type CartRun } from './sim.ts';
 
 const ASSET = '/assets';
@@ -167,6 +167,9 @@ export class CartView {
   private chunks: { mesh: THREE.InstancedMesh; from: number; to: number }[] = [];
   /** 鹿せんべい(くるくる回る)。食べたら消す */
   private senbeiObj: { id: number; spin: THREE.Object3D }[] = [];
+  /** ラムガの子分(絵の板)と、飛んでいる Spra の種 */
+  private foeObj = new Map<number, { sp: THREE.Sprite; mat: THREE.SpriteMaterial; kind: FoeKind; aspect: number; flash: number; puffed: boolean }>();
+  private seedPool: THREE.Sprite[] = []; private seedMat: THREE.SpriteMaterial | null = null;
   /** 後ろから追ってくる大岩・なだれ */
   private boulder: THREE.Mesh | null = null; private boulderRoll = 0;
   private avalanche: THREE.Group | null = null;
@@ -214,6 +217,7 @@ export class CartView {
     this.buildFog();
     this.buildScenery();
     this.buildObstacles();
+    this.buildFoes();
     this.buildSigns();
     this.coinMesh = this.buildCoins();
     this.buildCart();
@@ -1264,6 +1268,82 @@ export class CartView {
 
   /** ゆらす(着地・ぶつかったとき)。 */
   bump(amount: number): void { this.shake = Math.max(this.shake, amount); }
+  /** 種が当たった子分を、少しの間 赤く光らせる(とげ玉は はね返すので 白く) */
+  foeFlash(id: number): void { const o = this.foeObj.get(id); if (o) o.flash = 0.28; }
+
+  // ---- ラムガの子分(ストーリーのシートから切り出した絵。scripts/build-minions.py) ----
+  private buildFoes(): void {
+    if (!this.track.foes.length) return;
+    const texs = new Map<FoeKind, THREE.Texture>();
+    for (const f of this.track.foes) {
+      let tex = texs.get(f.kind);
+      if (!tex) {
+        // 絵の横長さは、読みこんでから分かる(同じ種類の板を まとめて直す)
+        tex = new THREE.TextureLoader().load(`${ASSET}/runner/minions/${f.kind}.png`, t => {
+          const img = t.image as { width: number; height: number };
+          for (const o of this.foeObj.values()) if (o.kind === f.kind) o.aspect = img.width / img.height;
+        });
+        tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
+        texs.set(f.kind, tex); this.disposables.push(tex);
+      }
+      // 暗い坑道の中でも見えるよう、霧に まぜない(トロッコの明かりに 照らされている)
+      const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, alphaTest: 0.3, fog: false });
+      const sp = new THREE.Sprite(mat); sp.visible = false;
+      this.scene.add(sp); this.disposables.push(mat);
+      this.foeObj.set(f.id, { sp, mat, kind: f.kind, aspect: 1.1, flash: 0, puffed: false });
+    }
+    const seedTex = loadTex(`${ASSET}/cart/seed.png`);
+    this.seedMat = new THREE.SpriteMaterial({ map: seedTex, transparent: true, alphaTest: 0.3, fog: false });
+    this.disposables.push(seedTex, this.seedMat);
+  }
+  private updateFoes(run: CartRun, dt: number): void {
+    if (!this.foeObj.size) return;
+    const f3 = this.f3;
+    for (const f of this.track.foes) {
+      const o = this.foeObj.get(f.id)!, info = FOE[f.kind];
+      const fs = run.foeS.get(f.id) ?? f.s, down = run.downAt.get(f.id);
+      const k = down !== undefined ? run.t - down : -1;
+      // 遠すぎる・げきたいして 飛んでいった・ぶつかって 後ろへ 行った ものは 描かない
+      const show = fs - run.s < 260 && fs > run.s - (run.foeHits.has(f.id) ? 6 : 2) && (k < 0 || k < 1.1);
+      o.sp.visible = show;
+      if (!show) { if (k < 0) o.puffed = false; continue; }
+      this.frame(fs, f3);
+      const h = info.h, w = h * o.aspect;
+      let lift = info.float ?? 0, side = 0;
+      if (f.kind === 'bat') { lift += Math.sin(this.time * 5 + f.id) * 0.3; side = Math.sin(this.time * 1.7 + f.id) * 0.9; }
+      else if (f.kind === 'sheep') lift += Math.sin(this.time * 2.2 + f.id) * 0.15;
+      else if (f.kind === 'boar') lift += Math.abs(Math.sin(this.time * 9)) * 0.15;
+      else lift += Math.abs(Math.sin(this.time * 3 + f.id)) * 0.05;
+      o.sp.position.copy(f3.o).addScaledVector(f3.u, RAIL_TOP + lift + h / 2).addScaledVector(f3.r, side);
+      o.sp.scale.set(w, h, 1);
+      o.mat.rotation = f.kind === 'spike' ? Math.sin(this.time * 4) * 0.15 : 0;
+      o.mat.opacity = 1;
+      // げきたい: くるくる回って、上へ 飛んでいく
+      if (k >= 0) {
+        if (!o.puffed) { o.puffed = true; this.puff(o.sp.position, 6, 1.6, 0xb98ad8); }
+        o.sp.position.addScaledVector(f3.u, k * 7 - k * k * 2).addScaledVector(f3.t, k * 6).addScaledVector(f3.r, (f.id % 2 ? 1 : -1) * k * 5);
+        o.mat.rotation = k * 9; o.mat.opacity = Math.max(0, 1 - k / 1.1);
+      }
+      // ぶつかった: 横へ はじかれる
+      if (run.foeHits.has(f.id)) o.sp.position.addScaledVector(f3.r, (f.id % 2 ? 1 : -1) * Math.min(3, (run.s - fs) * 0.8 + 1));
+      o.flash = Math.max(0, o.flash - dt);
+      o.mat.color.setRGB(1, o.flash > 0 ? 0.45 : 1, o.flash > 0 ? 0.45 : 1);
+    }
+    // 種: 線路にそって、小さな山なりで 飛ぶ。くるくる回る
+    while (this.seedPool.length < run.seeds.length && this.seedMat) {
+      const sp = new THREE.Sprite(this.seedMat.clone()); sp.scale.set(0.62, 0.9, 1); this.scene.add(sp); this.seedPool.push(sp);
+      this.disposables.push(sp.material);
+    }
+    this.seedPool.forEach((sp, i) => {
+      const sd = run.seeds[i];
+      sp.visible = !!sd;
+      if (!sd) return;
+      this.frame(sd.s, f3);
+      const d = sd.s - sd.from, arc = Math.sin(Math.min(1, d / 50) * Math.PI) * 0.7;
+      sp.position.copy(f3.o).addScaledVector(f3.u, RAIL_TOP + 1.7 + arc);
+      sp.material.rotation = -d * 0.35;
+    });
+  }
 
   /** 追いかけっこ: 前のトロッコを、線路の上(分かれ道では正しい側)に置く。谷へ落ちたら、まっさかさま */
   private placeLead(run: CartRun, dt: number): void {
@@ -1386,6 +1466,7 @@ export class CartView {
       }
     }
     this.updateChaser(run, dt, f);
+    this.updateFoes(run, dt);
     this.updateCollapse(run, dt);
 
     // ---- 効果 ----

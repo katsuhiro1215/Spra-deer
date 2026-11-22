@@ -46,6 +46,29 @@ export type Fork = { at: number; len: number; correct: -1 | 1 };
  * 鹿の乗ったトロッコが lead メートル先から、坂を勝手に下っていく(最高 deerCap m/s。カーブでは安全な速さまで落とす)。
  * 追いついて連結し、cliff(谷のふち。線路が切れている)より手前で止めたらクリア。friend=前のトロッコに乗っている仲間の鹿
  */
+/**
+ * ラムガの子分(追いかけっこの面。2026-11-22 Owner「子分を Spra の種で げきたいしながら進む」)。
+ * 線路の上で待ちかまえていて、近づくと「こぐ」ボタンが「たね」に変わる。種が当たると hp が1減り、0 で げきたい。
+ * げきたいできずに ぶつかると、♥が1つ減って おそくなる。
+ */
+export type FoeKind = 'grunt' | 'shield' | 'spear' | 'hammer' | 'bomber' | 'sheep' | 'golem' | 'boar' | 'spike' | 'bat';
+export type Foe = { id: number; s: number; kind: FoeKind };
+/**
+ * 子分の種類ごとの強さ。hp=種がいくつ要るか(0 は種がきかない)、charge=近づくと向かってくる速さ(m/s)、
+ * jump=ジャンプで こえられる(とげ玉。線路の上を ころがっている)、h=絵の高さ(m)、float=宙に浮く高さ(m)
+ */
+export const FOE: Record<FoeKind, { hp: number; charge?: number; jump?: boolean; h: number; float?: number; name: string }> = {
+  grunt: { hp: 1, h: 1.8, name: 'マントの子分' },
+  spear: { hp: 1, h: 1.9, name: 'やりの兵士' },
+  bomber: { hp: 1, h: 1.9, name: 'ばくだんの子分' },
+  sheep: { hp: 1, h: 1.9, float: 0.7, name: '羊雲' },
+  bat: { hp: 1, h: 1.5, float: 1.9, name: 'こうもり' },
+  shield: { hp: 2, h: 1.9, name: '盾の兵士' },
+  hammer: { hp: 2, h: 2.0, name: 'ハンマーの子分' },
+  golem: { hp: 3, h: 2.5, name: '岩の子分' },
+  boar: { hp: 1, charge: 9, h: 1.9, name: 'いのしし' },
+  spike: { hp: 0, jump: true, h: 1.3, name: 'とげ玉' },
+};
 export type Pursuit = { lead: number; deerCap: number; cliff: number; forks: Fork[]; friend: string; /** 前のトロッコの、はじめの速さ(もう走っている。無ければ 20 m/s) */ deerStart?: number };
 export type TrackDef = {
   segments: Segment[];
@@ -61,6 +84,8 @@ export type TrackDef = {
   chases?: Chase[];
   /** 追いかけっこの面(無ければ ふつうの面) */
   pursuit?: Pursuit;
+  /** ラムガの子分(s の順。追いかけっこの面) */
+  foes?: Omit<Foe, 'id'>[];
 };
 
 const DEG = Math.PI / 180;
@@ -118,6 +143,7 @@ export class Track {
   lanternGates: number[];
   chases: Chase[];
   pursuit?: Pursuit;
+  foes: Foe[];
   segments: (Segment & { from: number; to: number })[] = [];
   private px: Float64Array; private py: Float64Array; private pz: Float64Array;
   private hd: Float64Array; private pt: Float64Array; private cv: Float64Array;
@@ -169,6 +195,7 @@ export class Track {
     this.vMax = def.vMax;
     this.lanternGates = def.lanternGates ?? [];
     this.chases = (def.chases ?? []).map(c => ({ ...c })).sort((a, b) => a.from - b.from);
+    this.foes = (def.foes ?? []).map((f, id) => ({ ...f, id })).sort((a, b) => a.s - b.s);
     this.pursuit = def.pursuit ? { ...def.pursuit, forks: def.pursuit.forks.map(f => ({ ...f })).sort((a, b) => a.at - b.at) } : undefined;
   }
   /** s が分かれ道の中なら、その分かれ道 */

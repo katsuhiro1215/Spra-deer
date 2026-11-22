@@ -235,6 +235,18 @@
 .ct-dash.go::after {
   display: none;
 }
+/* 子分が近いときの「たね」(Spra の種の 若草色。脈を打って 押せると分かる) */
+.ct-dash.seed {
+  background: radial-gradient(circle at 35% 30%, #d9f27a, #8cc63a 60%, #5f9a22);
+  box-shadow: 0 5px 0 #4a7a16, 0 0 20px rgba(190, 240, 90, 0.85);
+  animation: ct-seed 0.6s ease-in-out infinite alternate;
+}
+.ct-dash.seed::after {
+  display: none;
+}
+@keyframes ct-seed {
+  to { box-shadow: 0 5px 0 #4a7a16, 0 0 6px rgba(190, 240, 90, 0.4); }
+}
 
 /* 操作が4つあるので、説明を小さめに。低い画面では、カードの中身をつめる */
 .ct-root .ks-how {

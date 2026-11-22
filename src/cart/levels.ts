@@ -1,5 +1,5 @@
 // WORLD 8「鹿と暴走トロッコ」の面(線路のデータ)。面を足すときは、ここにデータを足す。
-import { Track, type Coin, type Fork, type Gap, type Pursuit, type Terrain, type TrackDef } from './track.ts';
+import { FOE, Track, type Coin, type FoeKind, type Fork, type Gap, type Pursuit, type Terrain, type TrackDef } from './track.ts';
 
 export type CartLevel = {
   id: string; title: string; summary: string;
@@ -786,17 +786,22 @@ export const CART_LEVELS: CartLevel[] = [LEVEL_8_1, LEVEL_8_2, LEVEL_8_3, LEVEL_
 // チェックポイントは無い(追いかけっこは、はじめから)。
 // 2026-11-22 Owner: 「コースが短い・外ばかりで単調」→ 約3000m に のばし、鉱山のトンネルを多く、最高速も上げた。
 // 面は「区間の並び」で書き、分かれ道・障害物・コインの位置は pursuitTrack が計算する(長さを変えても ずれない)。
+// 2026-11-22 Owner: 「途中に敵が出て、Spra が種で げきたいしながら進む」→ ラムガの子分を 坑道を中心に 6〜8体。
+// 子分が近いと「こぐ」が「たね」に変わる(ボタンは増やさない。Owner が案Aを選択)。
 
 /**
  * 追いかけっこの1区間。turn があればカーブ。fork=この まっすぐな区間に分かれ道(鹿が行く側)。
  * obs=障害物([区間の頭からの距離, 種類, 枝の向き])。premium=プレミアムコイン(区間の頭からの距離。岩の上を跳ぶ所)。
  * gap=線路の切れ目([区間の頭からの距離, 長さ])。cliff=谷(この区間の頭が 谷のふち)
+ * foes=ラムガの子分([区間の頭からの距離, 種類])。とげ玉は ジャンプでこえるので、跳ぶものと同じ決まり
  */
 type PSec = {
   len: number; slope: number; turn?: number; terrain?: Terrain; name?: string;
   fork?: -1 | 1; obs?: [number, 'rock' | 'log' | 'branch', (-1 | 1)?][]; premium?: number; gap?: [number, number];
-  fog?: number; snow?: boolean; dusk?: number; cliff?: boolean;
+  fog?: number; snow?: boolean; dusk?: number; cliff?: boolean; foes?: [number, FoeKind][];
 };
+/** 子分は、障害物・切れ目から この距離(m)以上 はなす(種を投げるのと、跳ぶのが重ならない) */
+const FOE_APART = 30;
 /** 分かれ道は、まっすぐな区間の 頭から35m の所から(前後のカーブと はなす) */
 const FORK_IN = 35;
 /** 跳ぶもの(岩・倒木・切れ目)は、まっすぐな区間の 頭から20m〜終わりの45m手前まで(速いと1回で30m以上とぶ。カーブに着地しない) */
@@ -804,12 +809,20 @@ const JUMP_IN = 20, JUMP_OUT = 45;
 
 function pursuitTrack(secs: PSec[], pu: Omit<Pursuit, 'forks' | 'cliff'>, vMax: number): TrackDef {
   const segments: TrackDef['segments'] = [], obstacles: TrackDef['obstacles'] = [], coins: C[] = [], gaps: Gap[] = [], forks: Fork[] = [];
+  const foes: NonNullable<TrackDef['foes']> = [];
   let s = 0, cliff = 0;
   for (const g of secs) {
     segments.push({ len: g.len, slope: g.slope, turn: g.turn, terrain: g.terrain, name: g.name, fog: g.fog, snow: g.snow, dusk: g.dusk });
     if (g.cliff) { cliff = s; gaps.push({ from: s, to: s + 90 }); }
     if (g.fork) forks.push({ at: s + FORK_IN, len: Math.min(170, g.len - 2 * FORK_IN), correct: g.fork });
-    const jumps = [...(g.obs ?? []).filter(o => o[1] !== 'branch').map(o => o[0]), ...(g.gap ? [g.gap[0], g.gap[0] + g.gap[1]] : [])];
+    const jumps = [...(g.obs ?? []).filter(o => o[1] !== 'branch').map(o => o[0]), ...(g.gap ? [g.gap[0], g.gap[0] + g.gap[1]] : []),
+      ...(g.foes ?? []).filter(f => FOE[f[1]].jump).map(f => f[0])];
+    // 子分: 分かれ道・谷には出さない。障害物・切れ目と はなす
+    const busy = [...(g.obs ?? []).map(o => o[0]), ...(g.gap ? [g.gap[0], g.gap[0] + g.gap[1]] : [])];
+    for (const [at] of g.foes ?? []) {
+      if (g.fork || g.cliff || at < 10 || at > g.len - 10 || busy.some(b => Math.abs(b - at) < FOE_APART)) throw new Error(`子分の置き場所: ${g.name} ${at}`);
+      foes.push({ s: s + at, kind: (g.foes!.find(f => f[0] === at))![1] });
+    }
     if (jumps.length && (g.turn || g.fork || jumps.some(at => at < JUMP_IN || at > g.len - JUMP_OUT))) throw new Error(`跳ぶものは まっすぐな所に: ${g.name}`);
     for (const [at, kind, side] of g.obs ?? []) obstacles.push(side ? { s: s + at, kind, side } : { s: s + at, kind });
     if (g.gap) gaps.push({ from: s + g.gap[0], to: s + g.gap[0] + g.gap[1] });
@@ -818,14 +831,14 @@ function pursuitTrack(secs: PSec[], pu: Omit<Pursuit, 'forks' | 'cliff'>, vMax: 
     if (!g.fork && !g.cliff) {
       const tunnel = g.terrain === 'tunnel';
       for (let q = s + 14; q < s + g.len - 12; q += 11) {
-        const near = (g.obs ?? []).some(([at]) => Math.abs(s + at - q) < 14) || (g.gap && q > s + g.gap[0] - 14 && q < s + g.gap[0] + g.gap[1] + 10) || (g.premium !== undefined && Math.abs(s + g.premium - q) < 6);
+        const near = (g.obs ?? []).some(([at]) => Math.abs(s + at - q) < 14) || (g.foes ?? []).some(([at]) => Math.abs(s + at - q) < 10) || (g.gap && q > s + g.gap[0] - 14 && q < s + g.gap[0] + g.gap[1] + 10) || (g.premium !== undefined && Math.abs(s + g.premium - q) < 6);
         if (!near) coins.push({ s: q, side: tunnel && !g.turn ? (Math.floor(q / 60) % 2 ? 1 : -1) : 0, h: 0.9 });
       }
     }
     s += g.len;
   }
   coins.sort((a, b) => a.s - b.s);
-  return { vMax, segments, gaps, obstacles, coins, pursuit: { ...pu, cliff, forks } };
+  return { vMax, segments, gaps, obstacles, coins, foes, pursuit: { ...pu, cliff, forks } };
 }
 
 /** 追いかけっこの面を作る */
@@ -841,18 +854,18 @@ const LEVEL_8_11 = pursuit('8-11', 'spra', 'Spraの鹿', '緑の森と 鉱山を
   { len: 220, slope: -8, terrain: 'hillL', name: '若葉の下り坂', obs: [[120, 'rock']] },
   { len: 110, slope: -3, turn: 70, terrain: 'hillL', name: 'しげみのカーブ' },
   { len: 230, slope: -4, terrain: 'forest', name: '分かれ道の森', fork: 1 },
-  { len: 160, slope: -6, terrain: 'tunnel', name: '鉱山トンネル', obs: [[70, 'rock']] },
-  { len: 120, slope: -4, turn: -45, terrain: 'tunnel', name: '曲がる坑道' },
+  { len: 160, slope: -6, terrain: 'tunnel', name: '鉱山トンネル', obs: [[70, 'rock']], foes: [[130, 'grunt']] },
+  { len: 120, slope: -4, turn: -45, terrain: 'tunnel', name: '曲がる坑道', foes: [[60, 'bat']] },
   { len: 200, slope: -8, terrain: 'hillR', name: 'みどりの急坂', obs: [[60, 'branch', 1], [130, 'rock']] },
   { len: 110, slope: -3, turn: -75, terrain: 'cut', name: 'こけむした切り通し' },
   { len: 240, slope: -5, terrain: 'ridge', name: '尾根の分かれ道', fork: -1 },
-  { len: 200, slope: -7, terrain: 'tunnel', name: 'ふかい坑道', obs: [[50, 'log'], [140, 'rock']] },
-  { len: 120, slope: -4, turn: 55, terrain: 'tunnel', name: '坑道の大カーブ' },
+  { len: 200, slope: -7, terrain: 'tunnel', name: 'ふかい坑道', obs: [[50, 'log'], [140, 'rock']], foes: [[95, 'grunt']] },
+  { len: 120, slope: -4, turn: 55, terrain: 'tunnel', name: '坑道の大カーブ', foes: [[60, 'spear']] },
   { len: 170, slope: -9, terrain: 'forest', name: '森への 一直線', obs: [[80, 'rock']], premium: 83 },
   { len: 120, slope: -3, turn: 80, terrain: 'forest', name: '大きなカーブ' },
   { len: 240, slope: -5, terrain: 'forest', name: '最後の分かれ道', fork: 1 },
-  { len: 180, slope: -6, terrain: 'tunnel', name: '出口の坑道', obs: [[90, 'log']] },
-  { len: 100, slope: -4, turn: -45, terrain: 'tunnel' },
+  { len: 180, slope: -6, terrain: 'tunnel', name: '出口の坑道', obs: [[90, 'log']], foes: [[40, 'grunt'], [150, 'bat']] },
+  { len: 100, slope: -4, turn: -45, terrain: 'tunnel', foes: [[50, 'grunt']] },
   { len: 240, slope: -8, terrain: 'forest', name: 'がけへの 急坂', obs: [[90, 'rock'], [160, 'branch', -1]] },
   { len: 110, slope: -3, turn: -70, terrain: 'hillL', name: 'がけっぷちのカーブ' },
   { len: 220, slope: -6, terrain: 'ridge', name: 'がけへの 一直線', obs: [[100, 'log']] },
@@ -866,18 +879,18 @@ const LEVEL_8_12 = pursuit('8-12', 'lumi', 'Lumiの鹿', '霧の いちょう坂
   { len: 220, slope: -8, terrain: 'hillL', fog: 0.4, name: '黄色い下り坂', obs: [[110, 'rock']] },
   { len: 110, slope: -3, turn: 70, terrain: 'hillL', fog: 0.6, name: '霧のカーブ' },
   { len: 240, slope: -4, terrain: 'forest', fog: 0.95, name: '霧の分かれ道', fork: -1 },
-  { len: 180, slope: -6, terrain: 'tunnel', name: '金色の坑道', obs: [[60, 'log'], [130, 'rock']] },
-  { len: 110, slope: -4, turn: -50, terrain: 'tunnel', name: '曲がる坑道' },
+  { len: 180, slope: -6, terrain: 'tunnel', name: '金色の坑道', obs: [[60, 'log'], [130, 'rock']], foes: [[95, 'grunt']] },
+  { len: 110, slope: -4, turn: -50, terrain: 'tunnel', name: '曲がる坑道', foes: [[55, 'bat']] },
   { len: 200, slope: -8, terrain: 'hillR', fog: 0.5, name: 'いちょうの急坂', obs: [[70, 'branch', -1], [140, 'rock']], premium: 143 },
   { len: 110, slope: -3, turn: -70, terrain: 'cut', fog: 0.7, name: '切り通し' },
   { len: 240, slope: -4, terrain: 'ridge', fog: 1, name: 'まっ白な尾根', fork: 1 },
-  { len: 200, slope: -7, terrain: 'tunnel', name: '霧よけの坑道', obs: [[50, 'rock'], [150, 'log']] },
-  { len: 120, slope: -4, turn: 60, terrain: 'tunnel', name: '坑道の大カーブ' },
-  { len: 180, slope: -8, terrain: 'forest', fog: 0.4, name: '黄色い一直線', obs: [[90, 'rock']] },
-  { len: 110, slope: -3, turn: 75, terrain: 'forest', fog: 0.7, name: '大きなカーブ' },
+  { len: 200, slope: -7, terrain: 'tunnel', name: '霧よけの坑道', obs: [[50, 'rock'], [150, 'log']], foes: [[100, 'shield']] },
+  { len: 120, slope: -4, turn: 60, terrain: 'tunnel', name: '坑道の大カーブ', foes: [[60, 'grunt']] },
+  { len: 180, slope: -8, terrain: 'forest', fog: 0.4, name: '黄色い一直線', obs: [[90, 'rock']], foes: [[35, 'sheep']] },
+  { len: 110, slope: -3, turn: 75, terrain: 'forest', fog: 0.7, name: '大きなカーブ', foes: [[55, 'sheep']] },
   { len: 240, slope: -5, terrain: 'forest', fog: 0.95, name: '最後の霧の分かれ道', fork: -1 },
-  { len: 180, slope: -6, terrain: 'tunnel', name: '出口の坑道', obs: [[80, 'log']] },
-  { len: 100, slope: -4, turn: -50, terrain: 'tunnel' },
+  { len: 180, slope: -6, terrain: 'tunnel', name: '出口の坑道', obs: [[80, 'log']], foes: [[140, 'spear']] },
+  { len: 100, slope: -4, turn: -50, terrain: 'tunnel', foes: [[50, 'bat']] },
   { len: 240, slope: -8, terrain: 'forest', fog: 0.3, name: 'がけへの 急坂', obs: [[80, 'rock'], [170, 'branch', 1]] },
   { len: 110, slope: -3, turn: -65, terrain: 'hillL', fog: 0.5, name: 'がけっぷちのカーブ' },
   { len: 220, slope: -6, terrain: 'ridge', fog: 0.2, name: 'がけへの 一直線', obs: [[110, 'log']] },
@@ -891,19 +904,19 @@ const LEVEL_8_13 = pursuit('8-13', 'momo', 'Momoの鹿', 'さくら並木と 鉱
   { len: 230, slope: -4, terrain: 'forest', name: '一つめの分かれ道', fork: 1 },
   { len: 110, slope: -3, turn: 70, terrain: 'hillR', name: 'さくらのカーブ' },
   { len: 230, slope: -5, terrain: 'ridge', name: '二つめの分かれ道', fork: -1 },
-  { len: 180, slope: -6, terrain: 'tunnel', name: '花の坑道', obs: [[60, 'rock'], [130, 'log']] },
-  { len: 110, slope: -4, turn: -55, terrain: 'tunnel', name: '曲がる坑道' },
+  { len: 180, slope: -6, terrain: 'tunnel', name: '花の坑道', obs: [[60, 'rock'], [130, 'log']], foes: [[95, 'spear']] },
+  { len: 110, slope: -4, turn: -55, terrain: 'tunnel', name: '曲がる坑道', foes: [[55, 'grunt']] },
   { len: 230, slope: -5, terrain: 'forest', name: '三つめの分かれ道', fork: -1 },
-  { len: 110, slope: -3, turn: -60, terrain: 'cut', name: '切り通し' },
+  { len: 110, slope: -3, turn: -60, terrain: 'cut', name: '切り通し', foes: [[80, 'boar']] },
   { len: 180, slope: -8, terrain: 'hillL', name: '花吹雪の急坂', obs: [[60, 'branch', 1], [120, 'rock']] },
   { len: 230, slope: -5, terrain: 'forest', name: '四つめの分かれ道', fork: 1 },
-  { len: 200, slope: -7, terrain: 'tunnel', name: 'ふかい坑道', obs: [[60, 'log'], [140, 'rock']] },
-  { len: 110, slope: -4, turn: 65, terrain: 'tunnel', name: '坑道の大カーブ' },
+  { len: 200, slope: -7, terrain: 'tunnel', name: 'ふかい坑道', obs: [[60, 'log'], [140, 'rock']], foes: [[100, 'shield']] },
+  { len: 110, slope: -4, turn: 65, terrain: 'tunnel', name: '坑道の大カーブ', foes: [[60, 'bat']] },
   { len: 230, slope: -5, terrain: 'forest', name: '五つめの分かれ道', fork: 1 },
   { len: 110, slope: -3, turn: 60, terrain: 'hillL', name: '花の丘' },
   { len: 240, slope: -8, terrain: 'forest', name: 'がけへの 急坂', obs: [[80, 'rock'], [160, 'branch', -1]] },
-  { len: 160, slope: -6, terrain: 'tunnel', name: '最後の坑道', obs: [[70, 'log']] },
-  { len: 220, slope: -6, terrain: 'ridge', name: 'がけへの 一直線', obs: [[100, 'rock']] },
+  { len: 160, slope: -6, terrain: 'tunnel', name: '最後の坑道', obs: [[70, 'log']], foes: [[140, 'boar']] },
+  { len: 220, slope: -6, terrain: 'ridge', name: 'がけへの 一直線', obs: [[100, 'rock']], foes: [[160, 'grunt']] },
   { len: 160, slope: -2, terrain: 'gorge', name: '谷', cliff: true },
 ], 400, 31);
 
@@ -913,18 +926,18 @@ const LEVEL_8_14 = pursuit('8-14', 'kuru', 'Kuruの鹿', 'くりの林と 落石
   { len: 240, slope: -8, terrain: 'hillL', name: '落石の坂', obs: [[60, 'rock'], [130, 'log'], [190, 'rock']] },
   { len: 110, slope: -3, turn: -70, terrain: 'cut', name: '切り通し' },
   { len: 230, slope: -5, terrain: 'forest', name: '分かれ道の林', fork: 1 },
-  { len: 220, slope: -6, terrain: 'tunnel', name: '落石の坑道', obs: [[40, 'rock'], [100, 'log'], [160, 'rock']] },
-  { len: 110, slope: -4, turn: 50, terrain: 'tunnel', name: '曲がる坑道' },
+  { len: 220, slope: -6, terrain: 'tunnel', name: '落石の坑道', obs: [[40, 'rock'], [100, 'log'], [160, 'rock']], foes: [[130, 'hammer']] },
+  { len: 110, slope: -4, turn: 50, terrain: 'tunnel', name: '曲がる坑道', foes: [[55, 'golem']] },
   { len: 220, slope: -8, terrain: 'hillR', name: '枝の トンネル', obs: [[40, 'branch', 1], [80, 'branch', -1], [120, 'rock'], [170, 'log']], premium: 123 },
   { len: 110, slope: -3, turn: 75, terrain: 'forest', name: '大きなカーブ' },
   { len: 230, slope: -5, terrain: 'ridge', name: '尾根の分かれ道', fork: -1 },
   { len: 240, slope: -7, terrain: 'tunnel', name: 'くずれた坑道', obs: [[40, 'log'], [90, 'rock'], [140, 'log'], [190, 'rock']] },
-  { len: 110, slope: -4, turn: -55, terrain: 'tunnel' },
+  { len: 110, slope: -4, turn: -55, terrain: 'tunnel', foes: [[60, 'boar']] },
   { len: 220, slope: -6, terrain: 'ridge', name: '倒木の尾根', obs: [[40, 'log'], [100, 'branch', 1], [160, 'rock']] },
-  { len: 110, slope: -3, turn: -60, terrain: 'hillL', name: 'くりのカーブ' },
+  { len: 110, slope: -3, turn: -60, terrain: 'hillL', name: 'くりのカーブ', foes: [[55, 'grunt']] },
   { len: 230, slope: -5, terrain: 'forest', name: '最後の分かれ道', fork: 1 },
-  { len: 200, slope: -6, terrain: 'tunnel', name: '出口の坑道', obs: [[50, 'rock'], [140, 'log']] },
-  { len: 240, slope: -8, terrain: 'forest', name: 'がけへの 急坂', obs: [[50, 'branch', -1], [100, 'rock'], [180, 'log']] },
+  { len: 200, slope: -6, terrain: 'tunnel', name: '出口の坑道', obs: [[50, 'rock'], [140, 'log']], foes: [[95, 'spike']] },
+  { len: 240, slope: -8, terrain: 'forest', name: 'がけへの 急坂', obs: [[50, 'branch', -1], [100, 'rock'], [180, 'log']], foes: [[140, 'hammer']] },
   { len: 160, slope: -2, terrain: 'gorge', name: '谷', cliff: true },
 ], 360, 31);
 
@@ -935,18 +948,18 @@ const LEVEL_8_15 = pursuit('8-15', 'piko', 'Pikoの鹿', '夕焼けの もみじ
   { len: 110, slope: -3, turn: 75, terrain: 'hillR', dusk: 0.3, name: '夕焼けのカーブ' },
   { len: 230, slope: -4, terrain: 'forest', dusk: 0.35, name: '分かれ道の森', fork: -1 },
   { len: 220, slope: -6, terrain: 'canyon', dusk: 0.4, name: 'もみじ谷の 古い橋', gap: [70, 14], obs: [[160, 'log']] },
-  { len: 180, slope: -6, terrain: 'tunnel', name: '夕焼けの坑道', obs: [[60, 'rock'], [120, 'log']] },
-  { len: 110, slope: -4, turn: -50, terrain: 'tunnel' },
+  { len: 180, slope: -6, terrain: 'tunnel', name: '夕焼けの坑道', obs: [[60, 'rock'], [120, 'log']], foes: [[90, 'bomber']] },
+  { len: 110, slope: -4, turn: -50, terrain: 'tunnel', foes: [[55, 'bat']] },
   { len: 220, slope: -6, terrain: 'canyon', dusk: 0.5, name: '二つめの古い橋', gap: [60, 12], premium: 160, obs: [[157, 'rock']] },
-  { len: 110, slope: -3, turn: -70, terrain: 'cut', dusk: 0.55, name: '切り通し' },
+  { len: 110, slope: -3, turn: -70, terrain: 'cut', dusk: 0.55, name: '切り通し', foes: [[55, 'spear']] },
   { len: 230, slope: -4, terrain: 'ridge', dusk: 0.6, name: '尾根の分かれ道', fork: 1 },
   { len: 220, slope: -6, terrain: 'canyon', dusk: 0.65, name: '三つめの古い橋', gap: [70, 12] },
-  { len: 200, slope: -6, terrain: 'tunnel', name: 'ふかい坑道', obs: [[60, 'log'], [140, 'rock']] },
-  { len: 110, slope: -4, turn: 60, terrain: 'tunnel' },
+  { len: 200, slope: -6, terrain: 'tunnel', name: 'ふかい坑道', obs: [[60, 'log'], [140, 'rock']], foes: [[100, 'spike']] },
+  { len: 110, slope: -4, turn: 60, terrain: 'tunnel', foes: [[70, 'boar']] },
   { len: 230, slope: -5, terrain: 'forest', dusk: 0.8, name: '最後の分かれ道', fork: -1 },
-  { len: 110, slope: -3, turn: 65, terrain: 'forest', dusk: 0.85, name: '大きなカーブ' },
+  { len: 110, slope: -3, turn: 65, terrain: 'forest', dusk: 0.85, name: '大きなカーブ', foes: [[55, 'bat']] },
   { len: 240, slope: -8, terrain: 'forest', dusk: 0.9, name: 'がけへの 急坂', obs: [[80, 'rock'], [160, 'branch', 1]] },
-  { len: 200, slope: -6, terrain: 'ridge', dusk: 0.95, name: 'がけへの 一直線', obs: [[100, 'log']] },
+  { len: 200, slope: -6, terrain: 'ridge', dusk: 0.95, name: 'がけへの 一直線', obs: [[100, 'log']], foes: [[160, 'bomber']] },
   { len: 160, slope: -2, terrain: 'gorge', dusk: 1, name: '谷', cliff: true },
 ], 380, 31);
 
@@ -956,17 +969,17 @@ const LEVEL_8_16 = pursuit('8-16', 'ruru', 'Ruruの鹿', '雪の谷と こおっ
   { len: 230, slope: -8, terrain: 'hillL', snow: true, name: '雪の下り坂', obs: [[110, 'rock']] },
   { len: 110, slope: -3, turn: 70, terrain: 'cut', snow: true, name: '雪のカーブ' },
   { len: 230, slope: -5, terrain: 'ridge', snow: true, name: '雪の分かれ道', fork: 1 },
-  { len: 200, slope: -6, terrain: 'tunnel', snow: true, name: 'こおった坑道', obs: [[60, 'rock'], [140, 'log']] },
-  { len: 110, slope: -4, turn: -50, terrain: 'tunnel', snow: true },
+  { len: 200, slope: -6, terrain: 'tunnel', snow: true, name: 'こおった坑道', obs: [[60, 'rock'], [140, 'log']], foes: [[100, 'shield']] },
+  { len: 110, slope: -4, turn: -50, terrain: 'tunnel', snow: true, foes: [[55, 'bat']] },
   { len: 200, slope: -7, terrain: 'hillR', snow: true, name: 'つららの坂', obs: [[60, 'branch', 1], [120, 'rock']], premium: 123 },
-  { len: 110, slope: -3, turn: -75, terrain: 'forest', snow: true, name: '大きなカーブ' },
+  { len: 110, slope: -3, turn: -75, terrain: 'forest', snow: true, name: '大きなカーブ', foes: [[55, 'grunt']] },
   { len: 230, slope: -4, terrain: 'ridge', snow: true, name: '氷の尾根の分かれ道', fork: -1 },
-  { len: 220, slope: -7, terrain: 'tunnel', snow: true, name: '氷の坑道', obs: [[50, 'log'], [150, 'rock']] },
-  { len: 110, slope: -4, turn: 55, terrain: 'tunnel', snow: true },
+  { len: 220, slope: -7, terrain: 'tunnel', snow: true, name: '氷の坑道', obs: [[50, 'log'], [150, 'rock']], foes: [[100, 'spike']] },
+  { len: 110, slope: -4, turn: 55, terrain: 'tunnel', snow: true, foes: [[55, 'golem']] },
   { len: 200, slope: -8, terrain: 'hillL', snow: true, name: '雪の急坂', obs: [[90, 'rock']] },
-  { len: 110, slope: -3, turn: 75, terrain: 'hillL', snow: true, name: '雪の丘' },
+  { len: 110, slope: -3, turn: 75, terrain: 'hillL', snow: true, name: '雪の丘', foes: [[55, 'sheep']] },
   { len: 230, slope: -5, terrain: 'ridge', snow: true, name: '最後の分かれ道', fork: 1 },
-  { len: 180, slope: -6, terrain: 'tunnel', snow: true, name: '出口の坑道', obs: [[80, 'log']] },
+  { len: 180, slope: -6, terrain: 'tunnel', snow: true, name: '出口の坑道', obs: [[80, 'log']], foes: [[150, 'boar']] },
   { len: 260, slope: -6, terrain: 'ridge', snow: true, name: 'がけへの 一直線', obs: [[90, 'rock'], [180, 'branch', -1]] },
   { len: 160, slope: -2, terrain: 'gorge', snow: true, name: '氷の谷', cliff: true },
 ], 360, 31);

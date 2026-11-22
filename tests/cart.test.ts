@@ -613,6 +613,7 @@ for (const lv of PURSUIT_LEVELS) {
     // 線路の切れ目(谷のふち以外)は、上手な人が連結するより前だけ(連結してブレーキをかけたあとに 切れ目が来ると、とびこせない)
     for (const g of lv.track.gaps) if (g.from !== pu.cliff) assert.ok(g.to < hitchS - 50, `切れ目 ${g.from} が 連結 ${hitchS.toFixed(0)} に近い`);
     assert.equal(driveLevel(lv, { wrongForks: [0] }).phase, 'cleared', '1つまちがえても、ほかが上手なら 間に合う');
+    assert.equal(driveLevel(lv, { seeds: false }).phase, 'failed', 'ラムガの子分を げきたいしないと、ぶつかって 失敗');
   });
   test(`${lv.id}: 面のデータ(プレミアム1枚・分かれ道は まっすぐで 切れ目・障害物・コインと重ならない・谷のふちは切れ目)`, () => {
     const t = trackOf(lv), pu = t.pursuit!;
@@ -631,3 +632,78 @@ for (const lv of PURSUIT_LEVELS) {
     }
   });
 }
+
+// ---- ラムガの子分と Spra の種(2026-11-22 Owner) ----
+import { FOE, Track as TrackClass, type FoeKind } from '../src/cart/track.ts';
+
+/** まっすぐな下り坂に 子分を1体だけ置いた 線路 */
+function foeTrack(kind: FoeKind, at = 200): TrackClass {
+  return new TrackClass({ segments: [{ len: 600, slope: -3 }], gaps: [], obstacles: [], coins: [], foes: [{ s: at, kind }],
+    pursuit: { friend: 'spra', lead: 2000, deerCap: 5, cliff: 2500, forks: [] } });
+}
+/** s0 から走らせ、throwAt(子分までの距離)で こぐ を押す(回数 n) */
+function runFoe(kind: FoeKind, presses: number, jumpAt = -1): CartRun {
+  const t = foeTrack(kind), r = new CartRun(t); r.restore(100, 0, 0, 0, false, []); r.start();
+  let held = false, n = 0;
+  for (let i = 0; i < 8 / DT && r.phase === 'running'; i++) {
+    const d = t.foes[0].s - r.s, inp = none();
+    if (r.seedTarget && n < presses && !held && r.seedCool <= 0) { inp.dash = true; n++; }
+    if (jumpAt > 0 && d < jumpAt && d > 0 && !r.air) inp.jump = true;
+    held = inp.dash;
+    r.step(DT, inp);
+  }
+  return r;
+}
+
+test('子分: 近づくと「こぐ」が「たね」に変わり、押すと 種を投げる(ダッシュは しない)', () => {
+  const t = foeTrack('grunt'), r = new CartRun(t); r.restore(100, 0, 0, 0, false, []); r.start();
+  assert.equal(r.seedTarget, null, '遠いうちは こぐ のまま');
+  r.step(DT, { ...none(), dash: true }); assert.ok(r.dashT > 0, '遠いうちは ダッシュ');
+  r.restore(t.foes[0].s - 40, 0, 0, 0, false, []); r.dashT = 0; r.dashCool = 0;
+  r.step(DT, none());
+  assert.equal(r.seedTarget?.id, t.foes[0].id, '60m 以内で たね に変わる');
+  r.step(DT, { ...none(), dash: true });
+  assert.equal(r.dashT, 0, '種を投げたときは ダッシュしない');
+  assert.equal(r.seeds.length, 1);
+});
+
+test('子分: 種1つで げきたい。投げないと ぶつかって ♥−1・おそくなる', () => {
+  const ok = runFoe('grunt', 1);
+  assert.equal(ok.foesDown, 1); assert.equal(ok.lives, 3);
+  const hit = runFoe('grunt', 0);
+  assert.equal(hit.foesDown, 0); assert.equal(hit.lives, 2); assert.ok(hit.foeHits.size === 1);
+});
+
+test('子分: 盾の兵士は 種2つ、岩の子分は 種3つ', () => {
+  assert.equal(runFoe('shield', 1).lives, 2, '1つでは たりない');
+  assert.equal(runFoe('shield', 2).foesDown, 1);
+  assert.equal(runFoe('golem', 2).lives, 2);
+  assert.equal(runFoe('golem', 3).foesDown, 1);
+});
+
+test('子分: とげ玉は 種が はね返される。ジャンプで こえる', () => {
+  assert.equal(FOE.spike.hp, 0);
+  const t = foeTrack('spike'), r = new CartRun(t); r.restore(t.foes[0].s - 40, 0, 0, 0, false, []); r.start();
+  assert.equal(r.seedTarget, null, 'とげ玉には たね に変わらない');
+  assert.equal(runFoe('spike', 0).lives, 2, 'ジャンプしないと ぶつかる');
+  const jumped = runFoe('spike', 0, 6);
+  assert.equal(jumped.lives, 3, 'ジャンプで こえられる');
+});
+
+test('子分: いのししは 近づくと 向かってくる', () => {
+  const t = foeTrack('boar'), r = new CartRun(t); r.restore(t.foes[0].s - 65, 0, 0, 0, false, []); r.start();
+  for (let i = 0; i < 0.5 / DT; i++) r.step(DT, none());
+  assert.ok(r.foeS.get(t.foes[0].id)! < t.foes[0].s - 3, '前へ 出てくる');
+});
+
+test('子分: 面のデータ(分かれ道・谷には いない。障害物と はなれている。追いかけっこの面には 6体以上)', () => {
+  for (const lv of PURSUIT_LEVELS) {
+    const t = trackOf(lv), pu = t.pursuit!;
+    assert.ok(t.foes.length >= 6, `${lv.id} ${t.foes.length}体`);
+    for (const f of t.foes) {
+      assert.ok(!pu.forks.some(k => f.s > k.at - 20 && f.s < k.at + k.len + 20), `${lv.id} 分かれ道に 子分 ${f.s}`);
+      assert.ok(f.s < pu.cliff - 30, `${lv.id} 谷のふちに 子分`);
+      assert.ok(!t.obstacles.some(o => Math.abs(o.s - f.s) < 30), `${lv.id} 障害物の近くに 子分 ${f.s}`);
+    }
+  }
+});
