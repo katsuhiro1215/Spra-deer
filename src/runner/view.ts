@@ -1,7 +1,7 @@
 // 3D走りゲームの表示(Three.js)。ルールの計算は sim.ts、ここは見た目だけ。
 // 面ごとの空・光・天候・景色は RunnerLevel.theme で切り替える。
 import * as THREE from 'three';
-import { readBuddy, runFramePath, unlockedBy } from '../friends.ts';
+import { readBuddy, runFramePath, runawayOf, unlockedBy } from '../friends.ts';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { BRIDGE_HALF, FISH_X0, FISH_X1, GOAL_GAP, RAMP_DROP, ROAD_HALF, bridgeSway, hillY, roadHeading, roadX, roadY, type Course, type Obstacle } from './course.ts';
 import { CRITTERS, type CritterDef } from './critters.ts';
@@ -302,10 +302,11 @@ export class KasugaView {
     );
     this.deerShadow.position.y = 0.02;
     this.scene.add(this.deerShadow);
-    // 鬼ごっこ: にげる Spra(後ろ姿で 走る。鹿より 少し小さい)
+    // 鬼ごっこ: にげる 仲間(その鹿の面の 仲間。後ろ姿で 走る。鹿より 少し小さい)
     if (course.tag) {
-      for (let i = 0; i < 4; i++) this.tagTex.push(loadTex(`${ASSET}/spru-walk/up_${i}.png`));
-      const sg = new THREE.PlaneGeometry(0.85, 1.69);
+      const ra = runawayOf(unlockedBy(this.level.id)?.id ?? 'spra');
+      for (let i = 0; i < 4; i++) this.tagTex.push(loadTex(ra.back(i)));
+      const sg = new THREE.PlaneGeometry(1.69 * ra.aspect, 1.69);
       sg.translate(0, 0.84, 0);
       this.tagSpra = new THREE.Mesh(sg, new THREE.MeshBasicMaterial({ map: this.tagTex[0], transparent: true, alphaTest: 0.45, toneMapped: false }));
       this.tagSpra.renderOrder = 2;

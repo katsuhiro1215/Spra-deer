@@ -519,3 +519,15 @@ test('4-11 みどりの道: 仕掛けは 決めた順番だけ(運まかせの�
   assert.ok(!c.obstacles.some((o) => o.kind === 'stone' || o.kind === 'deer'), '運まかせの罠は 無い');
   assert.deepEqual(courseOf(lv).obstacles.map((o) => o.s), c.obstacles.map((o) => o.s), '同じ面は いつも同じ');
 });
+
+test('鬼ごっこ: にげるのは その鹿の面の 仲間(Lumi の鹿なら Lumi)。後ろ姿の4コマが ある', async () => {
+  const { existsSync } = await import('node:fs');
+  const { runawayOf, unlockedBy } = await import('../src/friends.ts');
+  for (const lv of FRIEND_RUN_LEVELS.filter((l) => l.tag)) {
+    const f = unlockedBy(lv.id)!;
+    const ra = runawayOf(f.id);
+    assert.equal(`${ra.name}の鹿`, f.name, `${lv.id} は ${f.name} の面`);
+    assert.ok(lv.summary.includes(`にげる ${ra.name} を`), `${lv.id} の説明に ${ra.name}`);
+    for (let i = 0; i < 4; i++) assert.ok(existsSync(`public${ra.back(i)}`), `${lv.id} ${ra.back(i)}`);
+  }
+});

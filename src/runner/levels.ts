@@ -489,8 +489,8 @@ export const FRIEND_RUN_LEVELS: RunnerLevel[] = [
   },
   {
     // いちょうの道: 金色の落ち葉の山(ふむと すべる)と 光る輪(雷)。ゆるやかな丘
-    id: '4-12', title: 'Lumiの鹿と いちょうの道', summary: 'にげる Spra を 追いかけろ！ 金色の いちょう並木。落ち葉で すべり、光る輪(雷)を よける',
-    intro: 'Spraが にげた！ はしるを 連打！ 落ち葉は すべる、光る輪は 雷だよ',
+    id: '4-12', title: 'Lumiの鹿と いちょうの道', summary: 'にげる Lumi を 追いかけろ！ 金色の いちょう並木。落ち葉で すべり、光る輪(雷)を よける',
+    intro: 'Lumiが にげた！ はしるを 連打！ 落ち葉は すべる、光る輪は 雷だよ',
     length: 2300, seed: 20261129, difficulty: 0.75,
     extra: [], critters: ['turtle', 'rabbit', 'puni', 'bubu'],
     script: ['hole', 'coinSnake', 'leafPile', 'fenceGap', 'thunder', 'leafLeap', 'leafPile', 'critterHop', 'hole', 'thunder',
@@ -505,12 +505,12 @@ export const FRIEND_RUN_LEVELS: RunnerLevel[] = [
     ],
     tag: { lead: 150, speed: 1.15 }, senbei: 110,
     theme: GINKGO_PATH, goalName: 'きいろの門',
-    lines: ['半分！ Spraは まだ にげている', '光る輪に 気をつけて！', 'きいろの門が 見えた！ 急いで！'],
+    lines: ['半分！ Lumiは まだ にげている', '光る輪に 気をつけて！', 'きいろの門が 見えた！ 急いで！'],
   },
   {
     // 花びらの道: まんなかに 湖の上の 長い つり橋(ゆれる・板のぬけた所を 跳ぶ)。花見のシートは ふむと コインを落とす
-    id: '4-13', title: 'Momoの鹿と 花びらの道', summary: 'にげる Spra を 追いかけろ！ 桜並木と、湖の上の ゆれる 花びらの つり橋',
-    intro: 'Spraが にげた！ はしるを 連打！ つり橋は ゆれるよ。落ちないように！',
+    id: '4-13', title: 'Momoの鹿と 花びらの道', summary: 'にげる Momo を 追いかけろ！ 桜並木と、湖の上の ゆれる 花びらの つり橋',
+    intro: 'Momoが にげた！ はしるを 連打！ つり橋は ゆれるよ。落ちないように！',
     length: 2300, seed: 20261130, difficulty: 0.75,
     extra: [], critters: ['rabbit', 'puni', 'bubu', 'fox'],
     script: ['hole', 'coinSnake', 'hanami', 'fenceGap', 'critterHop', 'leafLeap', 'hanami', 'poop', 'fenceHole', 'hanami',
@@ -527,8 +527,8 @@ export const FRIEND_RUN_LEVELS: RunnerLevel[] = [
   },
   {
     // 木の根の道: 道を横切る根を リズムよく 続けて跳ぶ。ぬかるみ(水たまり)で おそくなる。法螺貝は 突進の合図
-    id: '4-14', title: 'Kuruの鹿と 木の根の道', summary: 'にげる Spra を 追いかけろ！ 大樹の森。道を横切る根を リズムよく とびこえる',
-    intro: 'Spraが にげた！ はしるを 連打！ 根っこは リズムよく ジャンプ！',
+    id: '4-14', title: 'Kuruの鹿と 木の根の道', summary: 'にげる Kuru を 追いかけろ！ 大樹の森。道を横切る根を リズムよく とびこえる',
+    intro: 'Kuruが にげた！ はしるを 連打！ 根っこは リズムよく ジャンプ！',
     length: 2300, seed: 20261131, difficulty: 0.8,
     extra: [], critters: ['bear', 'tanuki', 'squirrel', 'toge'],
     script: ['hole', 'coinSnake', 'roots', 'puddle', 'critterHop', 'roots', 'leafLeap', 'poop', 'roots', 'critterCharge',
@@ -548,8 +548,8 @@ export const FRIEND_RUN_LEVELS: RunnerLevel[] = [
   },
   {
     // オレンジの道: 夕焼けの 長い下り坂(いちばん速い)。ころがる みかん(左右に ころがる)を よけ、ジャンプ台で 大穴を こえる
-    id: '4-15', title: 'Pikoの鹿と オレンジの道', summary: 'にげる Spra を 追いかけろ！ 夕焼けの 長い下り坂。ころがる みかんを よけて',
-    intro: 'Spraが にげた！ はしるを 連打！ 下り坂は 速いよ。ころがる みかんに 注意！',
+    id: '4-15', title: 'Pikoの鹿と オレンジの道', summary: 'にげる Piko を 追いかけろ！ 夕焼けの 長い下り坂。ころがる みかんを よけて',
+    intro: 'Pikoが にげた！ はしるを 連打！ 下り坂は 速いよ。ころがる みかんに 注意！',
     length: 2300, seed: 20261132, difficulty: 0.8,
     extra: [], critters: ['tanuki', 'fox', 'pachi', 'bubu'],
     script: ['hole', 'coinSnake', 'stones', 'leafLeap', 'fenceGap', 'stones', 'critterCross', 'leafLeap', 'stones', 'poop',
@@ -569,8 +569,8 @@ export const FRIEND_RUN_LEVELS: RunnerLevel[] = [
   },
   {
     // 水の道: 浅い水の上は すこし すべる(曲がりにくい)。こおりの 上は つるつる。金魚が はねて 道を横切る
-    id: '4-16', title: 'Ruruの鹿と 水の道', summary: 'にげる Spra を 追いかけろ！ 浅い 水の道。すべる こおりと、はねる 金魚',
-    intro: 'Spraが にげた！ はしるを 連打！ 水の道は すべるよ。金魚は ジャンプで かわして',
+    id: '4-16', title: 'Ruruの鹿と 水の道', summary: 'にげる Ruru を 追いかけろ！ 浅い 水の道。すべる こおりと、はねる 金魚',
+    intro: 'Ruruが にげた！ はしるを 連打！ 水の道は すべるよ。金魚は ジャンプで かわして',
     length: 2300, seed: 20261133, difficulty: 0.75,
     extra: [], critters: ['turtle', 'puni', 'gingi', 'rabbit'],
     script: ['hole', 'coinSnake', 'goldfish', 'ice', 'fenceGap', 'goldfish', 'leafLeap', 'ice', 'critterHop', 'goldfish',
@@ -582,7 +582,7 @@ export const FRIEND_RUN_LEVELS: RunnerLevel[] = [
     hills: [{ at: 0.05, h: 0 }, { at: 0.16, h: 4 }, { at: 0.28, h: 1 }, { at: 0.42, h: 6 }, { at: 0.56, h: 2 }, { at: 0.7, h: 7 }, { at: 0.84, h: 3 }, { at: 0.94, h: 5 }],
     tag: { lead: 150, speed: 1.16 }, senbei: 110,
     theme: WATER_PATH, goalName: 'みずいろの門',
-    lines: ['半分！ Spraは まだ にげている', 'こおりは つるつる！', 'みずいろの門が 見えた！ 急いで！'],
+    lines: ['半分！ Ruruは まだ にげている', 'こおりは つるつる！', 'みずいろの門が 見えた！ 急いで！'],
   },
 ];
 

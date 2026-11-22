@@ -4,7 +4,7 @@ import { Wallet, clearRewards, waitText, STAMINA_MAX, STAMINA_FAIL } from '../wa
 import { tagStars, type Obstacle } from './course.ts';
 import { CRITTERS } from './critters.ts';
 import { RUNNER_LEVELS, courseOf, type RunnerLevel } from './levels.ts';
-import { unlockedBy } from '../friends.ts';
+import { runawayOf, unlockedBy } from '../friends.ts';
 import { Run, baseSpeed, type Input, type SimEvent } from './sim.ts';
 import { KasugaView } from './view.ts';
 import { RunnerAudio, type LoopHandle, type Steps } from './audio.ts';
@@ -55,6 +55,9 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
   // 仲間の鹿の面: ゴールの門が しまるまでの秒数 / 鬼ごっこ(Spra を 追いかけて つかまえる)
   const gate = course.timeLimit;
   const tag = course.tag;
+  // にげる 仲間(その鹿の面の 仲間。Spra の鹿なら Spra)
+  const runaway = runawayOf(unlockedBy(level.id)?.id ?? 'spra');
+  const esc = runaway.name;
   const friend = unlockedBy(level.id);
   let senbeiHinted = false;
   // チェックポイント: 通過したときの状態を覚えておき、失敗したら、そこから続けられる
@@ -75,7 +78,7 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
   q('lv-goal').textContent = level.goalName;
   q('s-title').textContent = level.title;
   q('s-lead').textContent = gate ? `${level.summary}。門は ${gate}秒で しまる！ 鹿せんべいで 速く走ろう`
-    : tag ? `${level.summary}。Spraが ${level.goalName}を くぐる前に！` : level.summary;
+    : tag ? `${level.summary}。${esc}が ${level.goalName}を くぐる前に！` : level.summary;
   q('s-prem').textContent = premiumTaken ? '◆ この面の プレミアムコインは 取ったよ' : '◆ この面には プレミアムコインが 1まい かくれている';
   let run = new Run(course);
   const byId = new Map(course.obstacles.map((o) => [o.id, o]));
@@ -179,8 +182,10 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
   if (tag) {
     elRival = document.createElement('span');
     elRival.className = 'ks-progress-rival';
-    elRival.style.backgroundImage = "url('/assets/spru.png')";
-    elRival.title = 'Spra';
+    // Spra は 顔の絵、ほかの仲間は 後ろ姿の頭(色で 分かる)
+    elRival.style.backgroundImage = `url('${esc === 'Spra' ? '/assets/spru.png' : runaway.back(0)}')`;
+    if (esc !== 'Spra') elRival.style.backgroundPosition = 'center 12%';
+    elRival.title = esc;
     q('mark').before(elRival);
   }
   const elMark = q('mark');
@@ -223,7 +228,7 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
     }
     if (elGate && tag) {
       // Spra までの きょり。Spra が 門に近いと 赤く点滅
-      elGate.textContent = run.phase === 'cleared' ? 'つかまえた！' : `Spraまで ${Math.round(run.gapToSpra)}m`;
+      elGate.textContent = run.phase === 'cleared' ? 'つかまえた！' : `${esc}まで ${Math.round(run.gapToSpra)}m`;
       elGate.classList.toggle('hurry', run.phase === 'running' && run.tagS > course.length * 0.9);
     }
   };
@@ -269,8 +274,8 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
     }
     paintStamina();
     const best = progress.get(level.id).best;
-    q('r-title').textContent = cleared ? (tag ? 'Spraを つかまえた！' : `${level.goalName}に とうちゃく！`)
-      : run.reason === 'late' ? '門が しまっちゃった…' : run.reason === 'escaped' ? 'Spraに にげられた…' : 'ざんねん… もうすこしだった';
+    q('r-title').textContent = cleared ? (tag ? `${esc}を つかまえた！` : `${level.goalName}に とうちゃく！`)
+      : run.reason === 'late' ? '門が しまっちゃった…' : run.reason === 'escaped' ? `${esc}に にげられた…` : 'ざんねん… もうすこしだった';
     q('r-stars').textContent = cleared ? '★'.repeat(stars) + '☆'.repeat(3 - stars) : '';
     q('r-coins').textContent = `${run.coins} / ${silverTotal}` + (run.gold ? `　金 ${run.gold}` : '') + (run.premium ? '　◆' : '');
     q('r-hearts').textContent = '♥'.repeat(Math.max(0, run.lives)) || '—';
@@ -344,7 +349,7 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
     if (tag && !from && !introSeen) {
       // はじめの1回だけ: にげる Spra を映して「つかまえてごらん！」→ 道にそって 鹿の所へ もどってから 出発
       introSeen = true; introT = 0;
-      elSay.innerHTML = '<small>Spra</small>つかまえてごらん！';
+      elSay.innerHTML = `<small>${esc}</small>つかまえてごらん！`;
       return;
     }
     run.start();
@@ -405,7 +410,7 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
   dashEl.hidden = !tag;
   if (tag) {
     const how = elStart.querySelector('.ks-how');
-    if (how) how.insertAdjacentHTML('afterbegin', '<li><b>はしる</b> 連打すると 速く走る！ Spraに 追いつこう(シフト・E)</li>');
+    if (how) how.insertAdjacentHTML('afterbegin', `<li><b>はしる</b> 連打すると 速く走る！ ${esc}に 追いつこう(シフト・E)</li>`);
   }
   const runKeys = new Set(['ShiftLeft', 'ShiftRight', 'KeyE']);
   const tap = () => { if (tag && run.phase === 'running') input.taps = (input.taps ?? 0) + 1; };
@@ -602,7 +607,7 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
         view.bump(0.12);
         toast('つるつる〜！ 曲がれない！', 1600);
       } else if (e.kind === 'clear') {
-        toast(tag ? 'Spraを つかまえた！' : `${level.goalName}に とうちゃく！`, 4000);
+        toast(tag ? `${esc}を つかまえた！` : `${level.goalName}に とうちゃく！`, 4000);
       }
       if (e.kind === 'gold') toast('ゴールドコイン！', 1300);
       if (e.kind === 'premium') {

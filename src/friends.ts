@@ -36,6 +36,20 @@ export function runFramePath(buddy: string | null, i: number): string {
   return friendOf(buddy) ? `/assets/deerfriends/${buddy}_run_${i}.webp` : `/assets/kasuga/run_${i}.png`;
 }
 
+/**
+ * WORLD 4 の鬼ごっこで にげる 仲間(2026-11-22 Owner「Lumi の鹿の面では Lumi が、Kuru の鹿の面では Kuru が にげる」)。
+ * name=呼び名、back(i)=後ろ姿で走る4コマ(Spra は spru-walk/up、ほかは scripts/build-friend-back.py)、aspect=絵の 横÷たて
+ */
+export type Runaway = { name: string; back: (i: number) => string; aspect: number };
+const BACK_W: Record<FriendId, number> = { spra: 190, lumi: 195, momo: 190, kuru: 302, piko: 305, ruru: 230 };
+export function runawayOf(id: FriendId): Runaway {
+  return {
+    name: id === 'spra' ? 'Spra' : id[0].toUpperCase() + id.slice(1),
+    back: (i) => (id === 'spra' ? `/assets/spru-walk/up_${i}.png` : `/assets/friend-back/${id}_${i}.webp`),
+    aspect: BACK_W[id] / 377,
+  };
+}
+
 /** 面を持っているおかげで開くか(専用の面) */
 export const unlockedBy = (levelId: string): Friend | undefined => FRIENDS.find(f => f.unlocks.includes(levelId));
 
