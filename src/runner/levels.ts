@@ -470,7 +470,7 @@ export const FRIEND_RUN_LEVELS: RunnerLevel[] = [
       { at: 0.56, h: 5 }, { at: 0.62, h: 16 }, { at: 0.66, h: 6 }, { at: 0.72, h: 17 }, { at: 0.76, h: 6 }, { at: 0.83, h: 16 },
       { at: 0.88, h: 8 }, { at: 0.94, h: 11 },
     ],
-    tag: { lead: 150, speed: 1 }, senbei: 110,
+    tag: { lead: 150, speed: 1.19 }, senbei: 110,
     theme: GREEN_PATH, goalName: 'みどりの門',
     lines: ['半分！ Spraは まだ にげている', 'せんべいで 加速！', 'みどりの門が 見えた！ 急いで！'],
   },

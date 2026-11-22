@@ -6,7 +6,15 @@ export interface Input {
   left: boolean;
   right: boolean;
   jump: boolean; // 押している間 true(押した瞬間を内部で検出)
+  /** 鬼ごっこ: 「はしる」を押した回数(まだ数えていない分)。step が数えて 0 にもどす */
+  taps?: number;
 }
+/**
+ * 鬼ごっこの「はしる」(2026-11-22 Owner「連打で足を速く。鹿の速さが変えられないと いらいらする」)。
+ * 1回押すと ペースが PACE_TAP 上がり(最大1)、押さないと 1秒に PACE_DECAY の割合で もどる。速さは 最大 (1+PACE_GAIN) 倍。
+ * 1秒に 約6.7回で ペース最大(1秒に4回で 約0.6)
+ */
+export const PACE_TAP = 0.15, PACE_DECAY = 1.0, PACE_GAIN = 0.3;
 
 export type Phase = 'ready' | 'running' | 'cleared' | 'failed';
 export type SimEvent = {
@@ -36,6 +44,8 @@ export class Run {
   reason: '' | 'hearts' | 'late' | 'escaped' = '';
   /** 鬼ごっこ: にげる Spra の位置(s)と、つかまえた所 */
   tagS = 0; caughtS = 0;
+  /** 鬼ごっこ: 「はしる」の連打で上がる ペース(0〜1)と、押した回数 */
+  pace = 0; taps = 0;
   /** 食べた鹿せんべいの数 */
   senbei = 0;
   t = 0;
@@ -93,7 +103,11 @@ export class Run {
   }
 
   get speed(): number {
-    return baseSpeed(this.s, this.course.length, this.rules) * this.speedMul * this.slopeMul * this.boostMul;
+    return baseSpeed(this.s, this.course.length, this.rules) * this.speedMul * this.slopeMul * this.boostMul * this.paceMul;
+  }
+  /** 鬼ごっこ: 「はしる」の連打の 速さの倍率 */
+  get paceMul(): number {
+    return this.course.tag ? 1 + PACE_GAIN * this.pace : 1;
   }
   /** ジャンプ台のダッシュの倍率(飛び出した直後がいちばん速く、だんだん元にもどる)。 */
   get boostMul(): number {
@@ -133,6 +147,13 @@ export class Run {
       this.x += (0 - this.x) * Math.min(1, dt * 2);
       this.integrateVertical(dt);
       return;
+    }
+
+    // 鬼ごっこ: 「はしる」を連打すると 速くなる(押さないと だんだん もどる)
+    if (this.course.tag) {
+      const n = input.taps ?? 0;
+      if (n > 0) { this.pace = Math.min(1, this.pace + PACE_TAP * n); this.taps += n; input.taps = 0; }
+      this.pace *= Math.exp(-PACE_DECAY * dt);
     }
 
     // 左右(スリップ中は逆)

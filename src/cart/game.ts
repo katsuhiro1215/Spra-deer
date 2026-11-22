@@ -5,7 +5,7 @@ import { CART_BGM, RunnerAudio } from '../runner/audio.ts';
 import { CART_LEVELS, trackOf, type CartLevel } from './levels.ts';
 import { COLLAPSE_AT, SIGNS } from './track.ts';
 import { BAL, CartRun, pursuitStars, rampReach, type CartEvent, type Input } from './sim.ts';
-import { friendOf } from '../friends.ts';
+import { friendOf, standOf, type FriendId } from '../friends.ts';
 import { CartView } from './view.ts';
 
 const STEP = 1 / 120;
@@ -176,6 +176,15 @@ export function startCart(root: HTMLElement, level: CartLevel): () => void {
 
   // ---- 画面の表示 ----
   const elCoins = q('coins'), elGold = q('gold'), elPrem = q('prem'), elHearts = q('hearts'), elFill = q('fill'), elMark = q('mark');
+  // 追いかけっこ: 進み具合のバーに、前のトロッコ(仲間の鹿)も出す(2026-11-22 Owner「どれくらい離れているか 分かるように」)
+  let elRival: HTMLElement | null = null;
+  if (pu) {
+    elRival = document.createElement('span');
+    elRival.className = 'ks-progress-rival';
+    elRival.style.backgroundImage = `url('${standOf(pu.friend as FriendId)}')`;
+    elRival.title = friendName;
+    elMark.before(elRival);
+  }
   const elSpeed = q('speed'), elSeg = q('seg'), elAlert = q('alert'), elToast = q('toast'), elStart = q('start'), elResult = q('result');
   const elDash = q('dash'), elBrake = q('brake'), elJump = q('jump'), elPad = q('pad'), elSay = q('say');
   const elChase = q('chase'), elChaseName = q('chase-name'), elChaseM = q('chase-m'), elChaseBar = q('chase-bar');
@@ -282,6 +291,7 @@ export function startCart(root: HTMLElement, level: CartLevel): () => void {
     elHearts.textContent = '♥'.repeat(Math.max(0, run.lives)) + '♡'.repeat(Math.max(0, 3 - run.lives));
     const p = `${(run.progress * 100).toFixed(1)}%`;
     elFill.style.width = p; elMark.style.left = p;
+    if (elRival) elRival.style.left = `${(Math.max(0, Math.min(1, run.deerS / track.length)) * 100).toFixed(1)}%`;
     const kmh = Math.round(run.v * KMH);
     elSpeed.textContent = String(run.phase === 'ready' ? 0 : kmh);
     elSpeed.parentElement!.classList.toggle('fast', kmh >= 95);

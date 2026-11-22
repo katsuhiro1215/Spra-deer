@@ -75,6 +75,10 @@ export function RunShell() {
           <button type="button" className="ks-jump" data-ks="jump" aria-label="ジャンプ">
             ジャンプ
           </button>
+          <button type="button" className="ks-dash" data-ks="dash" aria-label="はしる(連打)" hidden>
+            はしる
+            <small>れんだ！</small>
+          </button>
         </div>
 
         <div className="ks-overlay on" data-ks="start">

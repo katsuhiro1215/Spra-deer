@@ -226,6 +226,51 @@
   touch-action: none;
   cursor: pointer;
 }
+/* 鬼ごっこの「はしる」(ジャンプの上。連打で速くなる。まわりの 黄色い輪が ペース) */
+.ks-dash {
+  position: absolute;
+  right: 26px;
+  bottom: calc(100% + 12px);
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  border: 4px solid #fff;
+  background: radial-gradient(circle at 35% 30%, #b4ec78, #4caf3a);
+  color: #fff;
+  font: inherit;
+  font-size: 21px;
+  font-weight: 900;
+  line-height: 1.1;
+  box-shadow: 0 5px 0 #2f7a22, 0 0 0 calc(var(--pace, 0) * 12px) rgba(255, 226, 80, 0.6);
+  touch-action: none;
+  cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.ks-dash small {
+  display: block;
+  font-size: 12px;
+  font-weight: 800;
+}
+.ks-dash.down {
+  transform: translateY(3px) scale(0.96);
+  box-shadow: 0 2px 0 #2f7a22, 0 0 0 calc(var(--pace, 0) * 12px) rgba(255, 226, 80, 0.6);
+}
+.ks-dash[hidden] {
+  display: none;
+}
+/* 追いかける相手(鬼ごっこの Spra・追いかけっこの 前のトロッコ)。絵は それぞれの画面で 入れる */
+.ks-progress-rival {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 22px;
+  height: 22px;
+  margin: -11px 0 0 -11px;
+  border-radius: 50%;
+  background: #fff center 30% / 150% no-repeat;
+  box-shadow: 0 0 0 3px #6cc24a;
+}
 .ks-jump.down {
   transform: translateY(4px);
   box-shadow: 0 2px 0 #c94d0c;

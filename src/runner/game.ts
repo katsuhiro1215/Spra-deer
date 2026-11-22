@@ -79,7 +79,7 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
   q('s-prem').textContent = premiumTaken ? '◆ この面の プレミアムコインは 取ったよ' : '◆ この面には プレミアムコインが 1まい かくれている';
   let run = new Run(course);
   const byId = new Map(course.obstacles.map((o) => [o.id, o]));
-  const input: Input = { left: false, right: false, jump: false };
+  const input: Input = { left: false, right: false, jump: false, taps: 0 };
 
   // ---- 音(WebAudio。最初のタップで有効化)。BGM・ジングル・効果音のファイルは audio.ts、短い合成音はここ ----
   const audio = new RunnerAudio();
@@ -174,6 +174,15 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
   const elPrem = q('prem');
   const elHearts = q('hearts');
   const elFill = q('fill');
+  // 鬼ごっこ: 進み具合のバーに、にげる Spra も出す(どれくらい はなれているか 分かるように)
+  let elRival: HTMLElement | null = null;
+  if (tag) {
+    elRival = document.createElement('span');
+    elRival.className = 'ks-progress-rival';
+    elRival.style.backgroundImage = "url('/assets/spru.png')";
+    elRival.title = 'Spra';
+    q('mark').before(elRival);
+  }
   const elMark = q('mark');
   const elToast = q('toast');
   const elStatus = q('status');
@@ -204,6 +213,8 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
     elHearts.textContent = '♥'.repeat(Math.max(0, run.lives)) + '♡'.repeat(Math.max(0, 3 - run.lives));
     const p = `${(run.progress * 100).toFixed(1)}%`;
     elFill.style.width = p;
+    if (elRival && tag) elRival.style.left = `${(Math.min(1, run.tagS / course.length) * 100).toFixed(1)}%`;
+    if (tag) dashEl.style.setProperty('--pace', run.pace.toFixed(2));
     elMark.style.left = p;
     if (elGate && gate) {
       const left = Math.max(0, gate - run.t);
@@ -389,6 +400,15 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
   // (左右を同時に押しても打ち消し合わない。キーの「離した」を取りこぼしても、次に押した向きが効く)
   const padEl = q('pad');
   const jumpEl = q('jump');
+  // 鬼ごっこ: 「はしる」(連打)。押した回数を input.taps に ためて、次の step で数える
+  const dashEl = q('dash');
+  dashEl.hidden = !tag;
+  if (tag) {
+    const how = elStart.querySelector('.ks-how');
+    if (how) how.insertAdjacentHTML('afterbegin', '<li><b>はしる</b> 連打すると 速く走る！ Spraに 追いつこう(シフト・E)</li>');
+  }
+  const runKeys = new Set(['ShiftLeft', 'ShiftRight', 'KeyE']);
+  const tap = () => { if (tag && run.phase === 'running') input.taps = (input.taps ?? 0) + 1; };
   const keyCodes: string[] = []; // 押している左右のキー(押した順)
   const padPointers = new Map<number, 'left' | 'right'>();
   const dirOfKey: Record<string, 'left' | 'right'> = { ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right' };
@@ -455,6 +475,16 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
     input.jump = false;
     jumpEl.classList.remove('down');
   };
+  const onDashDown = (ev: PointerEvent) => {
+    ev.preventDefault();
+    tap();
+    dashEl.classList.add('down');
+  };
+  const onDashUp = () => dashEl.classList.remove('down');
+  dashEl.addEventListener('pointerdown', onDashDown);
+  dashEl.addEventListener('pointerup', onDashUp);
+  dashEl.addEventListener('pointercancel', onDashUp);
+  dashEl.addEventListener('pointerleave', onDashUp);
   jumpEl.addEventListener('pointerdown', onJumpDown);
   jumpEl.addEventListener('pointerup', onJumpUp);
   jumpEl.addEventListener('pointercancel', onJumpUp);
@@ -470,6 +500,9 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
     } else if (jumpKeys.has(ev.code)) {
       ev.preventDefault();
       input.jump = true;
+    } else if (tag && runKeys.has(ev.code)) {
+      ev.preventDefault();
+      if (!ev.repeat) tap();
     }
   };
   const ku = (ev: KeyboardEvent) => {

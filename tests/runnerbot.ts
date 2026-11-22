@@ -7,7 +7,13 @@ const AIR = 0.656; // ジャンプの滞空時間(秒)
 
 /** ジャンプとよけだけで進む簡単なボット(穴・柵・岩・鹿・水たまり・氷は跳び、ふんは避ける)。 */
 /** senbei=鹿せんべいを取りにいく(仲間の鹿の面) */
-export type BotOpts = { senbei?: boolean; /** 取りにいく せんべいを しぼる(無ければ全部) */ pick?: (id: number) => boolean };
+export type BotOpts = { senbei?: boolean; /** 取りにいく せんべいを しぼる(無ければ全部) */ pick?: (id: number) => boolean; /** 鬼ごっこ: 「はしる」を 1秒に この回数 押す */ mash?: number };
+/** 鬼ごっこ: 1秒に mash 回の ちょうどの間隔で「はしる」を押す(押す時刻を こえた step で 1回) */
+function mashTaps(r: Run, o: BotOpts): number {
+  if (!o.mash || !r.course.tag) return 0;
+  const k = Math.floor(r.t * o.mash), prev = Math.floor((r.t - DT) * o.mash);
+  return k > prev ? 1 : 0;
+}
 export function bot(r: Run, o2: BotOpts = {}): Input {
   const v = r.speed;
   let left = false;
@@ -114,7 +120,7 @@ export function bot(r: Run, o2: BotOpts = {}): Input {
     const goLeft = roomLeft >= 0 && (roomRight < 0 || r.x < bomb.ax || (r.x === bomb.ax && roomLeft >= roomRight));
     left = goLeft;
     right = !goLeft;
-    return { left, right, jump };
+    return { left, right, jump, taps: mashTaps(r, o2) };
   }
   // 鹿せんべい: よける必要がなければ、近いせんべいへ寄る
   if (o2.senbei && !left && !right) {
@@ -122,16 +128,16 @@ export function bot(r: Run, o2: BotOpts = {}): Input {
     if (sb && Math.abs(sb.x - r.x) > 0.3) {
       left = sb.x < r.x;
       right = sb.x > r.x;
-      return { left, right, jump };
+      return { left, right, jump, taps: mashTaps(r, o2) };
     }
-    if (sb) return { left, right, jump };
+    if (sb) return { left, right, jump, taps: mashTaps(r, o2) };
   }
   // 何もよける必要がなければ、道の中央へもどる(カーブで外へ押されるので)
   if (!left && !right && Math.abs(r.x) > 0.5) {
     left = r.x > 0;
     right = r.x < 0;
   }
-  return { left, right, jump };
+  return { left, right, jump, taps: mashTaps(r, o2) };
 }
 
 export function play(course: Course, drive: (r: Run) => Input, maxSec = 300): Run {

@@ -445,24 +445,41 @@ for (const lv of FRIEND_RUN_LEVELS.filter((l) => !l.tag)) {
 
 // 鬼ごっこ(2026-11-22 Owner案: 鹿が Spra を 追いかけて つかまえる・長さ2倍)
 for (const lv of FRIEND_RUN_LEVELS.filter((l) => l.tag)) {
-  test(`${lv.id} 鬼ごっこ: せんべいを食べて よけると ★3 で つかまえる。2/3 なら ★2、半分・食べないと にげられる`, () => {
+  test(`${lv.id} 鬼ごっこ: 1秒に4回 はしる+せんべいで ★3。2/3 なら ★2。はしらない・3回では にげられる`, () => {
     const c = courseOf(lv);
     const ids = c.coins.filter((x) => x.kind === 'senbei').map((x) => x.id);
     assert.ok(!c.timeLimit && c.tag, '門の時間制限は 無い');
     assert.ok(c.length >= 2200, `長さ ${c.length}m(2倍)`);
     assert.ok(!lv.checkpoints?.length && !lv.potions?.length, 'チェックポイント・回復薬は無い');
-    const best = play(courseOf(lv), (r) => bot(r, { senbei: true }));
+    const best = play(courseOf(lv), (r) => bot(r, { senbei: true, mash: 4 }));
     assert.equal(best.phase, 'cleared', `${best.reason} s=${best.s.toFixed(0)}`);
     assert.equal(tagStars(best.caughtS, c.length), 3, `つかまえた所 ${(best.caughtS / c.length * 100).toFixed(0)}%`);
-    console.log(`${lv.id} ボット: ${(best.caughtS / c.length * 100).toFixed(0)}% で つかまえた・${best.t.toFixed(1)}秒・せんべい ${best.senbei}/${ids.length}・ハート${best.lives}`);
-    const most = play(courseOf(lv), (r) => bot(r, { senbei: true, pick: (id) => ids.indexOf(id) % 3 !== 2 }));
+    console.log(`${lv.id} ボット(1秒に4回): ${(best.caughtS / c.length * 100).toFixed(0)}% で つかまえた・${best.t.toFixed(1)}秒・せんべい ${best.senbei}/${ids.length}・ハート${best.lives}`);
+    const most = play(courseOf(lv), (r) => bot(r, { senbei: true, mash: 4, pick: (id) => ids.indexOf(id) % 3 !== 2 }));
     assert.equal(most.phase, 'cleared', '2/3 食べれば つかまえられる');
     assert.ok(tagStars(most.caughtS, c.length) < 3, '2/3 では ★3 に とどかない');
-    const half = play(courseOf(lv), (r) => bot(r, { senbei: true, pick: (id) => ids.indexOf(id) % 2 === 0 }));
-    assert.equal(half.reason, 'escaped', `半分だけでは にげられる(あと ${half.gapToSpra.toFixed(0)}m)`);
-    assert.equal(play(courseOf(lv), (r) => bot(r)).reason, 'escaped', '食べないと にげられる');
+    assert.equal(play(courseOf(lv), (r) => bot(r, { senbei: true })).reason, 'escaped', 'はしらないと にげられる(せんべいだけでは 足りない)');
+    assert.equal(play(courseOf(lv), (r) => bot(r, { senbei: true, mash: 3 })).reason, 'escaped', '1秒に3回では 足りない');
+    assert.equal(play(courseOf(lv), (r) => bot(r, { mash: 5 })).reason, 'escaped', 'せんべいを食べないと 5回でも 足りない');
   });
 }
+
+test('鬼ごっこ: 「はしる」を押すと ペースが上がって 速くなり、押さないと もどる', () => {
+  const c = { obstacles: [], coins: [], length: 2000, tag: { lead: 1500, speed: 1 } };
+  const r = new Run(c);
+  r.start();
+  r.step(DT, { left: false, right: false, jump: false });
+  const v0 = r.speed;
+  for (let i = 0; i < 2 / DT; i++) r.step(DT, { left: false, right: false, jump: false, taps: i % 15 === 0 ? 1 : 0 }); // 1秒に 8回
+  assert.ok(r.pace > 0.6 && r.speed > v0 * 1.15, `pace ${r.pace.toFixed(2)}`);
+  for (let i = 0; i < 3 / DT; i++) r.step(DT, { left: false, right: false, jump: false });
+  assert.ok(r.pace < 0.1, '押さないと もどる');
+  // 鬼ごっこでない面では 速くならない
+  const plain = new Run({ obstacles: [], coins: [], length: 2000 });
+  plain.start();
+  for (let i = 0; i < 60; i++) plain.step(DT, { left: false, right: false, jump: false, taps: 1 });
+  assert.equal(plain.pace, 0);
+});
 
 test('鬼ごっこ: 追いつくと つかまえた(クリア)。Spra が 先に ゴールすると にげられた', () => {
   const near = new Run({ obstacles: [], coins: [], length: 400, tag: { lead: 6, speed: 0.6 } });
