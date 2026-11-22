@@ -450,3 +450,18 @@ test('門が しまると失敗(late)。ハートが なくなると hearts', ()
   assert.equal(r.phase, 'failed');
   assert.ok(r.reason === 'late' || r.reason === 'hearts');
 });
+
+test('4-11 みどりの道: 仕掛けは 決めた順番だけ(運まかせの罠なし)。葉っぱのジャンプ台の先には 大穴', () => {
+  const lv = FRIEND_RUN_LEVELS.find((l) => l.id === '4-11')!;
+  assert.equal(lv.theme.setting, 'path');
+  assert.equal(lv.theme.goal, 'arch');
+  const c = courseOf(lv);
+  assert.ok((c.bumps?.length ?? 0) >= 5, 'ジャンプ台が 5つ以上');
+  for (const b of c.bumps!) {
+    const hole = c.obstacles.find((o) => o.kind === 'hole' && o.s > b.s && o.s - b.s < 4);
+    assert.ok(hole && hole.len >= 5, `台 ${b.s.toFixed(0)} の先に 大穴`);
+  }
+  // 決めた順番にない罠(石・横切る鹿など)は 出ない
+  assert.ok(!c.obstacles.some((o) => o.kind === 'stone' || o.kind === 'deer'), '運まかせの罠は 無い');
+  assert.deepEqual(courseOf(lv).obstacles.map((o) => o.s), c.obstacles.map((o) => o.s), '同じ面は いつも同じ');
+});

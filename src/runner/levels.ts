@@ -4,15 +4,18 @@ import { buildCourse, type Course, type Curve, type HillPoint, type PatternName,
 
 /** 天気: leaves=舞う落ち葉 / petals=桜吹雪 */
 export type Weather = 'none' | 'rain' | 'snow' | 'leaves' | 'petals';
-/** 道の景色: sando=灯籠と杉の参道 / town=街道(夕焼けの街) / mountain=灯籠のない山道 / river=左に水路のある川ぞいの道 / city=高いビルの大都会 */
-export type Setting = 'sando' | 'town' | 'mountain' | 'river' | 'city';
+/**
+ * 道の景色: sando=灯籠と杉の参道 / town=街道(夕焼けの街) / mountain=灯籠のない山道 / river=左に水路のある川ぞいの道 / city=高いビルの大都会 /
+ * path=架空の道(仲間の鹿の面。道そのものが その鹿の色。縁石・灯籠なし。道ばたの飾りは foliage で決める)
+ */
+export type Setting = 'sando' | 'town' | 'mountain' | 'river' | 'city' | 'path';
 /**
  * ゴールの景色: shrine=春日大社 / todaiji=東大寺の大仏殿 / horyuji=法隆寺 / omiwa=大神神社 / bay=大阪湾 / summit=山頂
  * heijo=平城宮跡の朱雀門 / zaodo=金峯山寺の蔵王堂 / castle=郡山城 / park=奈良公園
  */
-export type GoalScene = 'shrine' | 'todaiji' | 'horyuji' | 'omiwa' | 'bay' | 'summit' | 'heijo' | 'zaodo' | 'castle' | 'park';
-/** 道ばたの木: cedar=杉(既定) / maple=紅葉 / sakura=桜 */
-export type Foliage = 'cedar' | 'maple' | 'sakura';
+export type GoalScene = 'shrine' | 'todaiji' | 'horyuji' | 'omiwa' | 'bay' | 'summit' | 'heijo' | 'zaodo' | 'castle' | 'park' | 'arch';
+/** 道ばたの木: cedar=杉(既定) / maple=紅葉 / sakura=桜 / sprout=Spra の芽(大きな S字の芽と、丸い木) */
+export type Foliage = 'cedar' | 'maple' | 'sakura' | 'sprout';
 
 export interface Theme {
   setting: Setting;
@@ -82,6 +85,8 @@ export interface RunnerLevel {
   gate?: number;
   /** 仲間の鹿の面: 鹿せんべいを置く間隔(m)。食べると しばらく速い(門に間に合わせる) */
   senbei?: number;
+  /** 仕掛けの順番を 決めて並べる(運まかせにしない。その面ならではの コースにする)。ゴールの手前まで 順に置く */
+  script?: PatternName[];
   /** 区間ごとの景色(at=はじまる割合)。長い面で、街→山→大都会と変える */
   scenes?: { at: number; setting: Setting; name?: string }[];
   /** チェックポイント(割合と名前)。ここを過ぎたあとに失敗すると、ここから続けられる */
@@ -384,6 +389,21 @@ export const RUNNER_LEVELS: RunnerLevel[] = [
 // C: チェックポイント・回復薬なし。ハート3つ
 // 景色は、その鹿の色(Spra=緑・Lumi=黄・Momo=ピンク・Kuru=茶・Piko=オレンジ・Ruru=水色)
 const FRIEND_RULES = { speed0: 14, speed1: 22, steerAccel: 42, steerSpeed: 7.2, recover: 0.15 };
+// 2026-11-22 Owner: 最初の案(奈良の名所へ向かう・どれも同じ作り)は「単調」で不採用 → 架空の道(setting 'path')で作り直す。
+// 道そのものが その鹿の色: Spra=全部緑・Lumi=黄色い葉(いちょう)・Momo=ピンクの花びら・Kuru=木の根と土・Piko=オレンジ・Ruru=水。
+// 仕掛けは script で順番を決め、面ごとに ちがう遊びを中心にする。ゴールは その色の「仲間の門」(goal 'arch')
+
+/** 4-11 みどりの道(Spra=緑): 草のじゅうたんの道・大きな S字の芽の並木・深い緑の森 */
+const GREEN_PATH: Theme = {
+  setting: 'path', goal: 'arch', weather: 'none', night: false, foliage: 'sprout',
+  sky: ['#3f9be6', '#93cdf3', '#d2f0d0', '#e4f6d4'],
+  fog: 0xd4efd2, fogNear: 80, fogFar: 320,
+  hemiSky: 0xe8ffe0, hemiGround: 0x4f8a34, hemi: 0.9,
+  sun: 0xfff6d8, sunPower: 2.5, sunPos: [14, 26, 8], env: 0.45, exposure: 1.05,
+  road: { base: '#86d452', specks: ['#74c442', '#9ce06a', '#62b238', '#b2ea84'], rough: 1 },
+  grass: { base: '#3c9438', specks: ['#33842f', '#48a640', '#2c7428', '#56b24a'] },
+  lampGlow: 1.6, halo: 0, snowCaps: false,
+};
 
 /** 若草山の新緑(Spra=緑) */
 const GREEN_WAKAKUSA: Theme = {
@@ -429,17 +449,23 @@ const ICE_OMIWA: Theme = {
 
 export const FRIEND_RUN_LEVELS: RunnerLevel[] = [
   {
-    id: '4-11', title: 'Spraの鹿と 若草山', summary: '新緑の山道。門が しまる前に 駆けのぼれ',
-    intro: '門が しまる前に ゴール！ せんべいで 加速！',
-    length: 1100, seed: 20261122, difficulty: 0.75,
-    extra: ['ramp', 'critterSleep', 'critterCross', 'critterHop', 'critterCharge'], critters: ['tanuki', 'fox', 'squirrel', 'rabbit'],
-    opening: ['hole', 'ramp', 'critterSleep', 'poop'],
+    // みどりの道: 緑の丘を ジェットコースターのように 大きく上り下り。葉っぱのジャンプ台の先に 大きな穴(台に乗らないと こえられない)
+    id: '4-11', title: 'Spraの鹿と みどりの道', summary: '草のじゅうたんの道が、緑の丘を 大きく上り下り。葉っぱのジャンプ台で 大穴を こえろ',
+    intro: '門が しまる前に ゴール！ 下り坂は 速いよ。葉っぱの ジャンプ台で 大きな穴を とびこえて！',
+    length: 1150, seed: 20261128, difficulty: 0.75,
+    extra: [], critters: ['rabbit', 'squirrel', 'fox'],
+    script: ['hole', 'coinSnake', 'leafLeap', 'fenceGap', 'critterHop', 'leafLeap', 'poop', 'fenceHole', 'leafLeap', 'critterCross',
+      'fenceGap', 'leafLeap', 'holePoop', 'critterCharge', 'leafLeap', 'fenceGap', 'leafLeap', 'coinSnake'],
     rules: FRIEND_RULES,
-    curve: { amp: 24, wave: 230 },
-    hills: [{ at: 0.1, h: 0 }, { at: 0.3, h: 6 }, { at: 0.45, h: 4 }, { at: 0.7, h: 14 }, { at: 0.88, h: 18 }],
-    gate: 57, senbei: 55,
-    theme: GREEN_WAKAKUSA, goalName: '若草山の山頂',
-    lines: ['半分！ 門は まだ 開いてる', 'せんべいで 加速！', '山頂の門が 見えた！'],
+    curve: { amp: 16, wave: 260 },
+    // 大きな波: 登りで おそく、下りで 一気に速く。だんだん高く
+    hills: [
+      { at: 0.05, h: 0 }, { at: 0.13, h: 9 }, { at: 0.19, h: 2 }, { at: 0.29, h: 12 }, { at: 0.36, h: 3 }, { at: 0.47, h: 14 },
+      { at: 0.54, h: 4 }, { at: 0.66, h: 15 }, { at: 0.73, h: 5 }, { at: 0.83, h: 13 }, { at: 0.9, h: 10 },
+    ],
+    gate: 61, senbei: 55,
+    theme: GREEN_PATH, goalName: 'みどりの門',
+    lines: ['半分！ 丘は まだまだ 続く', 'せんべいで 加速！', 'みどりの門が 見えた！'],
   },
   {
     id: '4-12', title: 'Lumiの鹿と 黄金の田んぼ', summary: '黄色い田んぼ道。光る輪(雷)を よけて',
@@ -517,6 +543,6 @@ export function courseOf(level: RunnerLevel): Course {
     seed: level.seed, length: level.length, difficulty: level.difficulty,
     extra: level.extra, critters: level.critters, opening: level.opening, rules: level.rules, curve: level.curve,
     potions: level.potions, wake: level.wake, hills: level.hills, after: level.after, bridge: level.bridge,
-    safe: level.checkpoints?.map((c) => c.at), senbei: level.senbei, timeLimit: level.gate,
+    safe: level.checkpoints?.map((c) => c.at), senbei: level.senbei, timeLimit: level.gate, script: level.script,
   });
 }

@@ -313,7 +313,9 @@ function mulberry32(seed: number) {
 export type PatternName =
   | 'hole' | 'poop' | 'fenceGap' | 'stones' | 'deerCross' | 'holePoop' | 'fenceHole' | 'coinSnake' | 'puddle' | 'ice'
   | 'critterSleep' | 'critterCross' | 'critterHop' | 'critterCharge' | 'ramp' | 'crossing' | 'thunder'
-  | 'leafPile' | 'goldfish' | 'hanami' | 'minionBomb' | 'minionBat';
+  | 'leafPile' | 'goldfish' | 'hanami' | 'minionBomb' | 'minionBat'
+  // 仲間の鹿の面: leafLeap=葉っぱのジャンプ台の先に 大きな穴(台に乗らないと こえられない)
+  | 'leafLeap';
 
 export interface CourseOptions {
   seed?: number;
@@ -345,6 +347,8 @@ export interface CourseOptions {
   senbei?: number;
   /** ゴールの門が しまるまでの秒数 */
   timeLimit?: number;
+  /** 仕掛けの順番(決めて並べる。運まかせの罠は置かない) */
+  script?: PatternName[];
 }
 
 export function buildCourse(opts: CourseOptions = {}): Course {
@@ -517,6 +521,17 @@ export function buildCourse(opts: CourseOptions = {}): Course {
     return lip + 30; // 大ジャンプの着地点まで、罠を置かない
   };
 
+  // 葉っぱのジャンプ台の先の大穴: 台で大きく跳ばないと こえられない(台の上でジャンプすると もっと遠く)
+  const leafLeapPattern = (s: number) => {
+    const lip = s + 8;
+    bumps.push({ s: lip, len: 9, h: 1.8 });
+    line(s - 7, 0, 3, 2.2);
+    // 穴の長さは、そこでの速さに合わせる(登り坂では おそいので短く。台に乗れば こえられる長さ)
+    add({ kind: 'hole', s: lip + RAMP_DROP + 0.6, len: Math.max(5, Math.min(10, 0.4 * estSpeed(lip))), halfW: ROAD_HALF });
+    [[3, 3.0], [5.5, 3.5], [8, 3.4], [10.5, 2.8]].forEach(([ds, y]) => coin(lip + ds, 0, y));
+    return lip + 32;
+  };
+
   // その場所での、だいたいの走る速さ(電車・雷の時間合わせに使う。ぶつかって遅くなると、安全側にずれる)
   const rules = opts.rules ?? DEFAULT_RULES;
   const hilly = { hills: opts.hills, length };
@@ -615,6 +630,7 @@ export function buildCourse(opts: CourseOptions = {}): Course {
       case 'minionBomb': return minionBombPattern(s);
       case 'minionBat': return minionBatPattern(s);
       case 'leafPile': return leafPattern(s);
+      case 'leafLeap': return leafLeapPattern(s);
       case 'goldfish': return goldfishPattern(s);
       case 'hanami': return hanamiPattern(s);
       case 'crossing': return crossingPattern(s);
@@ -639,8 +655,13 @@ export function buildCourse(opts: CourseOptions = {}): Course {
 
   line(18, 0, 6, 2.4);
   let s = 62;
-  const opening: PatternName[] = opts.opening ?? ['hole', 'coinSnake', 'poop', 'fenceGap'];
-  for (const name of opening) s = run(name, s, 0) + 30;
+  const opening: PatternName[] = opts.script ?? opts.opening ?? ['hole', 'coinSnake', 'poop', 'fenceGap'];
+  const endScript = length - 100;
+  for (const name of opening) {
+    if (opts.script && s > endScript) break; // 決めた順番は、ゴールの手前まで
+    s = run(name, s, opts.script ? s / length : 0) + 30;
+  }
+  if (opts.script) s = Infinity; // 決めた順番の面は、運まかせの罠を足さない
 
   let prev: PatternName = opening[opening.length - 1] ?? 'fenceGap';
   const used = new Set<PatternName>(opening);
