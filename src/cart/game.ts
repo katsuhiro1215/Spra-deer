@@ -413,8 +413,8 @@ export function startCart(root: HTMLElement, level: CartLevel): () => void {
     if (pu && !from && !introSeen) {
       introSeen = true; introT = 0;
       elSay.innerHTML = `<small>${friendName}</small>助けてー！`;
-      // 前のトロッコの 鈴の音
-      tone(1568, 1560, 1.3, 'sine', 0.07, 0.3); tone(2349, 2340, 0.9, 'sine', 0.035, 0.3);
+      // 前のトロッコの 鈴の音(Owner の効果音「風鈴」)
+      audio.sfx('bell');
       return;
     }
     run.start();

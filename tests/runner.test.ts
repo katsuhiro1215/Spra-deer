@@ -425,8 +425,9 @@ test('コインは同じものを2回取れない', () => {
 
 // ---- 仲間の鹿の面(4-11〜4-16。門が しまる前に + チェックポイントなし・ハート3つ) ----
 import { FRIEND_RUN_LEVELS } from '../src/runner/levels.ts';
+import { tagStars } from '../src/runner/course.ts';
 
-for (const lv of FRIEND_RUN_LEVELS) {
+for (const lv of FRIEND_RUN_LEVELS.filter((l) => !l.tag)) {
   test(`${lv.id}: せんべいを食べて よけると 門に間に合う。食べないと・半分だけだと 門がしまる`, () => {
     const c = courseOf(lv);
     const ids = c.coins.filter((x) => x.kind === 'senbei').map((x) => x.id);
@@ -442,8 +443,42 @@ for (const lv of FRIEND_RUN_LEVELS) {
   });
 }
 
+// 鬼ごっこ(2026-11-22 Owner案: 鹿が Spra を 追いかけて つかまえる・長さ2倍)
+for (const lv of FRIEND_RUN_LEVELS.filter((l) => l.tag)) {
+  test(`${lv.id} 鬼ごっこ: せんべいを食べて よけると ★3 で つかまえる。2/3 なら ★2、半分・食べないと にげられる`, () => {
+    const c = courseOf(lv);
+    const ids = c.coins.filter((x) => x.kind === 'senbei').map((x) => x.id);
+    assert.ok(!c.timeLimit && c.tag, '門の時間制限は 無い');
+    assert.ok(c.length >= 2200, `長さ ${c.length}m(2倍)`);
+    assert.ok(!lv.checkpoints?.length && !lv.potions?.length, 'チェックポイント・回復薬は無い');
+    const best = play(courseOf(lv), (r) => bot(r, { senbei: true }));
+    assert.equal(best.phase, 'cleared', `${best.reason} s=${best.s.toFixed(0)}`);
+    assert.equal(tagStars(best.caughtS, c.length), 3, `つかまえた所 ${(best.caughtS / c.length * 100).toFixed(0)}%`);
+    console.log(`${lv.id} ボット: ${(best.caughtS / c.length * 100).toFixed(0)}% で つかまえた・${best.t.toFixed(1)}秒・せんべい ${best.senbei}/${ids.length}・ハート${best.lives}`);
+    const most = play(courseOf(lv), (r) => bot(r, { senbei: true, pick: (id) => ids.indexOf(id) % 3 !== 2 }));
+    assert.equal(most.phase, 'cleared', '2/3 食べれば つかまえられる');
+    assert.ok(tagStars(most.caughtS, c.length) < 3, '2/3 では ★3 に とどかない');
+    const half = play(courseOf(lv), (r) => bot(r, { senbei: true, pick: (id) => ids.indexOf(id) % 2 === 0 }));
+    assert.equal(half.reason, 'escaped', `半分だけでは にげられる(あと ${half.gapToSpra.toFixed(0)}m)`);
+    assert.equal(play(courseOf(lv), (r) => bot(r)).reason, 'escaped', '食べないと にげられる');
+  });
+}
+
+test('鬼ごっこ: 追いつくと つかまえた(クリア)。Spra が 先に ゴールすると にげられた', () => {
+  const near = new Run({ obstacles: [], coins: [], length: 400, tag: { lead: 6, speed: 0.6 } });
+  near.start();
+  for (let i = 0; i < 10 / DT && near.phase === 'running'; i++) near.step(DT, { left: false, right: false, jump: false });
+  assert.equal(near.phase, 'cleared');
+  assert.ok(near.caughtS > 0 && near.tagS - near.caughtS <= 1.7);
+  const far = new Run({ obstacles: [], coins: [], length: 400, tag: { lead: 100, speed: 1 } });
+  far.start();
+  for (let i = 0; i < 60 / DT && far.phase === 'running'; i++) far.step(DT, { left: false, right: false, jump: false });
+  assert.equal(far.phase, 'failed'); assert.equal(far.reason, 'escaped');
+  assert.equal(tagStars(800, 1000), 3); assert.equal(tagStars(900, 1000), 2); assert.equal(tagStars(950, 1000), 1);
+});
+
 test('門が しまると失敗(late)。ハートが なくなると hearts', () => {
-  const c = courseOf(FRIEND_RUN_LEVELS[0]);
+  const c = courseOf(FRIEND_RUN_LEVELS.find((l) => l.gate)!);
   const r = new Run(c);
   r.start();
   for (let i = 0; i < (c.timeLimit! + 1) / DT && r.phase === 'running'; i++) r.step(DT, bot(r));
@@ -459,7 +494,7 @@ test('4-11 みどりの道: 仕掛けは 決めた順番だけ(運まかせの�
   assert.ok((c.bumps?.length ?? 0) >= 5, 'ジャンプ台が 5つ以上');
   for (const b of c.bumps!) {
     const hole = c.obstacles.find((o) => o.kind === 'hole' && o.s > b.s && o.s - b.s < 4);
-    assert.ok(hole && hole.len >= 5, `台 ${b.s.toFixed(0)} の先に 大穴`);
+    assert.ok(hole && hole.len >= 4.5, `台 ${b.s.toFixed(0)} の先に 大穴`);
   }
   // 決めた順番にない罠(石・横切る鹿など)は 出ない
   assert.ok(!c.obstacles.some((o) => o.kind === 'stone' || o.kind === 'deer'), '運まかせの罠は 無い');

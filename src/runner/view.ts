@@ -154,6 +154,12 @@ export class KasugaView {
   private deer: THREE.Mesh;
   private deerShadow: THREE.Mesh;
   private runTex: THREE.Texture[] = [];
+  /** 鬼ごっこ: 先を にげる Spra(後ろ姿で 走る4コマ) */
+  private tagSpra: THREE.Mesh | null = null;
+  private tagTex: THREE.Texture[] = [];
+  /** はじめの演出: カメラが見る所(道の上の位置)。null なら 鹿の後ろ(game.ts が動かす) */
+  introS: number | null = null;
+  private introCam = false;
   /** コインの形(種類ごと: 0=シルバー 1=ゴールド 2=プレミアム) */
   private coinSets: { disc: THREE.InstancedMesh; rim: THREE.InstancedMesh }[] = [];
   /** コースのコインの番号 → 種類 */
@@ -285,6 +291,15 @@ export class KasugaView {
     );
     this.deerShadow.position.y = 0.02;
     this.scene.add(this.deerShadow);
+    // 鬼ごっこ: にげる Spra(後ろ姿で 走る。鹿より 少し小さい)
+    if (course.tag) {
+      for (let i = 0; i < 4; i++) this.tagTex.push(loadTex(`${ASSET}/spru-walk/up_${i}.png`));
+      const sg = new THREE.PlaneGeometry(0.85, 1.69);
+      sg.translate(0, 0.84, 0);
+      this.tagSpra = new THREE.Mesh(sg, new THREE.MeshBasicMaterial({ map: this.tagTex[0], transparent: true, alphaTest: 0.45, toneMapped: false }));
+      this.tagSpra.renderOrder = 2;
+      this.scene.add(this.tagSpra);
+    }
 
     this.ro = new ResizeObserver(() => this.resize());
     this.ro.observe(host);
@@ -915,6 +930,26 @@ export class KasugaView {
     const bp: Placement[] = [];
     for (let s = 0; s < this.end; s += 4.5) for (const sx of [-1, 1]) if (rnd() < 0.6) bp.push(this.rp(s + rnd() * 3, sx * (ROAD_HALF + 0.9 + rnd() * 1.2), { scale: 0.35 + rnd() * 0.35 }));
     addInstanced(this.scene, [{ geo: new THREE.SphereGeometry(1, 10, 8), mat: bushMat, pos: [0, 0.4, 0] }], bp);
+  }
+
+  /** 鬼ごっこ: にげる Spra を 道の上に置く。罠の所では ぴょんと とびこえる。つかまえたら 鹿の すぐ前で止まる */
+  private placeTagSpra(run: Run): void {
+    const sp = this.tagSpra!;
+    const ts = run.phase === 'cleared' ? Math.min(run.tagS, run.s + 1.9) : run.tagS;
+    const w = this.roadW(ts, Math.sin(ts * 0.045) * 1.1);
+    let y = 0;
+    const o = this.course.obstacles.find((x) => ts > x.s - 2.5 && ts < x.s + (x.len ?? 0) + 2.5);
+    if (o && run.phase !== 'cleared') {
+      const L = (o.len ?? 0) + 5, k = (ts - (o.s - 2.5)) / L;
+      y = 4 * 1.3 * k * (1 - k) * Math.max(1, L / 7);
+    }
+    const moving = run.phase === 'running' || this.introS !== null;
+    const frame = y > 0 ? 1 : moving ? Math.floor(ts / 0.75) % 4 : 0;
+    const mat = sp.material as THREE.MeshBasicMaterial;
+    if (mat.map !== this.tagTex[frame]) mat.map = this.tagTex[frame];
+    const bob = y > 0 || !moving ? 0 : Math.abs(Math.sin(ts * 2.1)) * 0.08;
+    sp.position.set(w.x, w.y + y + bob, w.z);
+    sp.rotation.set(0, -w.psi, run.phase === 'cleared' ? Math.sin(this.clock * 9) * 0.08 : 0, 'YXZ');
   }
 
   /** 仲間の門(架空の道のゴール): 葉のかたまりの柱と、まるいアーチ。上に 大きな S字の芽 */
@@ -2408,6 +2443,7 @@ export class KasugaView {
     this.deerShadow.position.set(wd.x, wd.y + 0.03, wd.z);
     const ss = Math.max(0.5, 1 - run.y * 0.18);
     this.deerShadow.scale.set(ss, 1, ss);
+    if (this.tagSpra) this.placeTagSpra(run);
 
     // カメラ(鹿の少しうしろ・上から。道に沿って曲がり、左右はゆるく追う)
     this.camX += (px * 0.72 - this.camX) * Math.min(1, dt * 6);
@@ -2423,15 +2459,20 @@ export class KasugaView {
     // クリア後は少し引いて、ゴールの景色の全体が見えるようにする
     this.cine += ((run.phase === 'cleared' ? 1 : 0) - this.cine) * Math.min(1, dt * 1.6);
     const c = this.cine;
-    const sBack = run.s - (6.4 + c * 3.2);
-    const sAhead = run.s + 9 + c * 14;
-    const back = this.roadW(sBack, this.camX + sx);
-    const ahead = this.roadW(sAhead, this.camX * 0.95);
+    // はじめの演出(鬼ごっこ): にげる Spra の後ろから映し、道にそって 鹿の所まで もどる
+    const cs = this.introS ?? run.s;
+    const sBack = cs - (6.4 + c * 3.2);
+    const sAhead = cs + 9 + c * 14;
+    const camX0 = this.introS !== null ? Math.sin(cs * 0.045) * 1.1 : this.camX; // 演出の間は Spra の左右の位置
+    const back = this.roadW(sBack, camX0 + sx);
+    const ahead = this.roadW(sAhead, camX0 * 0.95);
     // 坂: カメラの高さは、坂だけ(ジャンプ台は除く)の高さを、なめらかに追う
-    const k = Math.min(1, dt * 5);
-    const baseT = Math.max(this.gy(sBack), this.gy(run.s) - 0.6);
-    const lookT = this.gy(sAhead) * 0.7 + this.gy(run.s) * 0.3;
-    if (this.clock <= dt) { this.camBase = baseT; this.camLook = lookT; }
+    const k = Math.min(1, dt * (this.introS !== null ? 12 : 5));
+    const baseT = Math.max(this.gy(sBack), this.gy(cs) - 0.6);
+    const lookT = this.gy(sAhead) * 0.7 + this.gy(cs) * 0.3;
+    const snap = this.introS !== null && !this.introCam;
+    this.introCam = this.introS !== null;
+    if (this.clock <= dt || snap) { this.camBase = baseT; this.camLook = lookT; }
     this.camBase += (baseT - this.camBase) * k;
     this.camLook += (lookT - this.camLook) * k;
     this.camera.position.set(back.x, this.camBase + 3.5 + lift + sy + c * 2.2, back.z);

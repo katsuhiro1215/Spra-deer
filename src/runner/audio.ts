@@ -13,8 +13,15 @@ export const RUN_BGM = { url: '/assets/audio/run.mp3', loopStart: 16.02, loopEnd
 /** DEER-10 Spra Deer trolley(WORLD 8 トロッコ。7.87〜64.36秒をくり返す) */
 export const CART_BGM = { url: '/assets/audio/cart.mp3', loopStart: 7.87, loopEnd: 64.36, volume: 0.42 };
 
-export type Sfx = 'jump' | 'dash' | 'heal' | 'hit' | 'gold' | 'premium' | 'checkpoint';
-const SFX_VOLUME: Record<Sfx, number> = { jump: 0.35, dash: 0.45, heal: 0.6, hit: 0.5, gold: 0.6, premium: 0.75, checkpoint: 0.55 };
+// splash(水たまり)・bell(仲間の鹿のトロッコの鈴)は、Owner が用意した効果音(SpraTheme/効果音。scripts/build-sfx.sh)
+export type Sfx = 'jump' | 'dash' | 'heal' | 'hit' | 'gold' | 'premium' | 'checkpoint' | 'splash' | 'bell';
+const SFX_VOLUME: Record<Sfx, number> = { jump: 0.35, dash: 0.45, heal: 0.6, hit: 0.5, gold: 0.6, premium: 0.75, checkpoint: 0.55, splash: 0.5, bell: 0.45 };
+
+/** 足音(道の種類ごと。scripts/build-sfx.sh で Owner の効果音から切り出し)。音量は ファイルごとの ちがいを ならす */
+export type Steps = 'grass' | 'gravel' | 'dirt' | 'asphalt' | 'snow';
+const STEPS_VOLUME: Record<Steps, number> = { grass: 0.5, gravel: 0.45, dirt: 0.45, asphalt: 0.4, snow: 0.28 };
+/** くり返して鳴っている音(音量と速さを あとから変える) */
+export type LoopHandle = { set(volume: number, rate: number): void; stop(): void };
 
 export class RunnerAudio {
   ctx: AudioContext | null = null;
@@ -81,6 +88,38 @@ export class RunnerAudio {
 
   sfx(name: Sfx): void {
     this.playBuffer(`/assets/audio/sfx/${name}.mp3`, SFX_VOLUME[name]);
+  }
+
+  /** 足音を くり返し鳴らす。set(0〜1, 速さ)で 走っている間だけ・速いほど 速く鳴らす */
+  steps(kind: Steps): LoopHandle {
+    const ctx = this.ctx;
+    const out = this.out;
+    const base = STEPS_VOLUME[kind];
+    const st = { src: null as AudioBufferSourceNode | null, gain: null as GainNode | null, vol: 0, rate: 1, dead: false };
+    const h: LoopHandle = {
+      set(volume, rate) {
+        st.vol = volume * base; st.rate = rate;
+        if (st.gain && st.src && ctx) {
+          st.gain.gain.setTargetAtTime(st.vol, ctx.currentTime, 0.05);
+          st.src.playbackRate.setTargetAtTime(rate, ctx.currentTime, 0.15);
+        }
+      },
+      stop() { st.dead = true; try { st.src?.stop(); } catch { /* まだ始まっていない */ } },
+    };
+    if (!ctx || !out) return h;
+    void this.load(`/assets/audio/steps/${kind}.mp3`).then((buf) => {
+      if (!buf || st.dead || this.ctx !== ctx) return;
+      const g = ctx.createGain();
+      g.gain.value = st.vol;
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      src.loop = true;
+      src.playbackRate.value = st.rate;
+      src.connect(g).connect(out);
+      src.start();
+      st.src = src; st.gain = g;
+    });
+    return h;
   }
 
   /** BGMを頭から流す(もう流れているなら、そのまま)。曲は、ほかのワールドが選べる(既定は 鹿、走る。の曲) */

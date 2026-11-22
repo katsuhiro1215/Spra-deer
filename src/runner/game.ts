@@ -1,13 +1,13 @@
 // 3D走りゲームの組み立て: 入力・画面表示(HUD)・効果音・ループ・記録。
 import { Progress } from '../progress.ts';
 import { Wallet, clearRewards, waitText, STAMINA_MAX, STAMINA_FAIL } from '../wallet.ts';
-import type { Obstacle } from './course.ts';
+import { tagStars, type Obstacle } from './course.ts';
 import { CRITTERS } from './critters.ts';
 import { RUNNER_LEVELS, courseOf, type RunnerLevel } from './levels.ts';
 import { unlockedBy } from '../friends.ts';
-import { Run, type Input, type SimEvent } from './sim.ts';
+import { Run, baseSpeed, type Input, type SimEvent } from './sim.ts';
 import { KasugaView } from './view.ts';
-import { RunnerAudio } from './audio.ts';
+import { RunnerAudio, type LoopHandle, type Steps } from './audio.ts';
 
 const STEP = 1 / 120;
 
@@ -52,8 +52,9 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
   // 次の面(仲間の鹿の面は、ボーナスなので 次は無い)
   const idx = RUNNER_LEVELS.findIndex((l) => l.id === level.id);
   const nextLevel = idx >= 0 ? RUNNER_LEVELS[idx + 1] : undefined;
-  // 仲間の鹿の面: ゴールの門が しまるまでの秒数
+  // 仲間の鹿の面: ゴールの門が しまるまでの秒数 / 鬼ごっこ(Spra を 追いかけて つかまえる)
   const gate = course.timeLimit;
+  const tag = course.tag;
   const friend = unlockedBy(level.id);
   let senbeiHinted = false;
   // チェックポイント: 通過したときの状態を覚えておき、失敗したら、そこから続けられる
@@ -73,7 +74,8 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
   q('lv-title').textContent = level.title;
   q('lv-goal').textContent = level.goalName;
   q('s-title').textContent = level.title;
-  q('s-lead').textContent = gate ? `${level.summary}。門は ${gate}秒で しまる！ 鹿せんべいで 速く走ろう` : level.summary;
+  q('s-lead').textContent = gate ? `${level.summary}。門は ${gate}秒で しまる！ 鹿せんべいで 速く走ろう`
+    : tag ? `${level.summary}。Spraが ${level.goalName}を くぐる前に！` : level.summary;
   q('s-prem').textContent = premiumTaken ? '◆ この面の プレミアムコインは 取ったよ' : '◆ この面には プレミアムコインが 1まい かくれている';
   let run = new Run(course);
   const byId = new Map(course.obstacles.map((o) => [o.id, o]));
@@ -114,7 +116,7 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
       case 'hit': audio.sfx('hit'); tone(200, 60, 0.3, 'sawtooth', 0.06); break;
       case 'fall': tone(520, 50, 0.6, 'triangle', 0.1); break;
       case 'slip': tone(760, 220, 0.35, 'square', 0.05); break;
-      case 'slow': tone(300, 140, 0.25, 'sine', 0.08); break;
+      case 'slow': audio.sfx('splash'); break;
       case 'slide': tone(1500, 900, 0.4, 'triangle', 0.05); break;
       case 'clear': audio.stopMusic(); audio.jingle('clear'); break;
       case 'fail': audio.stopMusic(); audio.jingle('fail'); break;
@@ -179,7 +181,7 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
   const elResult = q('result');
   // 門が しまるまでの のこり時間(仲間の鹿の面だけ)
   let elGate: HTMLElement | null = null;
-  if (gate) {
+  if (gate || tag) {
     elGate = document.createElement('div');
     elGate.className = 'ks-gate';
     elToast.before(elGate);
@@ -208,6 +210,11 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
       elGate.textContent = `⛩ 門が しまるまで ${left.toFixed(1)}秒`;
       elGate.classList.toggle('hurry', left < 10);
     }
+    if (elGate && tag) {
+      // Spra までの きょり。Spra が 門に近いと 赤く点滅
+      elGate.textContent = run.phase === 'cleared' ? 'つかまえた！' : `Spraまで ${Math.round(run.gapToSpra)}m`;
+      elGate.classList.toggle('hurry', run.phase === 'running' && run.tagS > course.length * 0.9);
+    }
   };
 
   let hinted = new Set<string>();
@@ -229,7 +236,8 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
   const showResult = () => {
     const cleared = run.phase === 'cleared';
     const time = run.t.toFixed(1);
-    const stars = cleared ? (run.lives === 3 ? 3 : run.lives === 2 ? 2 : 1) : 0;
+    // 鬼ごっこは、どこで つかまえたか(早いほど多い)。ほかは のこりのハート
+    const stars = cleared ? (tag ? tagStars(run.caughtS, course.length) : run.lives === 3 ? 3 : run.lives === 2 ? 2 : 1) : 0;
     let newBest = false;
     if (cleared && !recorded) {
       recorded = true;
@@ -250,13 +258,15 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
     }
     paintStamina();
     const best = progress.get(level.id).best;
-    q('r-title').textContent = cleared ? `${level.goalName}に とうちゃく！` : run.reason === 'late' ? '門が しまっちゃった…' : 'ざんねん… もうすこしだった';
+    q('r-title').textContent = cleared ? (tag ? 'Spraを つかまえた！' : `${level.goalName}に とうちゃく！`)
+      : run.reason === 'late' ? '門が しまっちゃった…' : run.reason === 'escaped' ? 'Spraに にげられた…' : 'ざんねん… もうすこしだった';
     q('r-stars').textContent = cleared ? '★'.repeat(stars) + '☆'.repeat(3 - stars) : '';
     q('r-coins').textContent = `${run.coins} / ${silverTotal}` + (run.gold ? `　金 ${run.gold}` : '') + (run.premium ? '　◆' : '');
     q('r-hearts').textContent = '♥'.repeat(Math.max(0, run.lives)) || '—';
     q('r-time').textContent = cleared
       ? `${time} 秒${continued ? '（途中から）' : newBest ? '（ベスト更新！）' : ''}`
-      : `${Math.floor(run.progress * 100)} % まで` + (run.reason === 'late' ? '(鹿せんべいで 速く！ ぶつかると おくれるよ)' : '');
+      : `${Math.floor(run.progress * 100)} % まで` + (run.reason === 'late' ? '(鹿せんべいで 速く！ ぶつかると おくれるよ)'
+        : run.reason === 'escaped' ? `(あと ${Math.round(run.gapToSpra)}m！ せんべいで 速く・ぶつからないように)` : '');
     const cont = q<HTMLButtonElement>('cont');
     cont.hidden = cleared || !saved;
     if (saved) cont.textContent = `${saved.name}から つづける`;
@@ -286,6 +296,8 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
     // BGM: 最初から・もういちどは頭から。チェックポイントから続けるときも、頭(前奏)から流す
     audio.stopMusic(0);
     audio.startMusic();
+    // 足音(道の種類ごと。Owner の効果音)
+    if (!steps) steps = audio.steps(STEP_KIND);
     window.clearTimeout(resultTimer);
     run = new Run(course);
     hinted = new Set();
@@ -313,13 +325,45 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
     }
     cpEls.forEach((el, i) => el.classList.toggle('passed', !!saved && CPS[i].s <= saved.s));
     releaseAll();
-    run.start();
     if (!from) progress.attempt(level.id);
     elStart.classList.remove('on');
     elResult.classList.remove('on');
     startRain();
     paintHud();
+    if (tag && !from && !introSeen) {
+      // はじめの1回だけ: にげる Spra を映して「つかまえてごらん！」→ 道にそって 鹿の所へ もどってから 出発
+      introSeen = true; introT = 0;
+      elSay.innerHTML = '<small>Spra</small>つかまえてごらん！';
+      return;
+    }
+    run.start();
     toast(from ? `${from.name}から 再スタート！` : level.intro, 3600);
+  };
+  // 足音の種類: 道の景色(雪の面は 雪)
+  const STEP_KIND: Steps = level.theme.weather === 'snow' ? 'snow'
+    : level.theme.setting === 'path' ? 'grass'
+    : level.theme.setting === 'town' || level.theme.setting === 'city' ? 'asphalt'
+    : level.theme.setting === 'sando' ? 'gravel' : 'dirt';
+  let steps: LoopHandle | null = null;
+  // 鬼ごっこの はじめ(WORLD 8 の 追いかけっこと そろえる)。Spra は 演出の間も走っていて、出発の時に ちょうど lead の所へ 着く
+  const INTRO = 3.2, INTRO_BACK = 1.1;
+  let introT = -1, introSeen = false;
+  const elSay = document.createElement('div');
+  elSay.className = 'ks-say';
+  elSay.setAttribute('aria-live', 'polite');
+  elToast.before(elSay);
+  const stepIntro = (dt: number) => {
+    if (introT < 0 || !tag) return;
+    introT += dt;
+    const v0 = baseSpeed(tag.lead, course.length, run.rules) * tag.speed;
+    run.tagS = tag.lead - v0 * Math.max(0, INTRO - introT);
+    const b = Math.max(0, Math.min(1, (introT - (INTRO - INTRO_BACK)) / INTRO_BACK)), e = b * b * (3 - 2 * b);
+    view.introS = run.tagS + (run.s - run.tagS) * e;
+    elSay.classList.toggle('on', introT > 0.3 && introT < INTRO - INTRO_BACK + 0.15);
+    if (introT >= INTRO) {
+      introT = -1; view.introS = null; run.tagS = tag.lead; elSay.classList.remove('on');
+      run.start(); toast(level.intro, 3600);
+    }
   };
 
   const paintSound = () => {
@@ -461,6 +505,9 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
     const dt = Math.min(0.1, (now - last) / 1000);
     last = now;
     acc += dt;
+    stepIntro(dt);
+    // 足音: 地面を走っている間だけ。速いほど 速く鳴らす
+    steps?.set(run.phase === 'running' && !run.airborne ? 1 : 0, Math.max(0.9, Math.min(1.7, run.speed / 15)));
     while (acc >= STEP) {
       run.step(STEP, input);
       acc -= STEP;
@@ -522,7 +569,7 @@ export function startRunner(root: HTMLElement, level: RunnerLevel): () => void {
         view.bump(0.12);
         toast('つるつる〜！ 曲がれない！', 1600);
       } else if (e.kind === 'clear') {
-        toast(`${level.goalName}に とうちゃく！`, 4000);
+        toast(tag ? 'Spraを つかまえた！' : `${level.goalName}に とうちゃく！`, 4000);
       }
       if (e.kind === 'gold') toast('ゴールドコイン！', 1300);
       if (e.kind === 'premium') {

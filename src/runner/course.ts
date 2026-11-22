@@ -124,7 +124,18 @@ export interface Course {
   bridge?: { from: number; to: number };
   /** ゴールの門が しまるまでの秒数(仲間の鹿の面)。これをこえると失敗 */
   timeLimit?: number;
+  /** 鬼ごっこ(仲間の鹿の面): Spra が lead m 先から にげる。速さは 同じ所での 鹿の ふつうの速さ × speed */
+  tag?: Tag;
 }
+/** 鬼ごっこ: この近さ(m)まで 追いつくと つかまえた */
+export const TAG_CATCH = 1.6;
+/** 鬼ごっこの ★: コースの どこで つかまえたか(早いほど多い) */
+export function tagStars(caughtS: number, length: number): 1 | 2 | 3 {
+  const k = caughtS / length;
+  return k <= 0.8 ? 3 : k <= 0.92 ? 2 : 1;
+}
+/** 鬼ごっこ: Spra が にげる(lead=はじめの差 m、speed=速さの割合) */
+export type Tag = { lead: number; speed: number };
 
 const smooth = (a: number, b: number, x: number): number => {
   const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
@@ -347,6 +358,8 @@ export interface CourseOptions {
   senbei?: number;
   /** ゴールの門が しまるまでの秒数 */
   timeLimit?: number;
+  /** 鬼ごっこ(Spra が にげる) */
+  tag?: Tag;
   /** 仕掛けの順番(決めて並べる。運まかせの罠は置かない) */
   script?: PatternName[];
 }
@@ -527,7 +540,7 @@ export function buildCourse(opts: CourseOptions = {}): Course {
     bumps.push({ s: lip, len: 9, h: 1.8 });
     line(s - 7, 0, 3, 2.2);
     // 穴の長さは、そこでの速さに合わせる(登り坂では おそいので短く。台に乗れば こえられる長さ)
-    add({ kind: 'hole', s: lip + RAMP_DROP + 0.6, len: Math.max(5, Math.min(10, 0.4 * estSpeed(lip))), halfW: ROAD_HALF });
+    add({ kind: 'hole', s: lip + RAMP_DROP + 0.6, len: Math.max(4.5, Math.min(10, 0.4 * estSpeed(lip) * Math.min(1, slopeMul(hilly, lip)))), halfW: ROAD_HALF });
     [[3, 3.0], [5.5, 3.5], [8, 3.4], [10.5, 2.8]].forEach(([ds, y]) => coin(lip + ds, 0, y));
     return lip + 32;
   };
@@ -738,6 +751,7 @@ export function buildCourse(opts: CourseOptions = {}): Course {
   }
   const course: Course = { obstacles, coins, length, rules: opts.rules, curve: opts.curve, wake: opts.wake };
   if (opts.timeLimit) course.timeLimit = opts.timeLimit;
+  if (opts.tag) course.tag = opts.tag;
   if (opts.hills) course.hills = opts.hills;
   if (bumps.length) course.bumps = bumps;
   if (br) {

@@ -1,5 +1,5 @@
 // 3D走りゲームの進行計算(見た目に依存しない)。
-import { BOLT_TIME, BRIDGE_HALF, DEFAULT_RULES, HIT_RADIUS, PLAY_HALF, TRAIN_HALF_DEPTH, bridgeSway, obstacleRadius, obstacleState, roadBend, roadCurv, slopeMul, type Course, type Obstacle, type ObstacleState, type Rules } from './course.ts';
+import { BOLT_TIME, BRIDGE_HALF, DEFAULT_RULES, TAG_CATCH, HIT_RADIUS, PLAY_HALF, TRAIN_HALF_DEPTH, bridgeSway, obstacleRadius, obstacleState, roadBend, roadCurv, slopeMul, type Course, type Obstacle, type ObstacleState, type Rules } from './course.ts';
 import type { Effect } from './critters.ts';
 
 export interface Input {
@@ -10,7 +10,7 @@ export interface Input {
 
 export type Phase = 'ready' | 'running' | 'cleared' | 'failed';
 export type SimEvent = {
-  kind: 'coin' | 'gold' | 'premium' | 'senbei' | 'throw' | 'boom' | 'swoop' | 'heal' | 'jump' | 'launch' | 'land' | 'hit' | 'fall' | 'slip' | 'slow' | 'slide' | 'clear' | 'fail' | 'bell' | 'warn' | 'thunder' | 'spill' | 'charge';
+  kind: 'coin' | 'gold' | 'premium' | 'senbei' | 'throw' | 'boom' | 'swoop' | 'heal' | 'jump' | 'launch' | 'land' | 'hit' | 'fall' | 'slip' | 'slow' | 'slide' | 'clear' | 'fail' | 'bell' | 'warn' | 'thunder' | 'spill' | 'charge' | 'caught';
   id?: number;
 };
 
@@ -32,8 +32,10 @@ export function baseSpeed(s: number, length: number, rules: Rules = DEFAULT_RULE
 
 export class Run {
   phase: Phase = 'ready';
-  /** 失敗の理由: hearts=ハートが なくなった / late=門が しまった(時間切れ) */
-  reason: '' | 'hearts' | 'late' = '';
+  /** 失敗の理由: hearts=ハートが なくなった / late=門が しまった(時間切れ) / escaped=Spra が 門を くぐって にげきった(鬼ごっこ) */
+  reason: '' | 'hearts' | 'late' | 'escaped' = '';
+  /** 鬼ごっこ: にげる Spra の位置(s)と、つかまえた所 */
+  tagS = 0; caughtS = 0;
   /** 食べた鹿せんべいの数 */
   senbei = 0;
   t = 0;
@@ -80,6 +82,14 @@ export class Run {
     this.rules = course.rules ?? DEFAULT_RULES;
     // 近づくと動き出すもの(突進する動物・電車・雷)
     this.chargers = course.obstacles.filter((o) => o.trig !== undefined);
+    if (course.tag) this.tagS = course.tag.lead;
+  }
+  /** 鬼ごっこ: Spra までの きょり(m) */
+  get gapToSpra(): number { return Math.max(0, this.tagS - this.s); }
+  /** 鬼ごっこ: Spra の速さ(同じ所での、鹿の ふつうの速さ × tag.speed。坂では 同じように おそく・速く) */
+  get tagSpeed(): number {
+    const tg = this.course.tag;
+    return tg ? baseSpeed(this.tagS, this.course.length, this.rules) * slopeMul(this.course, this.tagS) * tg.speed : 0;
   }
 
   get speed(): number {
@@ -175,6 +185,18 @@ export class Run {
     this.collide();
     this.pickCoins();
 
+    // 鬼ごっこ: Spra が先を にげる。追いついたら つかまえた(クリア)。先に 門を くぐられたら にげられた(失敗)
+    if (this.phase === 'running' && this.course.tag) {
+      this.tagS += this.tagSpeed * dt;
+      if (this.tagS - this.s <= TAG_CATCH) {
+        this.phase = 'cleared'; this.caughtS = this.s;
+        this.events.push({ kind: 'caught' }, { kind: 'clear' });
+      } else if (this.tagS >= this.course.length) {
+        this.phase = 'failed'; this.reason = 'escaped';
+        this.events.push({ kind: 'fail' });
+      }
+      return;
+    }
     if (this.phase === 'running' && this.s >= this.course.length) {
       this.phase = 'cleared';
       this.events.push({ kind: 'clear' });

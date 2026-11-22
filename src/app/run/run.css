@@ -492,6 +492,52 @@
   background: rgba(214, 52, 44, 0.92);
   animation: ks-gate-blink 0.5s ease-in-out infinite alternate;
 }
+/* 鬼ごっこの はじめ: にげる Spra の「つかまえてごらん！」(Spra の上に 吹き出し) */
+.ks-say {
+  position: absolute;
+  left: 50%;
+  top: 36%;
+  z-index: 5;
+  transform: translate(-50%, 10px) scale(0.85);
+  opacity: 0;
+  pointer-events: none;
+  padding: 6px 20px 9px;
+  border-radius: 20px;
+  background: #fff;
+  color: #2f5a1a;
+  font-weight: 900;
+  font-size: 26px;
+  text-align: center;
+  white-space: nowrap;
+  box-shadow: 0 5px 0 rgba(0, 0, 0, 0.2);
+  transition: opacity 0.25s, transform 0.25s;
+}
+.ks-say small {
+  display: block;
+  font-size: 13px;
+  font-weight: 700;
+  color: #6a8a4a;
+}
+.ks-say::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -13px;
+  margin-left: -11px;
+  border: 11px solid transparent;
+  border-top-color: #fff;
+  border-bottom: 0;
+}
+.ks-say.on {
+  opacity: 1;
+  transform: translate(-50%, 0) scale(1);
+  animation: ks-say 0.45s ease-in-out 0.25s infinite alternate;
+}
+@keyframes ks-say {
+  to {
+    transform: translate(-50%, -5px) scale(1.05);
+  }
+}
 @keyframes ks-gate-blink {
   from { transform: translateX(-50%) scale(1); }
   to { transform: translateX(-50%) scale(1.08); }

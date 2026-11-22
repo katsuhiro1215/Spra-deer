@@ -1,6 +1,6 @@
 // WORLD 3「鹿、走る。」(旧名: 鹿の大脱走)の面の一覧(3D走りゲームのシリーズ)。
 // 面を足すときは、ここに1つ書くだけ。見た目は theme、手ごたえは rules、仕掛けは seed/extra で変える。
-import { buildCourse, type Course, type Curve, type HillPoint, type PatternName, type Rules } from './course.ts';
+import { buildCourse, type Course, type Curve, type HillPoint, type PatternName, type Rules, type Tag } from './course.ts';
 
 /** 天気: leaves=舞う落ち葉 / petals=桜吹雪 */
 export type Weather = 'none' | 'rain' | 'snow' | 'leaves' | 'petals';
@@ -87,6 +87,8 @@ export interface RunnerLevel {
   senbei?: number;
   /** 仕掛けの順番を 決めて並べる(運まかせにしない。その面ならではの コースにする)。ゴールの手前まで 順に置く */
   script?: PatternName[];
+  /** 鬼ごっこ(2026-11-22 Owner案): 鹿が、先を にげる Spra を 追いかけて つかまえる。門の時間制限の 代わり */
+  tag?: Tag;
   /** 区間ごとの景色(at=はじまる割合)。長い面で、街→山→大都会と変える */
   scenes?: { at: number; setting: Setting; name?: string }[];
   /** チェックポイント(割合と名前)。ここを過ぎたあとに失敗すると、ここから続けられる */
@@ -450,22 +452,27 @@ const ICE_OMIWA: Theme = {
 export const FRIEND_RUN_LEVELS: RunnerLevel[] = [
   {
     // みどりの道: 緑の丘を ジェットコースターのように 大きく上り下り。葉っぱのジャンプ台の先に 大きな穴(台に乗らないと こえられない)
-    id: '4-11', title: 'Spraの鹿と みどりの道', summary: '草のじゅうたんの道が、緑の丘を 大きく上り下り。葉っぱのジャンプ台で 大穴を こえろ',
-    intro: '門が しまる前に ゴール！ 下り坂は 速いよ。葉っぱの ジャンプ台で 大きな穴を とびこえて！',
-    length: 1150, seed: 20261128, difficulty: 0.75,
+    // 2026-11-22 Owner: 鬼ごっこ形式(Spra を 追いかけて つかまえる)・長さ2倍。門の時間制限は やめる
+    id: '4-11', title: 'Spraの鹿と みどりの道', summary: 'にげる Spra を 追いかけて つかまえろ！ 緑の丘を 大きく上り下り、葉っぱのジャンプ台で 大穴を こえる',
+    intro: 'Spraが にげた！ 追いかけて つかまえよう！ せんべいで 加速！',
+    length: 2300, seed: 20261128, difficulty: 0.75,
     extra: [], critters: ['rabbit', 'squirrel', 'fox'],
     script: ['hole', 'coinSnake', 'leafLeap', 'fenceGap', 'critterHop', 'leafLeap', 'poop', 'fenceHole', 'leafLeap', 'critterCross',
-      'fenceGap', 'leafLeap', 'holePoop', 'critterCharge', 'leafLeap', 'fenceGap', 'leafLeap', 'coinSnake'],
+      'fenceGap', 'leafLeap', 'holePoop', 'critterCharge', 'leafLeap', 'fenceGap', 'leafLeap', 'coinSnake',
+      'critterHop', 'leafLeap', 'fenceHole', 'coinSnake', 'leafLeap', 'holePoop', 'critterCross', 'fenceGap', 'leafLeap', 'poop',
+      'critterCharge', 'leafLeap', 'hole', 'fenceHole', 'leafLeap', 'critterHop', 'fenceGap', 'leafLeap', 'coinSnake'],
     rules: FRIEND_RULES,
     curve: { amp: 16, wave: 260 },
     // 大きな波: 登りで おそく、下りで 一気に速く。だんだん高く
     hills: [
-      { at: 0.05, h: 0 }, { at: 0.13, h: 9 }, { at: 0.19, h: 2 }, { at: 0.29, h: 12 }, { at: 0.36, h: 3 }, { at: 0.47, h: 14 },
-      { at: 0.54, h: 4 }, { at: 0.66, h: 15 }, { at: 0.73, h: 5 }, { at: 0.83, h: 13 }, { at: 0.9, h: 10 },
+      { at: 0.03, h: 0 }, { at: 0.07, h: 9 }, { at: 0.1, h: 2 }, { at: 0.15, h: 12 }, { at: 0.18, h: 3 }, { at: 0.24, h: 14 },
+      { at: 0.27, h: 4 }, { at: 0.33, h: 15 }, { at: 0.37, h: 5 }, { at: 0.42, h: 13 }, { at: 0.46, h: 4 }, { at: 0.52, h: 15 },
+      { at: 0.56, h: 5 }, { at: 0.62, h: 16 }, { at: 0.66, h: 6 }, { at: 0.72, h: 17 }, { at: 0.76, h: 6 }, { at: 0.83, h: 16 },
+      { at: 0.88, h: 8 }, { at: 0.94, h: 11 },
     ],
-    gate: 61, senbei: 55,
+    tag: { lead: 150, speed: 1 }, senbei: 110,
     theme: GREEN_PATH, goalName: 'みどりの門',
-    lines: ['半分！ 丘は まだまだ 続く', 'せんべいで 加速！', 'みどりの門が 見えた！'],
+    lines: ['半分！ Spraは まだ にげている', 'せんべいで 加速！', 'みどりの門が 見えた！ 急いで！'],
   },
   {
     id: '4-12', title: 'Lumiの鹿と 黄金の田んぼ', summary: '黄色い田んぼ道。光る輪(雷)を よけて',
@@ -543,6 +550,6 @@ export function courseOf(level: RunnerLevel): Course {
     seed: level.seed, length: level.length, difficulty: level.difficulty,
     extra: level.extra, critters: level.critters, opening: level.opening, rules: level.rules, curve: level.curve,
     potions: level.potions, wake: level.wake, hills: level.hills, after: level.after, bridge: level.bridge,
-    safe: level.checkpoints?.map((c) => c.at), senbei: level.senbei, timeLimit: level.gate, script: level.script,
+    safe: level.checkpoints?.map((c) => c.at), senbei: level.senbei, timeLimit: level.gate, script: level.script, tag: level.tag,
   });
 }
